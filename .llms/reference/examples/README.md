@@ -33,7 +33,9 @@ to locate runnable examples and copy pipeline patterns without tutorial prose.
 - [smart-model.md](smart-model.md): critic/reviser and recursive researcher processors.
 - [research.md](research.md): modular research agent using structured topic parts.
 - [widgets.md](widgets.md): AI Studio dynamic widgets with async tool output.
-- [live-commentator.md](live-commentator.md): event-driven audio/video commentator.
+- [live-commentator.md](live-commentator.md): deep reference for the
+  event-driven audio/video commentator, including state diagrams, stream
+  routing, interrupt semantics, scheduling formulas, and audio pacing.
 - [live-illustrator.md](live-illustrator.md): live narration-to-illustration processor.
 
 ## Cross-Cutting Contracts
