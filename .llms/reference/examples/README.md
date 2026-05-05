@@ -31,7 +31,9 @@ to locate runnable examples and copy pipeline patterns without tutorial prose.
 - [pdf-cli.md](pdf-cli.md): PDF bytes into `PDFExtract`.
 - [models.md](models.md): flag-driven model selector used by examples.
 - [smart-model.md](smart-model.md): critic/reviser and recursive researcher processors.
-- [research.md](research.md): modular research agent using structured topic parts.
+- [research.md](research.md): structured map-reduce research agent blueprint
+  with typed topic parts, fan-out research, synthesis join, and replication
+  guidance.
 - [widgets.md](widgets.md): AI Studio dynamic widgets with async tool output.
 - [live-commentator.md](live-commentator.md): deep reference for the
   event-driven audio/video commentator, including state diagrams, stream
