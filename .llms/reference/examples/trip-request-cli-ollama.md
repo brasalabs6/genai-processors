@@ -36,6 +36,30 @@
 - `processor.parallel_concat` hides slow itinerary latency behind the immediate
   preamble.
 
+## Backend-Independent Contract
+
+```mermaid
+flowchart LR
+    U["freeform request"] --> O1["OllamaModel\nstructured TripRequest"]
+    O1 --> P["process_json_output"]
+    P --> Sw{"substream"}
+    Sw -->|error| E["error passthrough"]
+    Sw -->|default| PC["parallel_concat"]
+    PC --> Ack["acknowledgement"]
+    PC --> O2["OllamaModel\nitinerary"]
+```
+
+The example proves that the structured-routing pattern is not Gemini-specific.
+The stable contract is the stream envelope:
+
+```text
+valid dataclass -> default substream -> planning branch
+invalid dataclass -> error substream -> passthrough
+```
+
+Model quality changes the probability of valid JSON, but not the processor
+graph.
+
 ## Gotchas
 
 - The `GOOGLE_API_KEY` requirement appears unnecessary for the Ollama stages but

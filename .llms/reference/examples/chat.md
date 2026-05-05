@@ -48,6 +48,60 @@
 - `tools` are supplied to the model; `fns` are supplied to the local function
   caller when MCP is active.
 
+## Semantic Flow
+
+```mermaid
+flowchart LR
+    T["terminal_input\nuser text"] --> U["UrlExtractor\ntext -> FetchRequest"]
+    U --> F["_FetchUrl\nFetchRequest -> bytes + content-type"]
+    F --> P["PDFExtract\nPDF bytes -> text/images/status"]
+    P --> M["LiveModelProcessor\nturn model as bidi"]
+    M --> FC["FunctionCalling\nMCP/Python tool loop"]
+    FC --> O["terminal_output\nstreamed text"]
+    FC -->|tool call| Tools["MCP session or Google Search"]
+    Tools -->|function response| FC
+```
+
+The CLI intentionally separates model-visible content from side effects:
+
+- URLs become typed `FetchRequest` dataclass parts before network IO.
+- Fetch exceptions are converted into status/exception parts, so one bad URL
+  does not crash the chat loop.
+- PDF extraction happens before function calling, so PDF text/images are part
+  of the user turn rather than a tool call result.
+- MCP sessions are passed twice: as model-visible tool declarations and as local
+  function implementations.
+
+## Tool Routing Matrix
+
+| Flag Shape | Model Tools | Local `fns` | Transport |
+| --- | --- | --- | --- |
+| no `--mcp_server` | Google Search tool | none | server-side Gemini tool |
+| `--mcp_server=demo` | MCP session | MCP session | in-memory FastMCP |
+| `--mcp_server=https://...` | MCP session | MCP session | streamable HTTP with optional API header |
+| `--mcp_server=local:<cmd>` | MCP session | MCP session | stdio subprocess |
+
+When MCP is active, automatic function calling is disabled in the model config
+and `FunctionCalling` owns the tool loop. This avoids double execution.
+
+## Stateful Runtime Contract
+
+`realtime.LiveModelProcessor` provides the conversational context boundary.
+Semantically the loop is:
+
+```text
+history_0 = []
+for each terminal turn u_i:
+  enriched_i = fetch_and_extract_urls(u_i)
+  response_i = FunctionCalling(LiveModelProcessor(turn_model))(history_i + enriched_i)
+  history_{i+1} = history_i + enriched_i + response_i
+```
+
+The code does not materialize that formula directly; the realtime wrapper owns
+the accumulated state. Reimplementations should preserve the boundary: terminal
+input is streaming, but turn-model calls must see enough prior context to answer
+conversationally.
+
 ## Gotchas
 
 - `_FetchUrl` is explicitly example-grade and not production web fetching.

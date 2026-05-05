@@ -102,3 +102,35 @@ source references manually because MkDocs may not include them.
 - MkDocs navigation or docs pages: run docs-only validation.
 - `llms.txt`: no automated owner exists in CI; review against
   `content_api.py`, `processor.py`, and examples manually.
+
+## Validation Decision Tree
+
+```mermaid
+flowchart TD
+    C["changed files"] --> Docs{"docs only?"}
+    Docs -->|yes| D["markdown/source-ref validation\n+ mkdocs if documentation/ changed"]
+    Docs -->|no| Core{"core contracts?"}
+    Core -->|content_api/processor/streams/context| Full["focused tests + full pytest when feasible"]
+    Core -->|provider/media/tool adapter| Adapter["matching adapter tests + integration-adjacent tests"]
+    Core -->|example only| Example["syntax/readthrough + affected processor tests"]
+    Adapter --> Lint["blocking flake8 if Python changed"]
+    Full --> Lint
+    Example --> Lint
+```
+
+## Risk Formula
+
+Use broader validation as blast radius grows:
+
+```text
+risk = shared_surface_area * statefulness * external_dependency_count
+```
+
+- Shared surface area is high for `content_api.py`, `processor.py`,
+  `streams.py`, and exported helpers.
+- Statefulness is high for caches, tracing, realtime wrappers, function
+  calling, and examples with queues/tasks.
+- External dependency count is high for provider adapters, MCP, Google Cloud
+  media APIs, Ollama, LangChain, Transformers, and browser/WebSocket examples.
+
+High-risk changes should not rely on a single narrow test file.

@@ -43,6 +43,55 @@
   and concatenates their streams.
 - `switch.Switch` uses substream names as control flow.
 
+## Structured Routing Diagram
+
+```mermaid
+flowchart LR
+    U["freeform trip request"] --> S["Suffix\nToday is: date"]
+    S --> E["GenaiModel\nresponse_schema=TripRequest"]
+    E --> P["process_json_output\nJSON -> dataclass"]
+    P --> R{"substream_name"}
+    R -->|error| Err["passthrough error text"]
+    R -->|default| Fan["parallel_concat"]
+    Fan --> Ack["Preamble\nimmediate acknowledgment"]
+    Fan --> Plan["GenaiModel + Google Search\nitinerary"]
+```
+
+The first model is a semantic firewall:
+
+```text
+freeform_user_text -> TripRequest(start_date, end_date, destination, error)
+```
+
+Only the normalized dataclass text reaches the tool-enabled itinerary model. If
+`error != ""`, the stream is routed to `error` and bypasses the search-enabled
+stage.
+
+## Latency Formula
+
+Let:
+
+```text
+t_extract = structured extraction latency
+t_ack = preamble emission time
+t_plan = itinerary generation latency
+```
+
+Valid requests perceive an early response after approximately:
+
+```text
+t_first_visible = t_extract + t_ack
+```
+
+Full completion is:
+
+```text
+t_total = t_extract + max(t_ack, t_plan)
+```
+
+because `parallel_concat([msg_to_user, generate_trip])` starts both branches
+from the same normalized input while concatenating branch outputs.
+
 ## Gotchas
 
 - There is no conversation history; each input must be self-contained.

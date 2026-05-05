@@ -53,6 +53,47 @@ current contracts, not a replacement API.
   - [Extension And Change Guide](extension-guide.md)
   - [Glossary](glossary.md)
 
+## Documentation Methodology
+
+Each reference page should answer four questions:
+
+1. What source files define the contract?
+2. What data shape enters and exits the component?
+3. What state, timing, routing, or concurrency rules change behavior?
+4. What should an LLM agent preserve when replicating the pattern elsewhere?
+
+Use this semantic ladder:
+
+```text
+source code -> observed contract -> data/state diagram -> invariants -> gotchas
+```
+
+Do not document only names. Explain the transformation:
+
+```text
+ProcessorPart envelope + async stream context + processor graph
+  -> model/tool/media side effect
+  -> normalized ProcessorPart output
+```
+
+## Reference Graph
+
+```mermaid
+flowchart TD
+    Root["README.md\nnavigation + package contract"] --> Arch["architecture/*\nruntime shape"]
+    Root --> Concepts["concepts/*\ncontent and composition"]
+    Concepts --> Integrations["integrations/*\nproviders/tools/media"]
+    Arch --> Runtime["runtime/*\ncache trace errors"]
+    Integrations --> Examples["examples/*\ncopyable patterns"]
+    Runtime --> Examples
+    Examples --> Extension["extension-guide.md\nauthoring workflow"]
+    Extension --> Tests["testing/test-matrix.md\nvalidation choice"]
+```
+
+When adding a new page, link it from the closest index and include a
+`Source References` section before behavioral prose. Source references are the
+anchor that keeps the LLM-facing summary from drifting into folklore.
+
 ## Package Contract
 
 The package name is `genai_processors`; the PyPI install name is
@@ -71,6 +112,21 @@ Processor authors implement `Processor.call(content: ProcessorStream)` and
 yield `ProcessorPartTypes`. Callers invoke processors with wide
 `ProcessorContentTypes` directly and usually run
 `await processor(input_content).gather()`.
+
+## Global Invariants
+
+- Processor invocation is lazy; work starts when the returned stream is
+  consumed.
+- `ProcessorPart` is the unit of data and control. Metadata and substreams can
+  carry state transitions without changing content bytes/text.
+- Default substream usually means model-visible prompt/content. Named
+  substreams are routing lanes and may be local-only.
+- Function calls/responses are normal parts with a protocol envelope, not
+  out-of-band callbacks.
+- Reserved substreams such as status/debug should bypass ordinary model
+  transformations unless a processor explicitly reintroduces them.
+- Examples are executable patterns. Prefer copying their graph shape and
+  invariants over copying literal prompts.
 
 ## Source References
 

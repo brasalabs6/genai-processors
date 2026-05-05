@@ -45,6 +45,24 @@
 - Tool declarations can be callables, Gemini `Tool`s, or MCP sessions depending
   on backend support.
 
+## Dispatch Matrix
+
+| `--model_type` | Returned Processor | Tool Handling | Notes |
+| --- | --- | --- | --- |
+| `gemini` | `GenaiModel` or smart wrapper | Gemini tools / disabled auto mode as requested | Supports `critic:` and `research:` prefixes. |
+| `ollama` | `OllamaModel` | provider-compatible function declarations | Local service dependency. |
+| `langchain` | `LangChainModel` | limited by wrapped LangChain chat model | Converts text/image parts only. |
+| `transformers` | `TransformersModel` | local transformer adapter | Dependency/runtime heavy. |
+
+Semantic formula:
+
+```text
+turn_based_model(flags, config) -> Processor[ProcessorStream -> ProcessorStream]
+```
+
+Examples should depend on the returned processor contract, not concrete provider
+classes. Provider-specific setup belongs in this selector.
+
 ## Gotchas
 
 - This helper is intentionally example-only and flag-driven.

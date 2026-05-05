@@ -52,6 +52,43 @@
 - Function-call ids let the client associate streamed responses with original
   tool calls.
 
+## Async UI Tool Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Model as Root GenaiModel
+    participant FC as FunctionCalling
+    participant Tool as Image/Plot Tool
+    participant UI as Browser UI
+
+    User->>Model: text prompt
+    Model->>FC: function_call(id, args)
+    FC->>Tool: execute async generator
+    Tool-->>Model: early function_response(id, "running")
+    Model-->>User: continues conversation
+    Tool-->>UI: substream=ui image/html result
+```
+
+The key semantic split is model acknowledgement versus user-interface payload:
+
+```text
+function_response -> model context
+substream="ui" -> browser rendering lane
+```
+
+Do not feed generated widget HTML back into the model unless a later processor
+explicitly copies it from `ui` into the default stream.
+
+## Rendering Matrix
+
+| Output Shape | MIME / Envelope | Browser Treatment |
+| --- | --- | --- |
+| text response | `text/plain` | chat transcript |
+| image part | `image/*` or function-response media | rendered image |
+| plot widget | inline `text/html` on `ui` | iframe/embed-like widget |
+| function call/response metadata | tool envelope | associate loading/completion state |
+
 ## Gotchas
 
 - README text mentions `status` for direct-to-client routing, but code uses

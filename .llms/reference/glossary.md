@@ -77,3 +77,34 @@ Concise terms for LLM agents. Prefer these names over invented abstractions.
   change output. Source: `genai_processors/processor.py`.
 - `trace_name`: shorter human-readable trace label. Source:
   `genai_processors/processor.py`.
+
+## Semantic Categories
+
+Use these categories when reading or writing docs:
+
+| Category | Carrier | Typical Meaning |
+| --- | --- | --- |
+| Content | text, bytes, image, file, dataclass part | Model-visible or user-visible data. |
+| Routing | `substream_name` | Selects a lane such as realtime, status, debug, UI, error. |
+| State | empty part + metadata | Signals events like turn completion, interruption, usage, go-away. |
+| Tool protocol | function call/response part | Represents model tool invocation and local result. |
+| Provenance | metadata fields | Tracks source filename, model name, usage, capture time. |
+
+Rule of thumb:
+
+```text
+value changes what is said
+substream changes where it goes
+metadata changes how it is interpreted
+```
+
+## Common Misreads
+
+- A text part on a named substream is not automatically prompt text.
+- Empty text is not necessarily meaningless; metadata may carry the whole
+  signal.
+- `.text` is safe only for text-like MIME types.
+- `ProcessorContent` normalizes inputs; it does not imply the stream has been
+  executed.
+- `gather()` is an execution choice that trades streaming behavior for full
+  collection.

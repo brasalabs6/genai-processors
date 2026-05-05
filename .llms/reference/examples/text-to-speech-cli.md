@@ -29,6 +29,20 @@
 - Audio playback is a processor stage, so TTS can be composed with other stream
   processors.
 
+## Synthesis Lifecycle
+
+```mermaid
+flowchart LR
+    T["terminal text part"] --> S["TextToSpeech\nsentence buffering"]
+    S --> A["audio ProcessorPart\ninline_data"]
+    A --> O["PyAudioOut\nside-effect playback"]
+```
+
+Semantically this example is a stream-to-side-effect pipeline. The final stage
+does not need to return useful values because playback is the observable output.
+For a UI or network runtime, replace `PyAudioOut` with a serializer or websocket
+output stage and keep `TextToSpeech` unchanged.
+
 ## Gotchas
 
 - Input should end with punctuation to signal sentence completion.

@@ -38,6 +38,34 @@
 - `LiveProcessor` is an end-to-end bidirectional processor, not a turn wrapper.
 - `PyAudioOut` consumes streamed audio parts and reacts to interruption metadata.
 
+## Live Routing Diagram
+
+```mermaid
+flowchart LR
+    V["VideoIn\ncamera/screen JPEG parts"] --> I["input_processor"]
+    A["PyAudioIn\nPCM mic parts"] --> I
+    I -->|substream=realtime| L["LiveProcessor\nGemini Live"]
+    K["terminal_input\nEOF control only"] --> I
+    L -->|audio/model metadata| O["PyAudioOut\nspeaker"]
+    O -->|non-audio passthrough| Print["debug print(part)"]
+```
+
+This is the minimal native Live example. It demonstrates direct media routing:
+audio and video stay as realtime `ProcessorPart`s and are sent to
+`session.send_realtime_input(...)` by `LiveProcessor`. There is no local STT,
+local TTS, custom state machine, or function-calling wrapper.
+
+## Semantic Boundary
+
+Use this example when the model owns the dialogue timing. Use
+`live-commentator.md` when the application owns scheduling and event-triggered
+interruptions. The difference is:
+
+```text
+live-simple:     device stream -> Live API -> audio output
+live-commentator: device stream -> detector -> state machine -> Live API -> paced output
+```
+
 ## Gotchas
 
 - Headphones are expected; default device input/output usually lacks echo

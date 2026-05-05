@@ -45,6 +45,42 @@
 - Audio output from previous model turns should not be replayed into the LLM
   prompt when transcription is the intended history.
 
+## Data Lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> Listening
+    Listening --> Transcribing: mic audio chunk
+    Transcribing --> WaitingForFinalText: interim or endpointing ignored
+    WaitingForFinalText --> GeneratingText: final STT transcript
+    GeneratingText --> SynthesizingAudio: turn model text response
+    SynthesizingAudio --> PlayingAudio: TTS audio part
+    PlayingAudio --> Listening: audio drained or interrupted
+```
+
+The example is "realtime" by orchestration, not by using Gemini Live native
+audio. It composes three turn-ish services into a bidi processor:
+
+```text
+mic audio -> STT final text -> turn LLM text -> TTS audio -> paced playback
+```
+
+`_filter_parts` is the semantic gate between realtime context and the turn
+model. It removes reserved substreams and previous model audio so the text LLM
+sees transcripts/history rather than raw playback artifacts.
+
+## Timing Contract
+
+`RateLimitAudio(sample_rate=24000)` assumes 16-bit audio:
+
+```text
+audio_duration_sec = len(audio_bytes) / (2 * 24000)
+```
+
+Generated audio is split/paced downstream so a later `interrupted` state can
+flush queued playback. Without pacing, the whole TTS response may be buffered by
+the speaker before user speech can stop it.
+
 ## Gotchas
 
 - Cloud Speech-to-Text and Text-to-Speech APIs must be enabled in the project.

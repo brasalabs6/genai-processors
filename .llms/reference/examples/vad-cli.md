@@ -39,6 +39,35 @@
   instead of terminal turns.
 - `AudioToWav` is a turn-stage converter for accumulated raw audio.
 
+## Endpointing State Flow
+
+```mermaid
+stateDiagram-v2
+    [*] --> Silence
+    Silence --> SpeechOpen: StartOfSpeech
+    SpeechOpen --> SpeechOpen: audio/l16 chunks
+    SpeechOpen --> SpeechClosed: EndOfSpeech
+    SpeechClosed --> ModelTurn: AudioToWav + GenaiModel
+    ModelTurn --> Silence: response streamed
+```
+
+`Vad()` does not call the model. It marks the stream with speech-event parts and
+passes audio through. `realtime.LiveProcessor(trigger_model_mode=END_OF_SPEECH)`
+uses those markers as a deterministic turn boundary.
+
+## Data Formula
+
+For one user utterance:
+
+```text
+utterance_audio = concat(audio_chunks between StartOfSpeech and EndOfSpeech)
+wav_part = AudioToWav(utterance_audio)
+model_response = GenaiModel(wav_part)
+```
+
+This is useful for audio-in turn models that prefer a complete utterance rather
+than arbitrary mic chunks.
+
 ## Gotchas
 
 - Default VAD is aggressive; users need clear/loud speech.

@@ -31,6 +31,24 @@
   carry `metadata={'is_final': True}`.
 - Endpointing emits text-like speech activity markers on `input_endpointing`.
 
+## Output State Semantics
+
+```mermaid
+stateDiagram-v2
+    [*] --> NoSpeech
+    NoSpeech --> SpeechStarted: SPEECH_ACTIVITY_BEGIN
+    SpeechStarted --> InterimText: interim transcript
+    InterimText --> InterimText: revised interim transcript
+    InterimText --> FinalText: is_final=True
+    FinalText --> SpeechEnded: SPEECH_ACTIVITY_END
+    SpeechEnded --> NoSpeech
+```
+
+The ordering is service-driven, so consumers should not assume every
+`SPEECH_ACTIVITY_END` has already been followed by its final transcript. Treat
+endpointing and transcription as related substreams, not a single ordered text
+channel.
+
 ## Gotchas
 
 - Final transcript may arrive after `SPEECH_ACTIVITY_END`.

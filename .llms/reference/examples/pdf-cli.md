@@ -31,6 +31,20 @@
 - `PDFExtract` is a plain processor over content parts and can be inserted
   before a model, as in `chat.py`.
 
+## Extraction Semantics
+
+```mermaid
+flowchart LR
+    B["PDF bytes\nmimetype=application/pdf"] --> P["PDFExtract"]
+    P --> S["status part\npage counts"]
+    P --> T["text parts\npage content"]
+    P --> I["image parts\nrendered visual pages"]
+```
+
+The key invariant is explicit MIME. Raw bytes without `application/pdf` cannot
+be safely dispatched. `metadata.original_file_name` is only provenance; it does
+not determine parsing behavior.
+
 ## Gotchas
 
 - The script uses `open(..., 'rb')` and loads the full PDF into memory.

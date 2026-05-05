@@ -38,6 +38,34 @@
 - Async context managers are used so transports close with the surrounding
   `AsyncExitStack`.
 
+## Session Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant Chat as chat.py
+    participant CM as MCP context manager
+    participant Transport as MCP transport
+    participant Session as ClientSession
+    participant FC as FunctionCalling
+
+    Chat->>CM: enter selected MCP session
+    CM->>Transport: open demo/local/remote transport
+    Transport->>Session: initialize()
+    Chat->>FC: tools=[session], fns=[session]
+    FC->>Session: call_tool(name, args)
+    Session-->>FC: MCP tool result
+    Chat->>CM: exit AsyncExitStack
+    CM->>Transport: close transport/client
+```
+
+The same object carries two semantics:
+
+- declaration surface: tells the model which tools exist;
+- execution surface: lets the local function-calling loop invoke those tools.
+
+Keep those paired. Passing the session only to the model creates calls that the
+local loop cannot execute; passing it only to `fns` hides tools from the model.
+
 ## Gotchas
 
 - Local command parsing is shell-like but does not run through a shell.

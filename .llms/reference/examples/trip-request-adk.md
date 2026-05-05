@@ -39,6 +39,23 @@
 - Structured dataclass extraction and substream switching behave the same in
   web agent runtime as in CLI runtime.
 
+## Hosting Boundary
+
+```mermaid
+flowchart LR
+    UI["ADK web session"] --> Agent["ProcessorAgent\nfactory per session"]
+    Agent --> Graph["trip request processor graph"]
+    Graph --> Extract["structured extraction"]
+    Extract --> Sw{"substream"}
+    Sw -->|default| Plan["ack + itinerary"]
+    Sw -->|error| Err["error passthrough"]
+```
+
+`ProcessorAgent` is a host adapter, not a rewrite of the pipeline. The semantic
+unit remains the processor graph returned by `create_trip_request_processor()`.
+That factory boundary matters because web runtimes can create independent
+sessions without reusing a consumed async stream.
+
 ## Gotchas
 
 - Run `adk web` from `examples` so the package-style agent folder is discoverable.

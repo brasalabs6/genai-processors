@@ -39,6 +39,47 @@
 - `function_calling.FunctionCalling` can execute callable tools around a model
   with automatic function calling disabled.
 
+## Critic/Reviser Loop
+
+```mermaid
+stateDiagram-v2
+    [*] --> Draft
+    Draft --> Critique: base model output
+    Critique --> Done: critic == OK
+    Critique --> Revise: critic != OK and i < max_iterations
+    Revise --> Critique: revised draft
+    Critique --> Done: i == max_iterations
+```
+
+Formula:
+
+```text
+draft_0 = model(input)
+for i in 0..max_iterations-1:
+  critique_i = critic(input, draft_i)
+  if critique_i == "OK": return draft_i
+  draft_{i+1} = reviser(input, draft_i, critique_i)
+return draft_last
+```
+
+This deliberately buffers content because the same input/draft must be reused
+across multiple model calls.
+
+## Recursive Research Semantics
+
+`Researcher` exposes `research_topic` as a callable tool to its own
+function-calling loop. The recursion state is `nesting_level`:
+
+```text
+research_topic(query, level):
+  if level is too deep: summarize directly
+  else: call Researcher(query, level + 1)
+```
+
+The outer call then sends the accumulated research trace to a reviser model.
+This pattern is powerful but easy to overrun; prompts and max depth are part of
+the safety boundary.
+
 ## Gotchas
 
 - These are application-specific agents, not core library abstractions.

@@ -66,3 +66,26 @@ vendored into this repo:
   `genai_processors/contrib/tests/langchain_model_test.py`.
 - Treat provider-specific options as pass-through unless the adapter explicitly
   maps them to `ProcessorPart` contracts.
+
+## Adapter Boundary
+
+```mermaid
+flowchart LR
+    Input["ProcessorPart stream"] --> Convert["provider-specific conversion"]
+    Convert --> API["external provider/client"]
+    API --> Parse["stream parser"]
+    Parse --> Output["ProcessorPart stream"]
+```
+
+Contrib adapters should keep unstable provider semantics behind the conversion
+and parse steps. The public promise is still the `Processor` contract.
+
+## Risk Matrix
+
+| Adapter | Strong Contract | Weaker Edge |
+| --- | --- | --- |
+| OpenRouterModel | text/image input, streaming text, function calls/responses, final metadata | provider-specific config pass-through and SSE quirks |
+| LangChainModel | text/image input conversion, string output chunks | multimodal output, GenAI tool-call translation, structured decoding |
+
+Before promoting contrib behavior into core docs, confirm it has tests for input
+conversion, streaming output, error handling, and provider-specific metadata.

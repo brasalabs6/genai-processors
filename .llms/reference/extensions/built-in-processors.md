@@ -42,6 +42,21 @@ Core processors live under `genai_processors.core`. They are composable
 - `transformers_model.TransformersModel`: Hugging Face Transformers chat
   adapter.
 
+### Model Adapter Semantics
+
+```mermaid
+flowchart LR
+    Parts["ProcessorPart stream"] --> Adapter["provider adapter"]
+    Adapter --> Payload["provider request payload"]
+    Payload --> Provider["model/service"]
+    Provider --> Stream["provider streaming response"]
+    Stream --> PartsOut["ProcessorPart stream\nrole=model + metadata"]
+```
+
+Every model adapter performs the same semantic sandwich: normalize
+`ProcessorPart`s into a provider payload, stream provider output, then restore
+the library envelope. Provider differences should stay inside the adapter.
+
 ## Tooling And Structured Output
 
 - `function_calling.FunctionCalling`: executes Python/MCP tools from model
@@ -51,6 +66,16 @@ Core processors live under `genai_processors.core`. They are composable
 - `constrained_decoding.StructuredOutputParser`: parses streamed JSON into
   schema-backed dataclass/enum parts.
 - `adk.ProcessorAgent`: adapts processors into an ADK agent.
+
+Tooling processors treat tool calls as stream data. The runtime loop is:
+
+```text
+model output function_call -> local execution -> function_response part -> model
+```
+
+Structured output processors narrow text or JSON into typed parts; downstream
+processors should match the typed MIME/dataclass envelope instead of reparsing
+strings.
 
 ## Prompting, Text, And Templates
 
@@ -80,6 +105,15 @@ Core processors live under `genai_processors.core`. They are composable
 - `video.VideoIn`: camera/screen image source.
 - `video.VideoExtract`: explodes video files into image/audio parts.
 
+Media processors are usually envelope-sensitive:
+
+```text
+bytes + mimetype + substream -> routing and decoding behavior
+```
+
+Never infer media type only from filename when a `ProcessorPart` already has an
+explicit MIME type.
+
 ## Documents, Files, And Web
 
 - `pdf.PDFExtract`: extracts PDF text and page screenshots.
@@ -99,3 +133,16 @@ Core processors live under `genai_processors.core`. They are composable
   media frames.
 - `event_detection.EventDetection`: detects model-described state transitions
   in image streams and emits event notifications.
+
+## Selection Matrix
+
+| Need | Prefer |
+| --- | --- |
+| Turn-based text/multimodal model | `genai_model.GenaiModel` or provider adapter |
+| Native realtime audio/video | `live_model.LiveProcessor` |
+| Simulated realtime over turn model | `realtime.LiveProcessor` |
+| Per-part media conversion | `PartProcessor` media helpers |
+| Tool loop around model | `function_calling.FunctionCalling` |
+| Prompt decoration | `Preamble`, `Suffix`, `JinjaTemplate` |
+| Sliding context | `window.Window` / rolling prompt helpers |
+| Device source/sink | `audio_io` / `video` processors |

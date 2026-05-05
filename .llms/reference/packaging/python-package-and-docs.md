@@ -49,6 +49,32 @@ and `3.13`. The workflow:
 4. runs advisory flake8 style checks with broad line length;
 5. runs `pytest`.
 
+## Release Consistency Graph
+
+```mermaid
+flowchart TD
+    Version["genai_processors.__version__"] --> Flit["pyproject dynamic version"]
+    PyProject["pyproject.toml\nrequires-python/classifiers/deps"] --> CI["python-tests.yml matrix"]
+    PyProject --> Wheel["pip install ."]
+    Readme["README.md / README.pypi.md"] --> Users["installation expectations"]
+    Docs["documentation/mkdocs.yml"] --> Site["published docs"]
+    CI --> Confidence["release confidence"]
+    Wheel --> Confidence
+    Users --> Confidence
+    Site --> Confidence
+```
+
+Consistency formula for release-facing edits:
+
+```text
+release_docs_are_consistent =
+  python_requirement == classifiers == ci_matrix
+  and README install text matches extras/dependencies
+  and __version__ matches the intended release
+```
+
+If any term is false, document the drift or fix it before publishing.
+
 ## Docs Contract
 
 Docs are built from the `documentation/` subfolder with MkDocs Material and the

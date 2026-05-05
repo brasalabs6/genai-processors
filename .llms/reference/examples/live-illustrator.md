@@ -55,6 +55,55 @@
 - Reserved substreams are normalized for UI display by setting role to `model`
   when needed.
 
+## Orchestration Diagram
+
+```mermaid
+flowchart LR
+    Mic["browser mic audio\nsubstream=realtime"] --> Scheduler["ScheduleEndOfTurns\nperiodic turn boundary"]
+    Scheduler --> Listener["LiveProcessor + listener model"]
+    Listener --> FC["FunctionCalling\nimage tools"]
+    FC --> Concept["create_concept_art\nfuture by name"]
+    FC --> Image["create_image_from_description\nawait concept refs"]
+    Concept --> Unwrap["unwrap_function_response"]
+    Image --> Unwrap
+    Unwrap --> UI["AI Studio UI\nimages/text"]
+```
+
+The listener model does not draw directly. It narrates/understands audio, emits
+tool calls, and receives async function responses. Image payloads are unwrapped
+after function calling so the UI sees ordinary media parts.
+
+## Concept Reference State
+
+Concept art requests create named futures:
+
+```text
+concept_futures[name] = Future[image parts]
+```
+
+Later image requests can depend on those names:
+
+```text
+image(description, concept_names):
+  refs = await gather(concept_futures[name] for name in concept_names)
+  return image_model(description + refs)
+```
+
+This is a small dependency graph embedded inside async tools. Missing concept
+names are hard errors because the graph edge cannot be resolved.
+
+## Cadence Formula
+
+`ScheduleEndOfTurns` inserts an end-of-turn when no model turn is in progress
+and the configured period elapses:
+
+```text
+if now - last_end_of_turn >= image_period_sec and not model_turn_active:
+  yield END_OF_TURN
+```
+
+Increasing `image_period_sec` reduces image calls and makes the UI calmer.
+
 ## Gotchas
 
 - Image generation volume can trigger throttling; increase `image_period_sec`
