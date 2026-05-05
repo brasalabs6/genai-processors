@@ -75,6 +75,51 @@ The example composes three semantic processors:
 3. `RateLimitAudio` converts fast model audio into realtime playback pacing and
    flushes buffered audio when an interrupt state part arrives.
 
+## Core Data And Config Contracts
+
+The live commentator does not use a custom dataclass as its main stream
+contract. Its "typed state" is distributed across enums, metadata fields,
+substream names, function-call ids, and timing records. For replication, these
+contracts are more important than the exact prompts.
+
+| Contract | Values / Shape | Semantic Role |
+| --- | --- | --- |
+| `EventTypes` | `yes`, `no`, `interruption` | Output vocabulary of the cheap visual detector. |
+| `GenerationType` | `COMMENT`, `USER_REQUEST`, `EVENT_INTERRUPTION` | Why the current Live generation was requested. |
+| `GenerationRequestInfo` | `generation_start_sec`, `generation_type`, `time_audio_start`, `ttft_sec`, `audio_duration` | Per-generation timing ledger used for scheduling. |
+| `CommentatorStateMachine` | `state`, `generation_request_info`, `ttfts`, `id` | Deterministic owner of lifecycle, timing history, and active async tool id. |
+| `start_commentating` function id | metadata `id` from model function call | Long-lived handle used to send future function responses. |
+| `wait_for_user` function id | metadata `id` from model function call | Short-lived handle acknowledged silently to pause model output. |
+| `interrupt_request` metadata | boolean on an `event_detection` part | Local request to ask Live for an interrupting comment. |
+| `generation_complete` metadata | boolean model state part | Signal that all audio for a generation has arrived, even if playback is still ongoing. |
+| `interrupted` metadata | boolean model state part | Signal used to flush or prepare audio interruption. |
+
+Key constants define the system's operating envelope:
+
+| Constant / Setting | Default | Effect |
+| --- | --- | --- |
+| `MODEL_LIVE` | `gemini-2.5-flash-native-audio-preview-12-2025` | Dialogue/audio model for the Live session. |
+| `MODEL_DETECTION` | `gemini-2.5-flash-lite` | Cheap classifier for visual events. |
+| `MEDIA_RESOLUTION` | `MEDIA_RESOLUTION_MEDIUM` | Image understanding quality for Live and detection models. |
+| `RECEIVE_SAMPLE_RATE` | `24000` | Audio duration math and `RateLimitAudio` playback pacing. |
+| `NO_DETECTION_SENSITIVITY` | `3` | Stop-commentating debounce threshold; strict comparison means four repeated stop labels. |
+| `MAX_SILENCE_WAIT_FOR_USER_SEC` | `5` | Extra delay before resuming after `wait_for_user`. |
+| `NO_COMMENT_DELAY_SEC` | `3` | Retry delay when chattiness blocks an autonomous comment. |
+| `chattiness` | constructor argument, default `1.0` | Probability that a scheduled autonomous comment actually fires. |
+| `unsafe_string_list` | constructor argument, default `None` | Optional transcription-level output guard. |
+
+### Stage Ownership Matrix
+
+| Concern | Owner | Why It Lives There |
+| --- | --- | --- |
+| Low-cost visual presence/change detection | `EventDetection` | Keeps the Live model from polling every frame with expensive dialogue context. |
+| Dialogue style, user interaction, wait decisions | Gemini Live prompt and tools | The model needs conversational context to decide what to say or whether to pause. |
+| Lifecycle and scheduling truth | `CommentatorStateMachine` | State transitions must be deterministic and inspectable. |
+| Async tool protocol | `LiveCommentator` | It owns function-call ids and can inject function responses at precise times. |
+| Realtime media transport | `LiveProcessor` | It maps processor parts to Live API transport methods. |
+| Playback pacing and interrupt flush | `RateLimitAudio` | Audio timing should be independent from model generation speed. |
+| Browser device capture and UI state | `ais_app/index.tsx` | Client owns devices, echo cancellation, reset/config messages, and visual transcript state. |
+
 ## Pipeline Diagram
 
 ```mermaid
@@ -126,6 +171,115 @@ sequenceDiagram
 `stop_on_first=True` means the merged input terminates when one of the merged
 streams ends. In normal operation the internal queue does not end, so external
 content controls session lifetime.
+
+## Stage Semantics
+
+### Stage 1: EventDetection
+
+`EventDetection` is the perception sidecar. It consumes the same incoming media
+stream as the Live model, but it only reasons over recent image parts. It emits
+two kinds of output:
+
+- the original stream, passed through unchanged;
+- optional control parts derived from event transitions.
+
+Its semantic job is not to write commentary. It reduces a moving visual context
+to a small event alphabet:
+
+```text
+visual_window -> {yes, no, interruption}
+```
+
+This keeps visual event detection cheap, bounded, and debounced. The expensive
+Live session receives the raw media and only gets extra textual/tool pressure
+when the detector decides that the control state has changed.
+
+### Stage 2: LiveCommentator
+
+`LiveCommentator` is the orchestration controller. It wraps a `LiveProcessor`,
+creates an internal `input_queue`, merges that queue with external content, and
+then reacts to every Live output part. It is responsible for:
+
+- turning model function calls into stored async tool handles;
+- converting detector controls into function responses;
+- converting user/model metadata into deterministic state transitions;
+- deciding when the next autonomous comment should be scheduled;
+- yielding local state markers that downstream audio pacing can understand.
+
+This is the most reusable architectural idea in the example: the controller
+does not generate language itself. It controls when and why the Live model is
+allowed to generate.
+
+### Stage 3: LiveProcessor
+
+`LiveProcessor` is the transport adapter. It knows how processor parts map onto
+the Live API:
+
+```text
+ProcessorPart envelope -> Live API method
+Live server message -> ProcessorPart envelope
+```
+
+That boundary is intentionally kept generic. Similar repos can replace Gemini
+Live with another realtime model adapter as long as the adapter preserves the
+same semantic surface: realtime media, turn content, function calls, tool
+responses, interruptions, generation completion, and audio output.
+
+### Stage 4: RateLimitAudio
+
+`RateLimitAudio` is the output pacer. It treats the model's emitted audio as a
+buffered signal and releases it at natural playback speed. It also gives
+`interrupted=True` state parts operational meaning by flushing queued audio.
+
+Without this stage, a fast Live model can emit seconds of audio almost
+immediately, which makes later interruptions arrive too late from the user's
+perspective.
+
+## Control-Loop Formula
+
+The example is best modeled as a realtime feedback loop, not a single request
+pipeline:
+
+```text
+observed_events_t =
+  EventDetection(recent_realtime_images_t)
+
+live_input_t =
+  merge(external_realtime_content_t, injected_function_responses_t)
+
+live_output_t =
+  LiveProcessor(live_input_t)
+
+controller_state_{t+1}, controller_outputs_t =
+  LiveCommentatorStateMachine(live_output_t, observed_events_t, controller_state_t)
+
+user_audio_t =
+  RateLimitAudio(controller_outputs_t)
+```
+
+The detector and controller form a closed loop:
+
+```text
+visual change
+  -> detector transition
+  -> local control part
+  -> state-machine action
+  -> async function response
+  -> Live model generation or interruption
+  -> audio/state output
+  -> playback pacing and possible flush
+```
+
+Autonomous commentary is probabilistic only at the scheduling gate:
+
+```text
+should_comment ~ Bernoulli(chattiness)
+```
+
+Everything else should be treated as deterministic state transition logic. That
+split is useful when replicating this pattern: keep exploration style and
+comment density configurable, but keep lifecycle, id management, audio flushing,
+and routing deterministic.
 
 ## Event Detection Semantics
 
@@ -284,6 +438,62 @@ priority order. This order is part of the behavior.
 | inline audio/media output | any | `STREAM_MEDIA_PART` | If detector interruption is ready, yield `interrupted` before this audio; then yield audio. |
 | any other part | any | none | Yield unchanged. |
 
+### Controller Decision Rules
+
+In implementation terms, the controller reduces mixed Live output into action
+decisions:
+
+```text
+if unsafe_regex:
+  action = REQUEST_FROM_USER
+  inject corrective realtime text
+
+elif function_call.name == "start_commentating" and state == OFF:
+  action = TURN_ON
+  store function_call.id
+
+elif function_call.name == "start_commentating" and state != OFF:
+  inject SILENT empty response for duplicate id
+
+elif function_call.name == "wait_for_user" and state != OFF:
+  action = WAIT_FOR_USER
+  inject SILENT empty response
+  schedule resume at tentative_trigger_time + MAX_SILENCE_WAIT_FOR_USER_SEC
+
+elif metadata.start_of_user_turn:
+  action = REQUEST_FROM_USER
+
+elif tool_cancellation == active_commentator_id:
+  action = TURN_OFF
+
+elif metadata.generation_complete and state != OFF:
+  yield generation_complete state marker
+  schedule next comment from tentative_trigger_time
+
+elif metadata.interrupted:
+  action = INTERRUPT
+  if state == USER_IS_TALKING:
+    yield interrupted state immediately
+
+elif metadata.interrupt_request:
+  action = REQUEST_INTERRUPT
+  inject start_commentating response with scheduling=INTERRUPT
+
+elif metadata.go_away:
+  cancel scheduled comment task
+  end processor
+
+elif inline_audio:
+  if state == INTERRUPTED_FROM_DETECTION:
+    yield interrupted state before replacement audio
+  action = STREAM_MEDIA_PART
+```
+
+This priority order is part of the semantic contract. For example, unsafe
+transcription controls are consumed before function calls, and detector
+interrupts are converted to `REQUEST_INTERRUPT` before the next audio blob can
+move the state back to `TALKING`.
+
 ## Async Tool Semantics
 
 The Live model receives two non-blocking function declarations:
@@ -303,6 +513,37 @@ The key scheduling modes used here are:
   fresh event context. Used after `interrupt_request`.
 - `SILENT`: acknowledge/cancel a tool call without triggering generation. Used
   for duplicate `start_commentating` calls and `wait_for_user` acknowledgments.
+
+## Concurrency And Ordering
+
+There are multiple asynchronous lanes, and their ordering rules explain most of
+the example's subtle behavior.
+
+| Lane | Producer | Consumer | Ordering Rule |
+| --- | --- | --- | --- |
+| External realtime media | CLI/browser device streams | `EventDetection`, then `LiveProcessor` | Passes through immediately; detector work does not block media forwarding. |
+| Detector control parts | `EventDetection` backend result | `LiveCommentator` | Arrive after model classification latency; they refer to a recent visual window, not necessarily the latest frame. |
+| Internal function responses | `LiveCommentator.input_queue` | `LiveProcessor` | Merged with external content; response timing is controlled by queued inserts and scheduling mode. |
+| Live model output | Live API session | `LiveCommentator` | Audio, metadata, function calls, and cancellations are handled in controller priority order. |
+| Scheduled comments | `asyncio` task from `_schedule_comment` | `input_queue` | Only one scheduled task is intended to be active; new completion/interrupt/wait signals cancel and replace it. |
+| Rate-limited audio | `RateLimitAudio` queues | speaker/browser | Audio preserves playback pace; interrupt state parts flush queued audio. |
+
+Important consequences:
+
+- A detector interruption is causally related to an earlier image window. The
+  Live model still receives newer realtime media before and after that control
+  signal.
+- The internal queue can inject tool responses while camera/mic data continues
+  streaming. This is how the controller asks the Live model to comment without
+  stopping device input.
+- `generation_complete` means "the model has sent all audio for this
+  generation", not "the user has heard all audio". Scheduling therefore uses
+  measured audio duration to approximate the playback boundary.
+- `wait_for_user` cancels the normal follow-up schedule and replaces it with a
+  silence-timeout schedule. A later `generation_complete` or interruption can
+  replace that task again.
+- Duplicate `start_commentating` calls are acknowledged silently because only
+  one long-lived commentator tool id can own the autonomous loop.
 
 ## Timing Formulas
 
@@ -582,18 +823,146 @@ The browser receives:
 - CLI users should wear headphones; browser/AI Studio relies on browser echo
   cancellation to avoid the model interrupting itself.
 
-## Replication Pattern
+## Error And Drift Notes
 
-For another repo or another live agent, preserve these separations:
+These are the details future implementations should either preserve
+deliberately or clean up before productionizing the pattern:
 
-- Put perception classification in a cheap side processor.
-- Encode perception changes as explicit state/control parts, not ad hoc strings
-  hidden inside model output.
-- Keep the Live model as the speech/dialogue generator.
-- Put scheduling and state ownership in a small deterministic state machine.
-- Represent timing with measured output facts: first-audio time, emitted audio
-  duration, and historical TTFT.
-- Flush audio differently for user interrupts versus model-confirmed detector
-  interrupts.
-- Use substreams as routing lanes: realtime input, local control, transcription,
-  and state markers should not be conflated.
+- `NO_DETECTION_SENSITIVITY = 3` is checked with strict `>`, so it requires
+  four repeated `(yes, no)` classifications. This is a debounce contract, not a
+  simple count comment.
+- `LiveCommentator.__init__` creates `self.ttfts`, but the active TTFT history
+  used by `predict_next_ttft()` lives on `CommentatorStateMachine.ttfts`. If
+  extracting this controller, keep only one timing history owner.
+- `RateLimitAudio` code uses `MAX_AUDIO_PART_SEC = 0.05`; its docstring still
+  mentions 200 ms sub-parts. The executable behavior is 50 ms chunks.
+- The detector interruption part must stay off the `realtime` substream. The
+  `event_detection` substream is what prevents a local control marker from
+  being sent to the Live model as user content before the controller handles it.
+- Tool-call ids are protocol state. Losing `self._commentator.id` means the
+  controller can no longer send follow-up `start_commentating` responses.
+- The unsafe-output loop is transcription-based. If output transcription is
+  disabled or delayed, unsafe audio could already have entered the audio queue.
+- `generation_complete` scheduling assumes the controller has received enough
+  audio blobs to estimate playback duration. Text-only or no-audio responses
+  fall back to the 5 second minimum duration.
+- `streams.merge(stop_on_first=True)` means external stream shutdown should end
+  the Live session. If a host keeps the external stream open forever, it also
+  needs explicit reset or cancellation handling.
+
+## Replication Blueprint
+
+For another repo or another live agent, preserve the same ownership boundaries
+even if the domain is not a video commentator.
+
+Recommended generic shape:
+
+```text
+DeviceOrRealtimeInput
+  -> PerceptionClassifier
+  -> ControllerStateMachine
+  -> RealtimeModelAdapter
+  -> OutputPacer
+  -> ClientOutput
+```
+
+Recommended controller contracts:
+
+```text
+PerceptionEvent = PRESENCE | ABSENCE | INTERRUPTING_CHANGE | domain-specific events
+
+ControllerState =
+  OFF
+  ACTIVE
+  USER_IS_DRIVING
+  REQUESTING_AUTONOMOUS_OUTPUT
+  REQUESTING_EVENT_INTERRUPT
+  WAITING_FOR_USER
+
+GenerationRequestInfo =
+  request_start_time
+  request_reason
+  first_output_time
+  time_to_first_output
+  emitted_output_duration
+```
+
+Implementation checklist:
+
+1. Put perception classification in a cheap side processor.
+2. Encode perception changes as explicit state/control parts, not ad hoc strings
+   hidden inside model output.
+3. Keep the realtime model as the dialogue/speech generator, not the lifecycle
+   owner.
+4. Put scheduling and lifecycle truth in a deterministic state machine.
+5. Preserve a stable async-tool or session-control handle for future injected
+   responses.
+6. Use separate routing lanes for realtime input, local controls,
+   transcription/status, and model-visible text.
+7. Represent timing with measured output facts: request start, first output,
+   emitted duration, and historical latency.
+8. Flush output differently for user interrupts versus perception-driven
+   interrupts. User interrupts should cut immediately; perception interrupts
+   can wait until replacement output is ready.
+9. Keep probabilistic personality/density knobs, such as `chattiness`, outside
+   the state-machine transition table.
+10. Treat client echo cancellation, reset, and config messages as part of the
+    product contract, not merely UI details.
+
+The semantic formula to copy is:
+
+```text
+domain_observation
+  -> small classified event
+  -> explicit control part
+  -> deterministic transition
+  -> model/session command
+  -> paced output
+```
+
+That formula also works outside realtime media. For example:
+
+- API monitoring agent:
+  `metrics/logs -> incident classifier -> state machine -> model summary -> notification pacer`.
+- Code-review companion:
+  `file diffs -> risk classifier -> state machine -> model explanation -> UI/status stream`.
+- Robotics coach:
+  `sensor/video frames -> motion event classifier -> state machine -> Live instruction -> audio pacing`.
+
+## Test Strategy For Similar Agents
+
+Minimum tests for a production-grade replica:
+
+- state-machine transition table for every `(state, action)` pair that should
+  matter;
+- detector transition debounce, especially the strict `>` sensitivity behavior;
+- function-call id lifecycle: first `start_commentating`, duplicate call,
+  cancellation, and lost-id behavior;
+- `wait_for_user` scheduling: silent response, timeout resume, cancellation on
+  interrupt or new completion;
+- user interrupt flush: `interrupted=True` state part must clear queued audio
+  immediately;
+- detector interrupt flush: old audio should continue until first replacement
+  audio arrives;
+- TTFT prediction and trigger-time calculations with no history, short audio,
+  long audio, and no-audio generations;
+- substream routing: `realtime` reaches Live API, `event_detection` reaches only
+  the controller, reserved/status substreams bypass model-visible content;
+- unsafe-output loop behavior with matching and non-matching transcription
+  parts;
+- client integration reset/config paths for browser and CLI entrypoints.
+
+## Extension Ideas
+
+- Replace the enum-only detector with a structured event object carrying
+  `event_type`, `confidence`, `description`, and `source_timestamp`.
+- Persist a short rolling event and generation trace so reconnecting clients can
+  resume state without starting from `OFF`.
+- Add metrics for detector latency, TTFT, interruption latency, audio queue
+  depth, duplicate tool calls, and chattiness skip count.
+- Add a validation processor that rejects malformed local control parts before
+  they reach the controller.
+- Split user-facing state parts from internal control parts so clients can show
+  richer state without exposing tool protocol details.
+- Make chattiness deterministic under test by injecting a random source into
+  `_schedule_comment`.
