@@ -235,7 +235,7 @@ class Vad(processor.Processor):
 
     if not self._triggered:
       num_voiced = sum(1 for _, voiced in self._ring_buffer if voiced)
-      if num_voiced > self._speech_threshold * self._ring_buffer.maxlen:
+      if num_voiced > self._speech_threshold * self._ring_buffer.maxlen:  # pyrefly: ignore[unsupported-operation]
         self._triggered = True
         # Collect all buffered original parts.
         buffered = [p for p, _ in self._ring_buffer]
@@ -243,7 +243,7 @@ class Vad(processor.Processor):
         return 'start_of_speech', buffered
     else:
       num_unvoiced = sum(1 for _, voiced in self._ring_buffer if not voiced)
-      if num_unvoiced > self._silence_threshold * self._ring_buffer.maxlen:
+      if num_unvoiced > self._silence_threshold * self._ring_buffer.maxlen:  # pyrefly: ignore[unsupported-operation]
         self._triggered = False
         # Collect buffered original parts.
         buffered = [p for p, _ in self._ring_buffer]

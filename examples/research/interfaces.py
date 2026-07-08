@@ -66,7 +66,7 @@ class Config:
   excluded_topics: list[str] | None = None
   # Use default factory instead
   enabled_research_tools: list[genai_types.ToolConfigOrDict] = (
-      dataclasses.field(
+      dataclasses.field(  # pyrefly: ignore[bad-assignment]
           default_factory=lambda: [
               genai_types.Tool(google_search=genai_types.GoogleSearch())
           ]

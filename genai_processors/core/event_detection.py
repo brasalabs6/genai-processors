@@ -273,7 +273,7 @@ class EventDetection(processor.Processor):
       async for part in content:
         output_queue.put_nowait(part)
         if content_api.is_image(part.mimetype):
-          self._images.append((part.part, time.perf_counter()))
+          self._images.append((part.part, time.perf_counter()))  # pyrefly: ignore[bad-argument-type]
           if image_detection_task is None or image_detection_task.done():
             # Only run one image detection task at a time when the previous
             # one is done. Use a single image to minimize detection latency.

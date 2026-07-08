@@ -306,6 +306,6 @@ class RenderProtoMessage(_Render):
   def get_data(self, part: content_api.ProcessorPart) -> Any:
     """Returns the data to render in the Jinja template."""
     return json_format.MessageToDict(
-        self._proto_message.FromString(part.bytes),
+        self._proto_message.FromString(part.bytes),  # pyrefly: ignore[bad-argument-type]
         preserving_proto_field_name=True,
     )

@@ -178,7 +178,7 @@ class SyncFileTrace(trace.Trace):
 
   def _get_trace_filename(self) -> str:
     """Returns the filename for the trace."""
-    return os.path.join(self.trace_dir, f'{self.name}_{self.trace_id}')
+    return os.path.join(self.trace_dir, f'{self.name}_{self.trace_id}')  # pyrefly: ignore[no-matching-overload]
 
   def model_post_init(self, __context: Any) -> None:  # pylint: disable=invalid-name
     if self.trace_dir:
@@ -362,7 +362,7 @@ class SyncFileTrace(trace.Trace):
   async def _finalize(self) -> None:
     """Saves the trace to a file."""
     await self._queue.put(None)  # Sentinel to stop worker.
-    await asyncio.shield(self._worker)
+    await asyncio.shield(self._worker)  # pyrefly: ignore[bad-argument-type]
 
     indices_to_delete = []
     for i, event in enumerate(self.events):

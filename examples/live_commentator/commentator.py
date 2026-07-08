@@ -360,7 +360,7 @@ class GenerationRequestInfo:
       self.time_audio_start = time.perf_counter()
       self.ttft_sec = self.time_audio_start - self.generation_start_sec
     self.audio_duration += audio_duration_sec(
-        media_blob.data,
+        media_blob.data,  # pyrefly: ignore[bad-argument-type]
         RECEIVE_SAMPLE_RATE,
     )
 
@@ -469,7 +469,7 @@ class CommentatorStateMachine:
           # The interrupt signal is received when user starts talking.
           # `generation_start_sec` should be the time when the user stops
           # talking.
-          self.generation_request_info.generation_start_sec = (
+          self.generation_request_info.generation_start_sec = (  # pyrefly: ignore[missing-attribute]
               time.perf_counter() + 2
           )
         case (_, Action.REQUEST_FROM_USER):
@@ -533,7 +533,7 @@ class CommentatorStateMachine:
     # Underestimating the TTFT will result in the comment being triggered too
     # late, adding a delay to the conversation but making the comment more
     # aligned (time-wise) with the video stream.
-    return max(0.4, avg - std)
+    return max(0.4, avg - std)  # pyrefly: ignore[bad-return]
 
   def tentative_trigger_time(self) -> Optional[float]:
     """Returns the tentative time when the commentator will trigger."""
@@ -590,7 +590,7 @@ class LiveCommentator(processor.Processor):
     self._unsafe_string_list = unsafe_string_list
     if unsafe_string_list is not None:
       pattern = '|'.join(re.escape(s) for s in unsafe_string_list)
-      self._processor += text.MatchProcessor(
+      self._processor += text.MatchProcessor(  # pyrefly: ignore[bad-assignment, unsupported-operation]
           pattern=pattern,
           substream_input='output_transcription',
           substream_output='unsafe_regex',
@@ -730,7 +730,7 @@ class LiveCommentator(processor.Processor):
                 + (
                     ' Do not mention the following expressions in your'
                     " next response: '%s'"
-                    % "', '".join(self._unsafe_string_list)
+                    % "', '".join(self._unsafe_string_list)  # pyrefly: ignore[no-matching-overload]
                 ),
                 role='USER',
                 substream_name='realtime',
@@ -746,7 +746,7 @@ class LiveCommentator(processor.Processor):
             part,
         )
         fn_id = part.get_metadata('id')
-        if part.part.function_call.name == 'start_commentating':
+        if part.part.function_call.name == 'start_commentating':  # pyrefly: ignore[missing-attribute]
           if self._commentator.state != State.OFF:
             # We already have a comment in progress, ignore this one.
             logging.info(
@@ -820,14 +820,14 @@ class LiveCommentator(processor.Processor):
             # Schedule the next commentator turn.
             schedule_task = processor.create_task(
                 self._schedule_comment(
-                    at_time=tentative_trigger_time,
+                    at_time=tentative_trigger_time,  # pyrefly: ignore[bad-argument-type]
                     input_queue=input_queue,
                 )
             )
           else:
             schedule_task = processor.create_task(
                 self._schedule_comment(
-                    at_time=tentative_trigger_time
+                    at_time=tentative_trigger_time  # pyrefly: ignore[unsupported-operation]
                     + MAX_SILENCE_WAIT_FOR_USER_SEC,
                     input_queue=input_queue,
                     message=INTERRUPT_WAIT_FOR_USER_MSG,
@@ -984,7 +984,7 @@ def create_live_commentator(
       http_options=genai_types.HttpOptions(api_version='v1alpha'),
   )
   return (
-      event_detection_processor
+      event_detection_processor  # pyrefly: ignore[unsupported-operation]
       + LiveCommentator(
           live_api_processor=live_api_processor,
           chattiness=chattiness,

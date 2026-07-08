@@ -156,15 +156,15 @@ class ProcessorPart:
     if mimetype:
       self._mimetype = mimetype
     # Otherwise, if MIME type is specified using inline data, use that.
-    elif self._part.inline_data and self._part.inline_data.mime_type:
-      self._mimetype = self._part.inline_data.mime_type
-    elif self._part.function_call:
+    elif self._part.inline_data and self._part.inline_data.mime_type:  # pyrefly: ignore[missing-attribute]
+      self._mimetype = self._part.inline_data.mime_type  # pyrefly: ignore[bad-assignment]
+    elif self._part.function_call:  # pyrefly: ignore[missing-attribute]
       # OSS library can't depend on protobuf, so we hardcode literal here.
       self._mimetype = (
           'application/x-protobuf;'
           ' type=google.ai.generativelanguage.v1main.FunctionCall'
       )
-    elif self._part.function_response:
+    elif self._part.function_response:  # pyrefly: ignore[missing-attribute]
       # OSS library can't depend on protobuf, so we hardcode literal here.
       self._mimetype = (
           'application/x-protobuf;'
@@ -207,7 +207,7 @@ class ProcessorPart:
   @property
   def part(self) -> genai_types.Part:
     """Returns the underlying Genai Part."""
-    return self._part
+    return self._part  # pyrefly: ignore[bad-return]
 
   @property
   def file(self) -> genai_types.File | None:

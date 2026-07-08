@@ -326,7 +326,7 @@ class _RealTimeConversationModel:
     if self._pending_generate_output is not None:
       await self._pending_generate_output
       if self._pending_generate_output.exception():
-        raise self._pending_generate_output.exception()
+        raise self._pending_generate_output.exception()  # pyrefly: ignore[bad-raise]
       await self._model_done.wait()
 
   async def turn(self) -> None:

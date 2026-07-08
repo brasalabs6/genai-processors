@@ -96,7 +96,7 @@ async def run_trip_request() -> None:
   # We need a json dataclass (we use the wrapper from pydantic) to parse the
   # json output of the model. We add the current date to the prompt to make
   # sure the model uses the current date.
-  extract_trip_request = preamble.Suffix(
+  extract_trip_request = preamble.Suffix(  # pyrefly: ignore[unsupported-operation]
       content_factory=lambda: f'Today is: {datetime.date.today()}'
   ) + genai_model.GenaiModel(
       api_key=API_KEY,

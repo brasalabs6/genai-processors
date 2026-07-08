@@ -72,7 +72,7 @@ class ProcessorPipelineTest(parameterized.TestCase):
   def test_applies_async(self):
     inputs = get_processor_parts(['0', '1', '2'])
 
-    @processor.processor_function
+    @processor.processor_function  # pyrefly: ignore[bad-argument-type]
     async def slow_noop(
         inputs: processor.ProcessorStream,
     ) -> AsyncIterable[content_api.ProcessorPartTypes]:
@@ -114,7 +114,7 @@ class ProcessorPipelineTest(parameterized.TestCase):
   def test_chain_with_reserved_substreams(self):
     substreams_seen = set()
 
-    @processor.part_processor_function
+    @processor.part_processor_function  # pyrefly: ignore[bad-argument-type]
     async def mock_processor(
         content: processor.ProcessorPart,
     ) -> AsyncIterable[content_api.ProcessorPartTypes]:
@@ -158,8 +158,8 @@ class ProcessorPipelineTest(parameterized.TestCase):
       tb = traceback.format_exc()
 
     # Assert that the error message isn't a generic ExceptionGroup message
-    self.assertNotIn('unhandled errors in a TaskGroup', exception)
-    self.assertIn('unhandled errors in a TaskGroup', tb)
+    self.assertNotIn('unhandled errors in a TaskGroup', exception)  # pyrefly: ignore[bad-argument-type]
+    self.assertIn('unhandled errors in a TaskGroup', tb)  # pyrefly: ignore[bad-argument-type]
     self.assertEqual(exception, err_msg)
 
   def test_chained_part_processor_raises_specific_error_message(self):
@@ -186,8 +186,8 @@ class ProcessorPipelineTest(parameterized.TestCase):
       tb = traceback.format_exc()
 
     # Assert that the error message isn't a generic ExceptionGroup message
-    self.assertNotIn('unhandled errors in a TaskGroup', exception)
-    self.assertIn('unhandled errors in a TaskGroup', tb)
+    self.assertNotIn('unhandled errors in a TaskGroup', exception)  # pyrefly: ignore[bad-argument-type]
+    self.assertIn('unhandled errors in a TaskGroup', tb)  # pyrefly: ignore[bad-argument-type]
     self.assertEqual(exception, err_msg)
 
   def test_normalization_function(self):
@@ -246,7 +246,7 @@ class ProcessorPipelineTest(parameterized.TestCase):
         yield genai_types.Part(text='world!')
 
     output = processor.apply_sync(
-        YieldNonNormalizedParts() + _check_is_part,
+        YieldNonNormalizedParts() + _check_is_part,  # pyrefly: ignore[unsupported-operation]
         'Agent: ',
     )
     self.assertEqual(content_api.as_text(output), 'Agent: Hello world!')
@@ -460,7 +460,7 @@ class ProcessorTest(unittest.TestCase):
   def test_ui_reserved_substream(self):
     substreams_seen = set()
 
-    @processor.part_processor_function
+    @processor.part_processor_function  # pyrefly: ignore[bad-argument-type]
     async def mock_processor(
         content: processor.ProcessorPart,
     ) -> AsyncIterable[content_api.ProcessorPartTypes]:
@@ -582,7 +582,7 @@ class ProcessorChainMixTest(TestWithProcessors):
     twice_again = TwiceAgain()
     four_times = self.twice + twice_again
     self.assertSequenceEqual(await four_times('1').text(), '1111')
-    four_times = twice_again + self.twice
+    four_times = twice_again + self.twice  # pyrefly: ignore[unsupported-operation]
     self.assertSequenceEqual(await four_times('1').text(), '1111')
     four_times = self.twice + self.twice
     self.assertSequenceEqual(await four_times('1').text(), '1111')
@@ -878,7 +878,7 @@ class ProcessorChainMixTest(TestWithProcessors):
   def test_custom_reserved_substreams(self):
     substreams_seen = set()
 
-    @processor.part_processor_function
+    @processor.part_processor_function  # pyrefly: ignore[bad-argument-type]
     async def mock_processor(
         content: processor.ProcessorPart,
     ) -> AsyncIterable[content_api.ProcessorPartTypes]:
@@ -1002,19 +1002,19 @@ class ProcessorChainMixTest(TestWithProcessors):
   def test_chain_part_processor_flattens_correctly(self):
     """Tests that `_ChainPartProcessor` + `PartProcessor` flattens the list."""
 
-    @processor.part_processor_function
+    @processor.part_processor_function  # pyrefly: ignore[bad-argument-type]
     async def proc_a(
         p: content_api.ProcessorPart,
     ) -> AsyncIterable[content_api.ProcessorPart]:
       yield p
 
-    @processor.part_processor_function
+    @processor.part_processor_function  # pyrefly: ignore[bad-argument-type]
     async def proc_b(
         p: content_api.ProcessorPart,
     ) -> AsyncIterable[content_api.ProcessorPart]:
       yield p
 
-    @processor.part_processor_function
+    @processor.part_processor_function  # pyrefly: ignore[bad-argument-type]
     async def proc_c(
         p: content_api.ProcessorPart,
     ) -> AsyncIterable[content_api.ProcessorPart]:
@@ -1098,7 +1098,7 @@ class ParallelProcessorsTest(TestWithProcessors, parameterized.TestCase):
     parallel_p = self.insert_1 // self.insert_2
     content = processor.apply_sync(parallel_p, inputs)
     self.assertSequenceEqual(content, get_processor_parts(['1', '0', '2', '0']))
-    parallel_p = parallel_p // self.insert_1
+    parallel_p = parallel_p // self.insert_1  # pyrefly: ignore[unsupported-operation]
     content = processor.apply_sync(parallel_p, inputs)
     self.assertSequenceEqual(
         content, get_processor_parts(['1', '0', '2', '0', '1', '0'])
@@ -1168,14 +1168,14 @@ class ParallelProcessorsTest(TestWithProcessors, parameterized.TestCase):
     # Check std fallback gives output when nothing is returned by other
     # processors.
     parallel_p = add_one + (
-        add_one_maybe // add_one_maybe // processor.PASSTHROUGH_FALLBACK
+        add_one_maybe // add_one_maybe // processor.PASSTHROUGH_FALLBACK  # pyrefly: ignore[unsupported-operation]
     )
     content = processor.apply_sync(parallel_p, inputs)
     self.assertSequenceEqual(content, get_processor_parts(['011', '011', '11']))
 
     # Check fall_back plays well with passthrough_always.
     parallel_p = add_one + (
-        add_one_maybe
+        add_one_maybe  # pyrefly: ignore[unsupported-operation]
         // (add_one_maybe // processor.PASSTHROUGH_ALWAYS)
         // processor.PASSTHROUGH_FALLBACK
     )
@@ -1208,13 +1208,13 @@ class ParallelProcessorsTest(TestWithProcessors, parameterized.TestCase):
         yield content_api.ProcessorPart(part.text + '1')
 
     inputs = get_processor_parts(['0', '1'])
-    parallel_p = add_one // add_one // processor.PASSTHROUGH_ALWAYS
+    parallel_p = add_one // add_one // processor.PASSTHROUGH_ALWAYS  # pyrefly: ignore[unsupported-operation]
     content = processor.apply_sync(parallel_p, inputs)
     self.assertSequenceEqual(
         content, get_processor_parts(['01', '01', '0', '1'])
     )
     parallel_p = (
-        add_one
+        add_one  # pyrefly: ignore[unsupported-operation]
         // add_one
         // processor.PASSTHROUGH_ALWAYS
         // processor.PASSTHROUGH_FALLBACK
@@ -1253,7 +1253,7 @@ class ParallelProcessorsTest(TestWithProcessors, parameterized.TestCase):
         identity
         + self.insert_1
         + (
-            add_two_with_status
+            add_two_with_status  # pyrefly: ignore[unsupported-operation]
             // add_three_with_debug
             // processor.PASSTHROUGH_ALWAYS
         )
@@ -1267,7 +1267,7 @@ class ParallelProcessorsTest(TestWithProcessors, parameterized.TestCase):
   def test_custom_reserved_substreams(self):
     substreams_seen = set()
 
-    @processor.part_processor_function
+    @processor.part_processor_function  # pyrefly: ignore[bad-argument-type]
     async def mock_processor(
         content: processor.ProcessorPart,
     ) -> AsyncIterable[content_api.ProcessorPart]:
@@ -1311,7 +1311,7 @@ class ParallelProcessorsTest(TestWithProcessors, parameterized.TestCase):
       else:
         yield part
 
-    parallel = add_one // add_one // processor.PASSTHROUGH_FALLBACK
+    parallel = add_one // add_one // processor.PASSTHROUGH_FALLBACK  # pyrefly: ignore[unsupported-operation]
     parallel = cast(processor._ParallelPartProcessor, parallel)
     self.assertTrue(parallel.match(content_api.ProcessorPart('0')))
     self.assertFalse(parallel.match(content_api.ProcessorPart('1')))
@@ -1442,7 +1442,7 @@ class YieldExceptionsAsPartsTest(
 
     self.assertIsNotNone(error_part.metadata)
     self.assertIn(
-        "I don't like b.", error_part.metadata.get('original_exception')
+        "I don't like b.", error_part.metadata.get('original_exception')  # pyrefly: ignore[bad-argument-type]
     )
     self.assertEqual('ValueError', error_part.metadata.get('exception_type'))
 
@@ -1899,7 +1899,7 @@ class SourceTest(parameterized.TestCase, unittest.IsolatedAsyncioTestCase):
     source_instance = my_source()
     parts = await source_instance.gather()
     self.assertSequenceEqual(
-        parts,
+        parts,  # pyrefly: ignore[bad-argument-type]
         [content_api.ProcessorPart('A'), content_api.ProcessorPart('B')],
     )
 

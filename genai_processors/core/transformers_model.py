@@ -134,7 +134,7 @@ class TransformersModel(processor.Processor):
     self._generation_kwargs = {}
     for arg in ['temperature', 'top_k', 'top_p']:
       if self._generate_content_config.get(arg) is not None:
-        self._generation_kwargs[arg] = self._generate_content_config[arg]
+        self._generation_kwargs[arg] = self._generate_content_config[arg]  # pyrefly: ignore[bad-typed-dict-key]
 
     max_output_tokens = self._generate_content_config.get('max_output_tokens')
     if max_output_tokens is None:
@@ -206,7 +206,7 @@ class TransformersModel(processor.Processor):
                 output_queue,
                 parse_function_calls=self._parse_function_calls,
             ),
-            pad_token_id=self._tokenizer.eos_token_id,
+            pad_token_id=self._tokenizer.eos_token_id,  # pyrefly: ignore[missing-attribute]
             **self._generation_kwargs,
         )
     )
@@ -247,13 +247,13 @@ def _to_hf_message(
     response = part.function_response.response
     match tool_response_format:
       case 'string':
-        if 'result' in response:
-          response = response['result']
+        if 'result' in response:  # pyrefly: ignore[not-iterable]
+          response = response['result']  # pyrefly: ignore[unsupported-operation]
         message['content'] = (
             json.dumps(response) if not isinstance(response, str) else response
         )
       case 'dict':
-        if 'result' in response and isinstance(response['result'], dict):
+        if 'result' in response and isinstance(response['result'], dict):  # pyrefly: ignore[not-iterable, unsupported-operation]
           response = response['result']
         message['content'] = {
             'name': part.function_response.name,
@@ -319,7 +319,7 @@ class _Streamer(transformers.generation.BaseStreamer):
     escape_tag = '<escape>'
 
     # Gemma 4 uses different names for the same tokens.
-    special_tokens = self._tokenizer.special_tokens_map
+    special_tokens = self._tokenizer.special_tokens_map  # pyrefly: ignore[missing-attribute]
     if 'stc_token' in special_tokens:
       start_tag = special_tokens['stc_token']
     if 'etc_token' in special_tokens:
@@ -328,7 +328,7 @@ class _Streamer(transformers.generation.BaseStreamer):
       escape_tag = special_tokens['escape_token']
 
     if self._parse_function_calls:
-      function_call_token_ids = self._tokenizer.encode(
+      function_call_token_ids = self._tokenizer.encode(  # pyrefly: ignore[missing-attribute]
           text=f'{start_tag}{end_tag}{escape_tag}',
           add_special_tokens=False,
       )
@@ -453,7 +453,7 @@ class _Streamer(transformers.generation.BaseStreamer):
           # achieve a more robust operation: we escape all the text in between
           # <escape> tokens and parse the result as JSON.
           if token == self._escape_id:
-            token_str = self._tokenizer.decode(
+            token_str = self._tokenizer.decode(  # pyrefly: ignore[missing-attribute]
                 token_ids, skip_special_tokens=True
             )
             if inside_escape:
@@ -471,14 +471,14 @@ class _Streamer(transformers.generation.BaseStreamer):
         if token_ids:
           text_tokens.append(
               self._add_quotes_on_properties(
-                  self._tokenizer.decode(token_ids, skip_special_tokens=True)
+                  self._tokenizer.decode(token_ids, skip_special_tokens=True)  # pyrefly: ignore[missing-attribute]
               )
           )
         part = ''.join(text_tokens)
         # Parse the function call arguments as plain json object.
         part = self._extract_function_call_part(part)
       else:
-        part = self._tokenizer.decode(tokens.ids, skip_special_tokens=True)
+        part = self._tokenizer.decode(tokens.ids, skip_special_tokens=True)  # pyrefly: ignore[missing-attribute]
       if part:
         self._loop.call_soon_threadsafe(self._queue.put_nowait, part)
 

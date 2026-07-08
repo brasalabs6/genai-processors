@@ -67,16 +67,16 @@ def to_parts(
     if 'model_turn' in metadata:
       del metadata['model_turn']
     if msg.server_content.model_turn:
-      for part in msg.server_content.model_turn.parts:
+      for part in msg.server_content.model_turn.parts:  # pyrefly: ignore[not-iterable]
         yield content_api.ProcessorPart(
             value=part,
-            role=msg.server_content.model_turn.role,
+            role=msg.server_content.model_turn.role,  # pyrefly: ignore[bad-argument-type]
         )
     for k, v in metadata.items():
       value = ''
       if k in ('input_transcription', 'output_transcription'):
-        if 'text' in v:
-          value = v['text']
+        if 'text' in v:  # pyrefly: ignore[not-iterable]
+          value = v['text']  # pyrefly: ignore[bad-index]
         yield content_api.ProcessorPart(
             value=value,
             role='model',
@@ -90,10 +90,10 @@ def to_parts(
         )
   if msg.tool_call:
     function_calls = msg.tool_call.function_calls
-    for function_call in function_calls:
+    for function_call in function_calls:  # pyrefly: ignore[not-iterable]
       yield content_api.ProcessorPart.from_function_call(
-          name=function_call.name,
-          args=function_call.args,
+          name=function_call.name,  # pyrefly: ignore[bad-argument-type]
+          args=function_call.args,  # pyrefly: ignore[bad-argument-type]
           role='model',
           metadata={'id': function_call.id},
       )

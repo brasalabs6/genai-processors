@@ -156,17 +156,17 @@ class TraceTest(unittest.IsolatedAsyncioTestCase):
     # Get chain (was TTFTSingleStream -> _ChainProcessor, now just chain)
     sub_trace = cast(trace_file.SyncFileTrace, trace.events[0].sub_trace)
     self.assertIsNotNone(sub_trace)
-    self.assertIn('chain', sub_trace.name)
+    self.assertIn('chain', sub_trace.name)  # pyrefly: ignore[bad-argument-type]
     # Get to_upper_fn (first sub-trace of chain)
     to_upper_trace = cast(
         trace_file.SyncFileTrace, sub_trace.events[0].sub_trace
     )
     self.assertIsNotNone(to_upper_trace)
-    self.assertIn('to_upper_fn', to_upper_trace.name)
+    self.assertIn('to_upper_fn', to_upper_trace.name)  # pyrefly: ignore[bad-argument-type]
     # Check the output of to_upper_fn
     self.assertFalse(to_upper_trace.events[1].is_input)
     self.assertEqual(
-        root_trace.parts_store[to_upper_trace.events[1].part_hash]['part'][
+        root_trace.parts_store[to_upper_trace.events[1].part_hash]['part'][  # pyrefly: ignore[bad-index, unsupported-operation]
             'text'
         ],
         'HELLO_sub_trace',
@@ -178,17 +178,17 @@ class TraceTest(unittest.IsolatedAsyncioTestCase):
     # Check events from SubTraceProcessor.
     self.assertTrue(trace.events[1].is_input)
     self.assertEqual(
-        root_trace.parts_store[trace.events[1].part_hash]['part']['text'],
+        root_trace.parts_store[trace.events[1].part_hash]['part']['text'],  # pyrefly: ignore[bad-index, unsupported-operation]
         'hello',
     )
     self.assertFalse(trace.events[2].is_input)
     self.assertIn(
         'TEST_SUB_PROCESSOR',
-        root_trace.parts_store[trace.events[2].part_hash]['part']['text'],
+        root_trace.parts_store[trace.events[2].part_hash]['part']['text'],  # pyrefly: ignore[bad-index, unsupported-operation]
     )
     self.assertFalse(trace.events[3].is_input)
     self.assertEqual(
-        root_trace.parts_store[trace.events[3].part_hash]['part']['text'],
+        root_trace.parts_store[trace.events[3].part_hash]['part']['text'],  # pyrefly: ignore[bad-index, unsupported-operation]
         'HELLO_sub_trace_1_outer',
     )
 
@@ -257,7 +257,7 @@ class TraceTest(unittest.IsolatedAsyncioTestCase):
         if f.endswith('.html') and 'Trace test' in f
     ]
     self.assertEqual(len(html_files), 1)
-    trace_path = os.path.join(trace_dir, html_files[0])
+    trace_path = os.path.join(trace_dir, html_files[0])  # pyrefly: ignore[no-matching-overload]
     self.assertTrue(os.path.exists(trace_path))
 
   async def test_image_resizing(self):
@@ -273,7 +273,7 @@ class TraceTest(unittest.IsolatedAsyncioTestCase):
     event = trace.events[0]
     self.assertIsNotNone(event.part_hash)
 
-    part_dict = trace.parts_store[event.part_hash]
+    part_dict = trace.parts_store[event.part_hash]  # pyrefly: ignore[unsupported-operation]
     part_image_bytes = part_dict['part']['inline_data']['data']
     part_image = Image.open(io.BytesIO(part_image_bytes))
     self.assertEqual(part_image.size, (200, 150))
@@ -371,7 +371,7 @@ class TraceTest(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(len(complex_json), 1)
 
     # Load and verify the JSON structure
-    json_path = os.path.join(trace_dir, complex_json[0])
+    json_path = os.path.join(trace_dir, complex_json[0])  # pyrefly: ignore[no-matching-overload]
     loaded_root_trace = trace_file.SyncFileTrace.load(json_path)
     loaded_trace = loaded_root_trace.events[0].sub_trace
     self.assertIsNotNone(loaded_trace)
@@ -390,7 +390,7 @@ class TraceTest(unittest.IsolatedAsyncioTestCase):
       if event.sub_trace:
         sub_trace_found = True
         continue
-      part_dict = loaded_root_trace.parts_store.get(event.part_hash)
+      part_dict = loaded_root_trace.parts_store.get(event.part_hash)  # pyrefly: ignore[missing-attribute]
       if part_dict:
         part = part_dict.get('part', {})
         if part.get('function_call'):
@@ -409,7 +409,7 @@ class TraceTest(unittest.IsolatedAsyncioTestCase):
     self.assertTrue(sub_trace_found)
 
     # Verify HTML file exists and has content
-    html_path = os.path.join(trace_dir, complex_html[0])
+    html_path = os.path.join(trace_dir, complex_html[0])  # pyrefly: ignore[no-matching-overload]
     self.assertTrue(os.path.exists(html_path))
     with open(html_path, 'r') as f:
       html_content = f.read()
@@ -467,7 +467,7 @@ class TraceTest(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(len(json_files), 1)
 
     # Load the trace and verify no debug processors are present
-    json_path = os.path.join(trace_dir, json_files[0])
+    json_path = os.path.join(trace_dir, json_files[0])  # pyrefly: ignore[no-matching-overload]
     root_trace = trace_file.SyncFileTrace.load(json_path)
 
     all_names = collect_processor_names(root_trace)
@@ -860,8 +860,8 @@ class TraceTest(unittest.IsolatedAsyncioTestCase):
     # Check that an error event was recorded with full traceback
     error_events = [e for e in loaded_trace.events if e.error_message]
     self.assertEqual(len(error_events), 1)
-    self.assertIn('Traceback', error_events[0].error_message)
-    self.assertIn('ValueError', error_events[0].error_message)
+    self.assertIn('Traceback', error_events[0].error_message)  # pyrefly: ignore[bad-argument-type]
+    self.assertIn('ValueError', error_events[0].error_message)  # pyrefly: ignore[bad-argument-type]
 
   async def test_processor_cancellation_trace(self):
     """Test that cancellation is captured in traces."""
@@ -1036,7 +1036,7 @@ class TraceTest(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(len(trace.events), 3)
     # part1 should be stored fully.
     self.assertEqual(
-        trace.parts_store[trace.events[0].part_hash],
+        trace.parts_store[trace.events[0].part_hash],  # pyrefly: ignore[bad-index, unsupported-operation]
         {
             'part': {'text': 'part1'},
             'metadata': {},
@@ -1047,7 +1047,7 @@ class TraceTest(unittest.IsolatedAsyncioTestCase):
     )
     # part 2&3 should exceed limit and be stored as metadata + extra args only.
     self.assertEqual(
-        trace.parts_store[trace.events[1].part_hash],
+        trace.parts_store[trace.events[1].part_hash],  # pyrefly: ignore[bad-index, unsupported-operation]
         {
             'mimetype': 'text/plain',
             'role': 'user',
@@ -1056,7 +1056,7 @@ class TraceTest(unittest.IsolatedAsyncioTestCase):
         },
     )
     self.assertEqual(
-        trace.parts_store[trace.events[2].part_hash],
+        trace.parts_store[trace.events[2].part_hash],  # pyrefly: ignore[bad-index, unsupported-operation]
         {
             'mimetype': 'image/png',
             'role': '',
@@ -1100,18 +1100,18 @@ class TraceTest(unittest.IsolatedAsyncioTestCase):
     )
 
     # Verify empty text part
-    empty_part = loaded_root_trace.parts_store[loaded_trace.events[0].part_hash]
+    empty_part = loaded_root_trace.parts_store[loaded_trace.events[0].part_hash]  # pyrefly: ignore[bad-index, unsupported-operation]
     self.assertEqual(empty_part['part'].get('text', ''), '')
     self.assertEqual(empty_part['metadata'], {})
 
     # Verify metadata-only part
-    meta_part = loaded_root_trace.parts_store[loaded_trace.events[1].part_hash]
+    meta_part = loaded_root_trace.parts_store[loaded_trace.events[1].part_hash]  # pyrefly: ignore[bad-index, unsupported-operation]
     self.assertEqual(meta_part['part'].get('text', ''), '')
     self.assertEqual(meta_part['metadata']['turn_complete'], True)
     self.assertEqual(meta_part['metadata']['model_turn'], 'done')
 
     # Verify non-empty text part
-    text_part = loaded_root_trace.parts_store[loaded_trace.events[2].part_hash]
+    text_part = loaded_root_trace.parts_store[loaded_trace.events[2].part_hash]  # pyrefly: ignore[bad-index, unsupported-operation]
     self.assertEqual(text_part['part']['text'], 'Hello world')
 
   async def test_function_response_with_all_fields(self):
@@ -1170,7 +1170,7 @@ class TraceTest(unittest.IsolatedAsyncioTestCase):
     )
 
     # Verify function response fields
-    fr_part = loaded_root_trace.parts_store[loaded_trace.events[0].part_hash]
+    fr_part = loaded_root_trace.parts_store[loaded_trace.events[0].part_hash]  # pyrefly: ignore[bad-index, unsupported-operation]
     func_resp = fr_part['part'].get('function_response', {})
     self.assertEqual(func_resp.get('name'), 'get_weather')
     self.assertEqual(func_resp.get('id'), 'call_123')
@@ -1182,8 +1182,8 @@ class TraceTest(unittest.IsolatedAsyncioTestCase):
     )
 
     # Verify function response with media parts
-    media_fr_part = loaded_root_trace.parts_store[
-        loaded_trace.events[1].part_hash
+    media_fr_part = loaded_root_trace.parts_store[  # pyrefly: ignore[unsupported-operation]
+        loaded_trace.events[1].part_hash  # pyrefly: ignore[bad-index]
     ]
     media_func_resp = media_fr_part['part'].get('function_response', {})
     self.assertEqual(media_func_resp.get('name'), 'generate_multimedia')
@@ -1196,7 +1196,7 @@ class TraceTest(unittest.IsolatedAsyncioTestCase):
     )
 
     # Verify function call with metadata (now at index 2)
-    fc_part = loaded_root_trace.parts_store[loaded_trace.events[2].part_hash]
+    fc_part = loaded_root_trace.parts_store[loaded_trace.events[2].part_hash]  # pyrefly: ignore[bad-index, unsupported-operation]
     func_call = fc_part['part'].get('function_call', {})
     self.assertEqual(func_call.get('name'), 'search_web')
     self.assertEqual(func_call.get('args', {}).get('query'), 'python tutorials')
