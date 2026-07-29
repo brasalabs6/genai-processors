@@ -40,6 +40,21 @@ Open <http://127.0.0.1:8000/?wsPort=8765>. The launcher serves the Vite build
 and starts the commentator WebSocket server. The browser never receives the API
 key.
 
+Each launcher execution writes a rotating diagnostic file under the
+repository-root `logs/` directory and prints its exact path at startup. Files
+are capped at 10 MiB with five backups. They include timestamps, severity,
+logger, PID, thread, selected models, runtime information, and exception
+tracebacks. API keys and raw audio/image payloads are not logged.
+
+Use `--debug` for verbose diagnostics or choose another directory:
+
+```bash
+.venv/bin/python examples/live_commentator/commentator_web.py \
+  --web_port=8080 \
+  --debug \
+  --commentator_log_dir=/tmp/live-commentator-logs
+```
+
 For WebUI development, run `npm run dev` in
 `examples/live_commentator/webui` while keeping the Python launcher running.
 Open the Vite URL with `?wsPort=8765`.

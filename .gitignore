@@ -5,6 +5,7 @@ node_modules/
 *.py[cod]
 build/
 dist/
+/logs/
 
 # API keys and secrets.
 .env

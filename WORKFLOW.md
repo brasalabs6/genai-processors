@@ -387,7 +387,33 @@ Ao fechar/recarregar a aba:
 - `AudioContext` é fechado;
 - WebSocket é fechado intencionalmente.
 
-## 16. Workflow de desenvolvimento
+## 16. Diagnóstico por logs
+
+O launcher instala o handler de arquivo antes de validar ou abrir serviços. O
+arquivo ativo é informado no terminal e segue:
+
+```text
+logs/live-commentator-YYYYMMDD-HHMMSS-PID.log
+```
+
+Fluxo de investigação:
+
+```mermaid
+flowchart LR
+  START[Iniciar launcher] --> FILE[Criar log rotativo]
+  FILE --> CONTEXT[Registrar runtime e modelos]
+  CONTEXT --> RUN[Executar HTTP + WebSocket + pipeline]
+  RUN -->|erro| TRACE[Registrar traceback completo]
+  RUN -->|SIGINT| STOP[Registrar shutdown]
+  TRACE --> REVIEW[Analisar arquivo sem payloads sensíveis]
+  STOP --> REVIEW
+```
+
+Ao reportar um erro, preservar o arquivo da execução correspondente e informar
+o horário aproximado da ação. Nunca anexar `.env`, API keys, áudio bruto ou
+frames de tela. `--debug` deve ser usado para reproduções controladas.
+
+## 17. Workflow de desenvolvimento
 
 Mudanças comportamentais seguem:
 
@@ -415,7 +441,7 @@ Checklist por mudança:
 9. Fazer smoke HTTP/WebSocket e, quando aplicável, API real.
 10. Verificar secrets, artefatos gerados e estado Git.
 
-## 17. Matriz de validação
+## 18. Matriz de validação
 
 | Área | Validação |
 |---|---|
@@ -428,3 +454,4 @@ Checklist por mudança:
 | Tipos | `npm run typecheck` |
 | UI | smoke em navegador local |
 | Segurança | scan de secrets e inspeção do bundle |
+| Logging | teste de captura absl + smoke de traceback em arquivo |

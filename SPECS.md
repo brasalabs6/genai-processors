@@ -440,8 +440,20 @@ Nenhum dado capturado deve ser persistido localmente pelo aplicativo.
 
 ### RNF-006 Observabilidade
 
-A UI mostra estado de conexão e mensagens úteis. O backend pode registrar
-eventos e erros, mas não conteúdo sensível por padrão.
+A UI mostra estado de conexão e mensagens úteis. Toda execução do launcher
+standalone cria um arquivo diagnóstico rotativo em `logs/` com:
+
+- timestamps com milissegundos;
+- severidade, logger, PID e thread;
+- modelos e runtime selecionados;
+- lifecycle dos servidores HTTP e WebSocket;
+- stack traces completos para exceções;
+- eventos já emitidos pelos processors e pelo `live_server`.
+
+Cada arquivo é limitado a 10 MiB e mantém cinco backups. `logs/` não pertence ao
+controle de versão. API keys, tokens e payloads brutos de áudio/imagem não podem
+ser registrados. O modo `--debug` aumenta a verbosidade sem remover essa
+restrição.
 
 ## 11. Tratamento de falhas
 

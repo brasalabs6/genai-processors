@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import logging as std_logging
 import tempfile
 import threading
 import time
@@ -88,6 +89,67 @@ class CommentatorWebTest(unittest.TestCase):
     ).resolve()
     self.assertEqual(commentator_web.default_web_root(), expected)
 
+  def test_default_log_dir_points_to_repository_logs(self):
+    expected = Path(commentator_web.__file__).parents[2] / 'logs'
+    self.assertEqual(commentator_web.default_log_dir(), expected)
+
+  def test_install_file_logging_captures_absl_errors(self):
+    with tempfile.TemporaryDirectory() as temp_dir:
+      log_path, handler = commentator_web.install_file_logging(
+          Path(temp_dir),
+          debug=True,
+      )
+      try:
+        commentator_web.logging.error('diagnostic-marker')
+        handler.flush()
+      finally:
+        std_logging.getLogger().removeHandler(handler)
+        handler.close()
+
+      contents = log_path.read_text(encoding='utf-8')
+      self.assertIn('ERROR', contents)
+      self.assertIn('diagnostic-marker', contents)
+      self.assertNotIn('GOOGLE_API_KEY', contents)
+
+  def test_install_file_logging_redacts_secrets_and_protocol_payloads(self):
+    secret = 'test-google-api-key-value'
+    with (
+        tempfile.TemporaryDirectory() as temp_dir,
+        mock.patch.dict(os.environ, {'GOOGLE_API_KEY': secret}),
+    ):
+      log_path, handler = commentator_web.install_file_logging(
+          Path(temp_dir),
+          debug=True,
+      )
+      websocket_logger = std_logging.getLogger('websockets.client')
+      previous_level = websocket_logger.level
+      websocket_logger.setLevel(std_logging.DEBUG)
+      try:
+        commentator_web.logging.error('x-goog-api-key: %s', secret)
+        websocket_logger.debug('raw-frame-payload-marker')
+        handler.handle(
+            std_logging.LogRecord(
+                name='absl',
+                level=std_logging.DEBUG,
+                pathname='/tmp/commentator.py',
+                lineno=1,
+                msg='non media part: private-content-marker',
+                args=(),
+                exc_info=None,
+            )
+        )
+        handler.flush()
+      finally:
+        websocket_logger.setLevel(previous_level)
+        std_logging.getLogger().removeHandler(handler)
+        handler.close()
+
+      contents = log_path.read_text(encoding='utf-8')
+      self.assertNotIn(secret, contents)
+      self.assertIn('[REDACTED]', contents)
+      self.assertNotIn('raw-frame-payload-marker', contents)
+      self.assertNotIn('private-content-marker', contents)
+
   def test_main_handles_keyboard_interrupt(self):
     def interrupt_and_close(coroutine):
       coroutine.close()
@@ -99,6 +161,11 @@ class CommentatorWebTest(unittest.TestCase):
             'run',
             side_effect=interrupt_and_close,
         ),
+        mock.patch.object(
+            commentator_web,
+            'install_file_logging',
+            return_value=(Path('/tmp/test.log'), mock.Mock()),
+        ),
         mock.patch.multiple(
             commentator_web,
             _DEBUG=mock.Mock(value=False),
@@ -107,9 +174,47 @@ class CommentatorWebTest(unittest.TestCase):
             _WEBSOCKET_PORT=mock.Mock(value=8765),
             _WEB_ROOT=mock.Mock(value=None),
             _TRACE_DIR=mock.Mock(value=None),
+            _LOG_DIR=mock.Mock(value=None),
         ),
     ):
       commentator_web.main(['commentator_web.py'])
+
+  def test_main_logs_unhandled_exception_with_traceback(self):
+    def fail_and_close(coroutine):
+      coroutine.close()
+      raise RuntimeError('pipeline-failure-marker')
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+      with (
+          mock.patch.object(
+              commentator_web.asyncio,
+              'run',
+              side_effect=fail_and_close,
+          ),
+          mock.patch.multiple(
+              commentator_web,
+              _DEBUG=mock.Mock(value=False),
+              _HOST=mock.Mock(value='127.0.0.1'),
+              _WEB_PORT=mock.Mock(value=8000),
+              _WEBSOCKET_PORT=mock.Mock(value=8765),
+              _WEB_ROOT=mock.Mock(value=None),
+              _TRACE_DIR=mock.Mock(value=None),
+              _LOG_DIR=mock.Mock(value=temp_dir),
+          ),
+      ):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            'pipeline-failure-marker',
+        ):
+          commentator_web.main(['commentator_web.py'])
+
+      log_paths = list(Path(temp_dir).glob('live-commentator-*.log'))
+      self.assertEqual(len(log_paths), 1)
+      contents = log_paths[0].read_text(encoding='utf-8')
+      self.assertIn(
+          'Live Commentator terminated with an unhandled error', contents
+      )
+      self.assertIn('RuntimeError: pipeline-failure-marker', contents)
 
 
 if __name__ == '__main__':
