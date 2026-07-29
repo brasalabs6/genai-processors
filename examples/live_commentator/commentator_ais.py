@@ -13,21 +13,20 @@
 # limitations under the License.
 # ==============================================================================
 
-r"""Live Commentator WebSocket server for AI Studio.
+r"""Legacy WebSocket-only server for the Live Commentator.
 
-A server to run the live commentator agent on AI Studio. The applet connects
-to this server and handles the UI.
+A server to run only the Live Commentator WebSocket endpoint. New local usage
+should prefer ``commentator_web.py``, which starts this endpoint together with
+the standalone Vite WebUI.
 
 See commentator.py for the actual implementation.
 
-To run the server locally:
+To run only the WebSocket server locally:
 
  * Install the dependencies with `pip install genai-processors`.
- * Access the applet at
- https://aistudio.google.com/app/apps/github/google-gemini/genai-processors/tree/main/examples/live_commentator/ais_app.
-* Define a GOOGLE_API_KEY environment variable with your API key.
+ * Define a GOOGLE_API_KEY environment variable with your API key.
  * Launch the commentator agent: `python3 ./commentator_ais.py`.
- * Allow the applet to use a camera and enable one of the video sources.
+ * Connect a compatible client using the ProcessorPart JSON protocol.
 """
 
 import asyncio
@@ -76,11 +75,13 @@ def main(argv):
     raise app.UsageError('Too many command-line arguments.')
   if _DEBUG.value:
     logging.set_verbosity(logging.DEBUG)
-  asyncio.run(live_server.run_server(
-      create_live_commentator,
-      port=_PORT.value,
-      trace_dir=_TRACE_DIR.value,
-  ))
+  asyncio.run(
+      live_server.run_server(
+          create_live_commentator,
+          port=_PORT.value,
+          trace_dir=_TRACE_DIR.value,
+      )
+  )
 
 
 if __name__ == '__main__':

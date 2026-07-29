@@ -130,6 +130,6 @@ this.agentWebSocket.onmessage = (event) => {
 
 You can see real examples of client apps using the websocket server here:
 
-*   [Live Commentator UI](https://github.com/google-gemini/genai-processors/blob/main/examples/live_commentator/ais_app/index.tsx)
+*   [Live Commentator standalone Vite UI](https://github.com/google-gemini/genai-processors/tree/main/examples/live_commentator/webui)
 *   [Live Ilustrator UI](https://github.com/google-gemini/genai-processors/blob/main/examples/live_illustrator/ais_app/index.tsx)
 *   [Widgets Agent UI](https://github.com/google-gemini/genai-processors/blob/main/examples/widgets/ais_app/index.tsx)

@@ -1,6 +1,7 @@
 # Build artifacts.
 __pycache__/
 __pypackages__/
+node_modules/
 *.py[cod]
 build/
 dist/

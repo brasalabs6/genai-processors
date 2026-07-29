@@ -11,11 +11,69 @@ responsive experience.
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/google-gemini/genai-processors/blob/main/LICENSE)
 
-## 🚀 Running the commentator
+## 🚀 Running the standalone WebUI
 
-We recommend the AI Studio version of the agent as it utilizes the echo
-cancellation built into the browser. Please see commentator\_ais.py for
-instructions.
+The recommended interface is a local Vite application. It uses the browser's
+echo cancellation, microphone, camera, screen capture, and Web Audio playback
+without requiring AI Studio.
+
+Install the Python and WebUI dependencies from the repository root:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[dev,contrib]'
+cd examples/live_commentator/webui
+npm install
+npm run build
+cd ../../..
+```
+
+Set the Gemini API key only in the backend environment and start the standalone
+launcher:
+
+```bash
+export GOOGLE_API_KEY='...'
+.venv/bin/python examples/live_commentator/commentator_web.py
+```
+
+Open <http://127.0.0.1:8000/?wsPort=8765>. The launcher serves the Vite build
+and starts the commentator WebSocket server. The browser never receives the API
+key.
+
+For WebUI development, run `npm run dev` in
+`examples/live_commentator/webui` while keeping the Python launcher running.
+Open the Vite URL with `?wsPort=8765`.
+
+See the repository-root `SPECS.md`, `WORKFLOW.md`, and `UI_SPECS.md` for the
+canonical contracts, state machines, data flows, and UI behavior.
+
+### Optional NVIDIA/CUDA environment
+
+The current Gemini Live pipeline does not require local GPU inference. Future
+diarization, Parakeet STT, and XTTS adapters are expected to benefit from CUDA,
+so keep GPU support in an optional environment rather than making CUDA a base
+dependency.
+
+On the currently tested RTX 2060 machine (NVIDIA driver 550, CUDA compatibility
+up to 12.4), install a compatible PyTorch build after the regular dependencies:
+
+```bash
+.venv/bin/python -m pip install --force-reinstall \
+  'torch==2.6.0+cu124' \
+  --index-url https://download.pytorch.org/whl/cu124
+```
+
+Verify the environment before adding a GPU-backed processor:
+
+```bash
+.venv/bin/python -c \
+  "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+```
+
+This version is an environment-specific compatibility choice, not a repository
+runtime contract. Re-evaluate it when the host driver, Python version, or local
+model stack changes. A CPU installation remains supported for the existing
+commentator.
 
 ## 🗣️ Conversation Logic
 
@@ -111,8 +169,7 @@ style H fill:#888,stroke:#333,stroke-width:2px
     comment is due. This happens when the commentator will soon finish its
     current comment.
 *   **REQUESTING_RESPONSE**: The commentator is requesting a response to a
-    user's question or input. This input is text-based. This is not used in the
-    AI Studio version of the commentator (no text entry).
+    user's question or input. This input can be text-based.
 *   **INTERRUPTED_FROM_DETECTION**: The commentary should be interrupted by
     an event and the system is waiting for the model to generate the new audio.
     The commentator keeps talking until it receives the response of the model

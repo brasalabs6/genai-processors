@@ -15,9 +15,9 @@
 
 r"""Live commentator using GenAI Processors.
 
-You can run this example from a CLI directly or from AI Studio.
+You can run this example from a CLI or from the standalone WebUI.
 
-See commentator_cli.py or commentator_ais.py for usage.
+See commentator_cli.py or commentator_web.py for usage.
 
 The commentator observes the incoming video/audio feed and produces an audio
 commentary on it. While it is the agent who drives the conversation, it is
@@ -543,19 +543,20 @@ class CommentatorStateMachine:
         self.generation_request_info,
         self.ttfts,
     )
-    if (
-        self.state != State.OFF
-        and self.generation_request_info
-        and self.generation_request_info.time_audio_start is not None
-    ):
-      return (
-          self.generation_request_info.time_audio_start
-          # In WAITING_FOR_USER state, the audio duration can be 0. We add a
-          # minimum duration to make sure we trigger another model generate
-          # at a reasonable time.
-          + max(5.0, self.generation_request_info.audio_duration)
-          - self.predict_next_ttft()
-      )
+    if self.state == State.OFF or not self.generation_request_info:
+      return None
+    if self.generation_request_info.time_audio_start is None:
+      # A function-call turn can complete without emitting audio. Schedule the
+      # next action immediately instead of propagating an invalid timestamp.
+      return time.perf_counter()
+    return (
+        self.generation_request_info.time_audio_start
+        # In WAITING_FOR_USER state, the audio duration can be 0. We add a
+        # minimum duration to make sure we trigger another model generate
+        # at a reasonable time.
+        + max(5.0, self.generation_request_info.audio_duration)
+        - self.predict_next_ttft()
+    )
 
 
 class LiveCommentator(processor.Processor):
