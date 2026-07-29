@@ -236,8 +236,10 @@ flowchart TD
   PROFILE -->|Gemini 2.5| A[Async scheduled]
   PROFILE -->|Gemini 3.1| S[Sync local orchestration]
   A --> CC[Default input: client_content]
+  A --> MEDIA[Audio e frames: media legado]
   A --> FR[Function responses WHEN_IDLE / INTERRUPT / SILENT]
   S --> RT[Default input: realtime_input]
+  S --> AV[PCM: audio / frames: video]
   S --> TXT[Timers e eventos injetam texto realtime]
   S --> SYNC[Tool responses sem scheduling]
 ```

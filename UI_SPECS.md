@@ -377,6 +377,9 @@ flowchart LR
 O worklet deve usar buffer suficiente para reduzir overhead sem ultrapassar
 100 ms percebidos.
 
+O envelope WebSocket permanece `ProcessorPart`; no backend, o perfil 3.1
+converte PCM para o campo Live `audio`, enquanto o perfil 2.5 preserva `media`.
+
 ### 9.3 Reamostragem
 
 - entrada: Float32, sample rate do `AudioContext`;
@@ -438,6 +441,9 @@ Preferências:
 - JPEG 0,75;
 - 1 FPS por padrão;
 - não capturar se WebSocket não estiver aberto.
+
+No backend, o perfil 3.1 converte frames para o campo Live `video`; nunca deve
+usar o campo legado `media_chunks`.
 
 ## 12. Protocol handling
 

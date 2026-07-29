@@ -51,6 +51,7 @@ from absl import logging
 from genai_processors import content_api
 from genai_processors import processor
 from google.genai import client
+from google.genai import live
 from google.genai import types as genai_types
 
 
@@ -64,6 +65,13 @@ class DefaultInputTransport(enum.StrEnum):
 
   CLIENT_CONTENT = 'client_content'
   REALTIME_INPUT = 'realtime_input'
+
+
+class RealtimeMediaTransport(enum.StrEnum):
+  """Wire field used for realtime audio and video blobs."""
+
+  MEDIA = 'media'
+  TYPED = 'typed'
 
 
 def to_parts(
@@ -162,6 +170,9 @@ class LiveProcessor(processor.Processor):
       default_input_transport: DefaultInputTransport = (
           DefaultInputTransport.CLIENT_CONTENT
       ),
+      realtime_media_transport: RealtimeMediaTransport = (
+          RealtimeMediaTransport.MEDIA
+      ),
   ):
     """Initializes the Live Processor.
 
@@ -181,6 +192,9 @@ class LiveProcessor(processor.Processor):
         name. The default preserves the turn-based `send_client_content`
         behavior. `REALTIME_INPUT` is intended for Live models that require
         text and media context through `send_realtime_input`.
+      realtime_media_transport: Wire representation for realtime blobs.
+        `MEDIA` preserves the legacy `media` field. `TYPED` sends PCM through
+        `audio` and image frames through `video`.
 
     Returns:
       A `Processor` that calls the Genai API in a realtime (aka live) fashion.
@@ -193,6 +207,24 @@ class LiveProcessor(processor.Processor):
     self._model_name = model_name
     self._realtime_config = realtime_config
     self._default_input_transport = default_input_transport
+    self._realtime_media_transport = realtime_media_transport
+
+  async def _send_realtime_media(
+      self,
+      session: live.AsyncSession,
+      media_blob: genai_types.Blob,
+  ) -> None:
+    """Sends one realtime blob using the configured wire representation."""
+    if self._realtime_media_transport == RealtimeMediaTransport.MEDIA:
+      await session.send_realtime_input(media=media_blob)
+    elif content_api.is_audio(media_blob.mime_type):
+      await session.send_realtime_input(audio=media_blob)
+    elif content_api.is_image(media_blob.mime_type):
+      await session.send_realtime_input(video=media_blob)
+    else:
+      raise ValueError(
+          'Typed realtime input only supports audio or image media.'
+      )
 
   async def call(
       self, content: processor.ProcessorStream
@@ -229,7 +261,9 @@ class LiveProcessor(processor.Processor):
               chunk_part.substream_name == 'realtime'
               and chunk_part.part.inline_data
           ):
-            await session.send_realtime_input(media=chunk_part.part.inline_data)
+            await self._send_realtime_media(
+                session, chunk_part.part.inline_data
+            )
           elif chunk_part.substream_name == 'realtime' and content_api.is_text(
               chunk_part.mimetype
           ):
@@ -252,8 +286,8 @@ class LiveProcessor(processor.Processor):
                 )
                 await session.send_realtime_input(text=chunk_part.text)
               elif chunk_part.part.inline_data:
-                await session.send_realtime_input(
-                    media=chunk_part.part.inline_data
+                await self._send_realtime_media(
+                    session, chunk_part.part.inline_data
                 )
               else:
                 raise ValueError(

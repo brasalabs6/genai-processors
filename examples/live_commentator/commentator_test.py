@@ -24,6 +24,10 @@ class CommentatorModelProfileTest(unittest.TestCase):
         profile.function_call_mode,
         commentator.FunctionCallMode.ASYNC_SCHEDULED,
     )
+    self.assertEqual(
+        profile.realtime_media_transport,
+        live_model.RealtimeMediaTransport.MEDIA,
+    )
     declarations = [
         declaration
         for tool in commentator.create_live_tools(profile)
@@ -50,6 +54,10 @@ class CommentatorModelProfileTest(unittest.TestCase):
     self.assertEqual(
         profile.function_call_mode,
         commentator.FunctionCallMode.SYNCHRONOUS,
+    )
+    self.assertEqual(
+        profile.realtime_media_transport,
+        live_model.RealtimeMediaTransport.TYPED,
     )
     declarations = [
         declaration

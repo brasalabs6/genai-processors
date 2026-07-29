@@ -229,6 +229,8 @@ persistência no navegador nem fallback silencioso.
 | Capacidade | Gemini 2.5 | Gemini 3.1 |
 |---|---|---|
 | Transporte do substream padrão | `send_client_content` | `send_realtime_input` |
+| Campo de áudio realtime | `media` legado | `audio` |
+| Campo de frame realtime | `media` legado | `video` |
 | Ferramentas | `NON_BLOCKING` assíncronas | síncronas |
 | Próximo comentário | response `WHEN_IDLE` | texto realtime |
 | Interrupção visual | response `INTERRUPT` | texto realtime + evento `interrupted` |
@@ -237,7 +239,8 @@ persistência no navegador nem fallback silencioso.
 
 O perfil 2.5 preserva prompt, tools e scheduling anteriores. O perfil 3.1
 reimplementa os mesmos efeitos de produto por orquestração local porque não
-oferece scheduling assíncrono.
+oferece scheduling assíncrono. Ele também não aceita `media_chunks`: PCM deve
+ser enviado pelo campo `audio` e JPEG/PNG pelo campo `video`.
 
 ## 8. Contrato WebSocket
 

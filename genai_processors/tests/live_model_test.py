@@ -156,6 +156,58 @@ class LiveModelTest(unittest.IsolatedAsyncioTestCase):
           media=genai_types.Blob(data=content_bytes, mime_type='image/png')
       )
 
+  async def test_realtime_media_can_use_typed_audio_and_video_fields(self):
+    client_connection = mock_live_connect(
+        return_value=genai_types.LiveServerMessage(
+            server_content=genai_types.LiveServerContent(turn_complete=True),
+        )
+    )
+
+    with mock.patch.object(
+        live.AsyncLive,
+        'connect',
+        return_value=SimpleManagerMock(client_connection),
+    ):
+      model = live_model.LiveProcessor(
+          api_key='test_api_key',
+          model_name='test_model_name',
+          default_input_transport=(
+              live_model.DefaultInputTransport.REALTIME_INPUT
+          ),
+          realtime_media_transport=(live_model.RealtimeMediaTransport.TYPED),
+      )
+      content = [
+          content_api.ProcessorPart(
+              b'audio',
+              mimetype='audio/pcm;rate=16000',
+              substream_name='realtime',
+          ),
+          content_api.ProcessorPart(
+              b'video', mimetype='image/jpeg', substream_name='realtime'
+          ),
+          content_api.ProcessorPart(b'default-video', mimetype='image/png'),
+      ]
+
+      await model(streams.stream_content(content))
+
+      client_connection.send_realtime_input.assert_has_calls(
+          [
+              mock.call(
+                  audio=genai_types.Blob(
+                      data=b'audio', mime_type='audio/pcm;rate=16000'
+                  )
+              ),
+              mock.call(
+                  video=genai_types.Blob(data=b'video', mime_type='image/jpeg')
+              ),
+              mock.call(
+                  video=genai_types.Blob(
+                      data=b'default-video', mime_type='image/png'
+                  )
+              ),
+          ]
+      )
+
   async def test_receive_audio_with_transcription(self):
     # Test all fields of the server message.
     client_connection = mock_live_connect(

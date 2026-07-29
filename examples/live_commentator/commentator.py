@@ -189,6 +189,7 @@ class LiveModelProfile:
 
   model_name: str
   default_input_transport: live_model.DefaultInputTransport
+  realtime_media_transport: live_model.RealtimeMediaTransport
   function_call_mode: FunctionCallMode
 
 
@@ -196,11 +197,13 @@ _LIVE_MODEL_PROFILES = {
     MODEL_LIVE_2_5: LiveModelProfile(
         model_name=MODEL_LIVE_2_5,
         default_input_transport=live_model.DefaultInputTransport.CLIENT_CONTENT,
+        realtime_media_transport=live_model.RealtimeMediaTransport.MEDIA,
         function_call_mode=FunctionCallMode.ASYNC_SCHEDULED,
     ),
     MODEL_LIVE_3_1: LiveModelProfile(
         model_name=MODEL_LIVE_3_1,
         default_input_transport=live_model.DefaultInputTransport.REALTIME_INPUT,
+        realtime_media_transport=live_model.RealtimeMediaTransport.TYPED,
         function_call_mode=FunctionCallMode.SYNCHRONOUS,
     ),
 }
@@ -1090,10 +1093,11 @@ def create_live_commentator(
   profile = resolve_live_model_profile(live_model_name)
   logging.info(
       'Creating Live Commentator pipeline: model=%s function_call_mode=%s '
-      'default_input_transport=%s',
+      'default_input_transport=%s realtime_media_transport=%s',
       profile.model_name,
       profile.function_call_mode,
       profile.default_input_transport,
+      profile.realtime_media_transport,
   )
   detection_model = genai_model.GenaiModel(
       api_key=api_key,
@@ -1165,6 +1169,7 @@ def create_live_commentator(
       ),
       http_options=genai_types.HttpOptions(api_version='v1alpha'),
       default_input_transport=profile.default_input_transport,
+      realtime_media_transport=profile.realtime_media_transport,
   )
   return (
       event_detection_processor
