@@ -110,8 +110,12 @@ from google.genai import types as genai_types
 import numpy as np
 
 
-# Model to use for the live api processor.
-MODEL_LIVE = 'gemini-2.5-flash-native-audio-preview-12-2025'
+# Supported models for the live api processor.
+MODEL_LIVE_2_5 = 'gemini-2.5-flash-native-audio-preview-12-2025'
+MODEL_LIVE_3_1 = 'gemini-3.1-flash-live-preview'
+
+# Default retained for backwards compatibility and feature parity.
+MODEL_LIVE = MODEL_LIVE_2_5
 
 # Model to use for the event detection processor.
 MODEL_DETECTION = 'gemini-2.5-flash-lite'
@@ -171,7 +175,105 @@ START_AGAIN_MSG = (
     ' saying?'
 )
 
-# Async function declarations.
+
+class FunctionCallMode(enum.StrEnum):
+  """Function-call control strategy supported by a Live model."""
+
+  ASYNC_SCHEDULED = 'async_scheduled'
+  SYNCHRONOUS = 'synchronous'
+
+
+@dataclasses.dataclass(frozen=True)
+class LiveModelProfile:
+  """Capabilities required to adapt the commentator to a Live model."""
+
+  model_name: str
+  default_input_transport: live_model.DefaultInputTransport
+  function_call_mode: FunctionCallMode
+
+
+_LIVE_MODEL_PROFILES = {
+    MODEL_LIVE_2_5: LiveModelProfile(
+        model_name=MODEL_LIVE_2_5,
+        default_input_transport=live_model.DefaultInputTransport.CLIENT_CONTENT,
+        function_call_mode=FunctionCallMode.ASYNC_SCHEDULED,
+    ),
+    MODEL_LIVE_3_1: LiveModelProfile(
+        model_name=MODEL_LIVE_3_1,
+        default_input_transport=live_model.DefaultInputTransport.REALTIME_INPUT,
+        function_call_mode=FunctionCallMode.SYNCHRONOUS,
+    ),
+}
+
+
+def resolve_live_model_profile(model_name: str) -> LiveModelProfile:
+  """Returns the allowlisted model profile or rejects the configuration."""
+  try:
+    return _LIVE_MODEL_PROFILES[model_name]
+  except KeyError as exc:
+    raise ValueError(f'Unsupported live model: {model_name!r}.') from exc
+
+
+def _start_commentating_declaration(
+    *, asynchronous: bool
+) -> genai_types.FunctionDeclaration:
+  return genai_types.FunctionDeclaration(
+      name='start_commentating',
+      description=(
+          'Starts commentating on the video feed. The model should continue'
+          ' commentating until the user asks to stop. Caller must print() the'
+          ' result for this to work. Do not stop the commentary unless the'
+          ' user asks you to.'
+      ),
+      behavior='NON_BLOCKING' if asynchronous else None,
+  )
+
+
+def _wait_for_user_declaration(
+    *, asynchronous: bool
+) -> genai_types.FunctionDeclaration:
+  return genai_types.FunctionDeclaration(
+      name='wait_for_user',
+      description=(
+          'Waits for the user to respond to your question or to do something'
+          ' special on the video stream. Call this only after asking or'
+          ' instructing the user to do something, then end the turn silently.'
+      ),
+      behavior='NON_BLOCKING' if asynchronous else None,
+  )
+
+
+def create_live_tools(
+    profile: LiveModelProfile,
+) -> list[genai_types.Tool]:
+  """Builds declarations compatible with the selected model profile."""
+  asynchronous = profile.function_call_mode == FunctionCallMode.ASYNC_SCHEDULED
+  if asynchronous:
+    return TOOLS
+  return [
+      genai_types.Tool(
+          function_declarations=[
+              _start_commentating_declaration(asynchronous=False)
+          ]
+      ),
+      genai_types.Tool(
+          function_declarations=[_wait_for_user_declaration(asynchronous=False)]
+      ),
+      genai_types.Tool(
+          function_declarations=[
+              genai_types.FunctionDeclaration(
+                  name='stop_commentating',
+                  description=(
+                      'Stops automatic commentary when the user explicitly'
+                      ' asks for it. End the turn silently after calling.'
+                  ),
+              )
+          ]
+      ),
+  ]
+
+
+# Async function declarations retained as a public compatibility alias.
 TOOLS = [
     genai_types.Tool(
         function_declarations=[
@@ -214,6 +316,14 @@ TOOLS = [
         ]
     ),
 ]
+
+SYNCHRONOUS_PROMPT_PART = (
+    'The tools in this session are synchronous. Call `start_commentating` once'
+    ' when commentary should begin, `wait_for_user` when you need silence while'
+    ' the user acts, and `stop_commentating` only when the user explicitly asks'
+    ' you to stop automatic commentary. End the turn silently after'
+    ' `wait_for_user` or `stop_commentating`.'
+)
 
 # Prompt for the live api processor.
 PROMPT_PARTS = [
@@ -571,6 +681,7 @@ class LiveCommentator(processor.Processor):
       live_api_processor: live_model.LiveProcessor,
       chattiness: float = 1.0,
       unsafe_string_list: list[str] | None = None,
+      function_call_mode: FunctionCallMode = FunctionCallMode.ASYNC_SCHEDULED,
   ):
     """Initializes the processor.
 
@@ -581,6 +692,7 @@ class LiveCommentator(processor.Processor):
       unsafe_string_list: The strings to use for unsafe content. If None, the
         processor will not block unsafe content. If set, the processor will
         interrupt itself when it sees the string in the output.
+      function_call_mode: Strategy used to drive automatic commentary.
     """
     self._processor = live_api_processor
     self._chattiness = chattiness
@@ -589,6 +701,7 @@ class LiveCommentator(processor.Processor):
     # We use it request the next comment just before the current one finishes.
     self.ttfts = collections.deque(maxlen=50)
     self._unsafe_string_list = unsafe_string_list
+    self._function_call_mode = function_call_mode
     if unsafe_string_list is not None:
       pattern = '|'.join(re.escape(s) for s in unsafe_string_list)
       self._processor += text.MatchProcessor(
@@ -614,6 +727,15 @@ class LiveCommentator(processor.Processor):
       scheduling: genai_types.FunctionResponseScheduling = genai_types.FunctionResponseScheduling.WHEN_IDLE,
   ) -> None:
     """Triggers a comment from the model. Input queue is fed to the model."""
+    if self._function_call_mode == FunctionCallMode.SYNCHRONOUS:
+      input_queue.put_nowait(
+          content_api.ProcessorPart(
+              message,
+              role='user',
+              substream_name='realtime',
+          )
+      )
+      return
     if self._commentator.id is None:
       logging.debug(
           '%s - No commentator id, ignoring start_commentating: %s',
@@ -637,9 +759,24 @@ class LiveCommentator(processor.Processor):
       )
 
   def _stop_commentating(
-      self, input_queue: asyncio.Queue[content_api.ProcessorPart], fn_id: str
+      self,
+      input_queue: asyncio.Queue[content_api.ProcessorPart],
+      fn_id: str,
+      *,
+      function_name: str = 'start_commentating',
   ):
     """Cancels a comment from the model. Input queue is fed to the model."""
+    if self._function_call_mode == FunctionCallMode.SYNCHRONOUS:
+      input_queue.put_nowait(
+          content_api.ProcessorPart.from_function_response(
+              function_call_id=fn_id,
+              name=function_name,
+              response={
+                  'output': 'Commentary stopped. End this turn silently.'
+              },
+          )
+      )
+      return
     input_queue.put_nowait(
         content_api.ProcessorPart.from_function_response(
             function_call_id=fn_id,
@@ -654,6 +791,15 @@ class LiveCommentator(processor.Processor):
       self, input_queue: asyncio.Queue[content_api.ProcessorPart], fn_id: str
   ):
     """Cancels wait_for_user from the model. Input queue is fed to the model."""
+    if self._function_call_mode == FunctionCallMode.SYNCHRONOUS:
+      input_queue.put_nowait(
+          content_api.ProcessorPart.from_function_response(
+              function_call_id=fn_id,
+              name='wait_for_user',
+              response={'output': 'Waiting accepted. End this turn silently.'},
+          )
+      )
+      return
     input_queue.put_nowait(
         content_api.ProcessorPart.from_function_response(
             function_call_id=fn_id,
@@ -757,7 +903,17 @@ class LiveCommentator(processor.Processor):
             )
             self._stop_commentating(input_queue, fn_id)
           else:
-            self._commentator.update(Action.TURN_ON, fn_id)
+            if self._function_call_mode == FunctionCallMode.SYNCHRONOUS:
+              self._commentator.update(Action.TURN_ON)
+              input_queue.put_nowait(
+                  content_api.ProcessorPart.from_function_response(
+                      function_call_id=fn_id,
+                      name='start_commentating',
+                      response={'output': COMMENT_MSG},
+                  )
+              )
+            else:
+              self._commentator.update(Action.TURN_ON, fn_id)
         elif part.part.function_call.name == 'wait_for_user':
           if self._commentator.state != State.OFF:
             logging.debug(
@@ -785,6 +941,17 @@ class LiveCommentator(processor.Processor):
                     message=INTERRUPT_WAIT_FOR_USER_MSG,
                 )
             )
+        elif (
+            part.part.function_call.name == 'stop_commentating'
+            and self._function_call_mode == FunctionCallMode.SYNCHRONOUS
+        ):
+          reset_schedule_task()
+          self._commentator.update(Action.TURN_OFF)
+          self._stop_commentating(
+              input_queue,
+              fn_id,
+              function_name='stop_commentating',
+          )
         continue
 
       # Handle start of turn, considered as a user request.
@@ -895,6 +1062,7 @@ def create_live_commentator(
     api_key: str,
     chattiness: float = 1.0,
     unsafe_string_list: list[str] | None = None,
+    live_model_name: str = MODEL_LIVE,
 ) -> processor.Processor:
   r"""Creates a live commentator.
 
@@ -914,10 +1082,19 @@ def create_live_commentator(
       anything that is not allowed. None by default means nothing is blocked.
       When set, the commentator will interrupt itself if the model outputs this
       string and will not output the rest of the response.
+    live_model_name: Exact allowlisted Gemini Live model identifier.
 
   Returns:
     A live commentator processor.
   """
+  profile = resolve_live_model_profile(live_model_name)
+  logging.info(
+      'Creating Live Commentator pipeline: model=%s function_call_mode=%s '
+      'default_input_transport=%s',
+      profile.model_name,
+      profile.function_call_mode,
+      profile.default_input_transport,
+  )
   detection_model = genai_model.GenaiModel(
       api_key=api_key,
       model_name=MODEL_DETECTION,
@@ -969,10 +1146,14 @@ def create_live_commentator(
   )
   live_api_processor = live_model.LiveProcessor(
       api_key=api_key,
-      model_name=MODEL_LIVE,
+      model_name=profile.model_name,
       realtime_config=genai_types.LiveConnectConfig(
-          tools=TOOLS,
-          system_instruction=PROMPT_PARTS,
+          tools=create_live_tools(profile),
+          system_instruction=(
+              PROMPT_PARTS
+              if profile.function_call_mode == FunctionCallMode.ASYNC_SCHEDULED
+              else [*PROMPT_PARTS, SYNCHRONOUS_PROMPT_PART]
+          ),
           output_audio_transcription={},
           realtime_input_config=genai_types.RealtimeInputConfig(
               turn_coverage='TURN_INCLUDES_ALL_INPUT'
@@ -983,6 +1164,7 @@ def create_live_commentator(
           ),
       ),
       http_options=genai_types.HttpOptions(api_version='v1alpha'),
+      default_input_transport=profile.default_input_transport,
   )
   return (
       event_detection_processor
@@ -990,6 +1172,7 @@ def create_live_commentator(
           live_api_processor=live_api_processor,
           chattiness=chattiness,
           unsafe_string_list=unsafe_string_list,
+          function_call_mode=profile.function_call_mode,
       )
       + rate_limit_audio.RateLimitAudio(RECEIVE_SAMPLE_RATE)
   )

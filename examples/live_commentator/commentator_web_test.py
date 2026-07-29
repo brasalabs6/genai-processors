@@ -19,6 +19,28 @@ class CommentatorWebTest(unittest.TestCase):
         'gemini-2.5-flash-native-audio-preview-12-2025',
     )
 
+  @mock.patch.object(commentator_web.commentator, 'create_live_commentator')
+  def test_pipeline_factory_forwards_selected_live_model(self, create_pipeline):
+    commentator_web.create_live_commentator(
+        {
+            'chattiness': 0.25,
+            'live_model': commentator_web.commentator.MODEL_LIVE_3_1,
+        }
+    )
+
+    create_pipeline.assert_called_once_with(
+        api_key=mock.ANY,
+        chattiness=0.25,
+        unsafe_string_list=None,
+        live_model_name=commentator_web.commentator.MODEL_LIVE_3_1,
+    )
+
+  def test_pipeline_factory_rejects_unknown_live_model(self):
+    with self.assertRaisesRegex(ValueError, 'Unsupported live model'):
+      commentator_web.create_live_commentator(
+          {'live_model': 'gemini-unknown-live'}
+      )
+
   def test_tentative_trigger_time_falls_back_when_generation_has_no_audio(self):
     state_machine = commentator_web.commentator.CommentatorStateMachine(
         state=commentator_web.commentator.State.WAITING_FOR_USER,

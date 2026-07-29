@@ -65,16 +65,56 @@ class LiveModelTest(unittest.IsolatedAsyncioTestCase):
       ]
       await model(streams.stream_content(content, with_delay_sec=0.1))
 
-      client_connection.send_client_content.assert_has_calls([
-          mock.call(
-              turns=genai_types.Content(parts=[content[0]], role='user'),
-              turn_complete=True,
+      client_connection.send_client_content.assert_has_calls(
+          [
+              mock.call(
+                  turns=genai_types.Content(parts=[content[0]], role='user'),
+                  turn_complete=True,
+              ),
+              mock.call(
+                  turns=genai_types.Content(parts=[content[1]], role='model'),
+                  turn_complete=False,
+              ),
+          ]
+      )
+
+  async def test_default_content_can_use_realtime_input_transport(self):
+    client_connection = mock_live_connect(
+        return_value=genai_types.LiveServerMessage(
+            server_content=genai_types.LiveServerContent(turn_complete=True),
+        )
+    )
+
+    with mock.patch.object(
+        live.AsyncLive,
+        'connect',
+        return_value=SimpleManagerMock(client_connection),
+    ):
+      model = live_model.LiveProcessor(
+          api_key='test_api_key',
+          model_name='test_model_name',
+          default_input_transport=(
+              live_model.DefaultInputTransport.REALTIME_INPUT
           ),
-          mock.call(
-              turns=genai_types.Content(parts=[content[1]], role='model'),
-              turn_complete=False,
-          ),
-      ])
+      )
+      text_part = content_api.ProcessorPart('test_content')
+      image_part = content_api.ProcessorPart(
+          b'test_image_bytes', mimetype='image/png'
+      )
+
+      await model(streams.stream_content([text_part, image_part]))
+
+      client_connection.send_client_content.assert_not_called()
+      client_connection.send_realtime_input.assert_has_calls(
+          [
+              mock.call(text='test_content'),
+              mock.call(
+                  media=genai_types.Blob(
+                      data=b'test_image_bytes', mime_type='image/png'
+                  )
+              ),
+          ]
+      )
 
   async def test_connect_and_send_realtime_media(self):
     client_connection = mock_live_connect(

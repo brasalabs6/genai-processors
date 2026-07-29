@@ -246,10 +246,13 @@ def create_live_commentator(
   chattiness = float(config.get('chattiness', 0.5))
   if not 0.0 <= chattiness <= 1.0:
     raise ValueError('chattiness must be between 0 and 1.')
+  live_model_name = str(config.get('live_model', commentator.MODEL_LIVE))
+  commentator.resolve_live_model_profile(live_model_name)
   return commentator.create_live_commentator(
       api_key=os.environ['GOOGLE_API_KEY'],
       chattiness=chattiness,
       unsafe_string_list=None,
+      live_model_name=live_model_name,
   )
 
 

@@ -43,6 +43,7 @@ name (sent to content generate method).
 
 import asyncio
 from collections.abc import AsyncIterable
+import enum
 import re
 import time
 from typing import Iterable, Optional
@@ -56,6 +57,13 @@ from google.genai import types as genai_types
 PartTypes = content_api.ProcessorPartTypes
 ProcessorPart = content_api.ProcessorPart
 ProcessorPartTypes = content_api.ProcessorPartTypes
+
+
+class DefaultInputTransport(enum.StrEnum):
+  """Transport used for parts received on the default substream."""
+
+  CLIENT_CONTENT = 'client_content'
+  REALTIME_INPUT = 'realtime_input'
 
 
 def to_parts(
@@ -151,6 +159,9 @@ class LiveProcessor(processor.Processor):
       http_options: (
           genai_types.HttpOptions | genai_types.HttpOptionsDict | None
       ) = None,
+      default_input_transport: DefaultInputTransport = (
+          DefaultInputTransport.CLIENT_CONTENT
+      ),
   ):
     """Initializes the Live Processor.
 
@@ -166,6 +177,10 @@ class LiveProcessor(processor.Processor):
       http_options: Http options to use for the client. These options will be
         applied to all requests made by the client. Example usage: `client =
         genai.Client(http_options=types.HttpOptions(api_version='v1'))`.
+      default_input_transport: Transport used for parts without a substream
+        name. The default preserves the turn-based `send_client_content`
+        behavior. `REALTIME_INPUT` is intended for Live models that require
+        text and media context through `send_realtime_input`.
 
     Returns:
       A `Processor` that calls the Genai API in a realtime (aka live) fashion.
@@ -177,6 +192,7 @@ class LiveProcessor(processor.Processor):
     )
     self._model_name = model_name
     self._realtime_config = realtime_config
+    self._default_input_transport = default_input_transport
 
   async def call(
       self, content: processor.ProcessorStream
@@ -225,18 +241,39 @@ class LiveProcessor(processor.Processor):
             await session.send_realtime_input(text=chunk_part.text)
           elif not chunk_part.substream_name:
             # Default substream.
-            logging.debug(
-                '%s - Live Processor: sending client content: %s',
-                time.perf_counter(),
-                chunk_part.part,
-            )
-            turn_complete = chunk_part.get_metadata('turn_complete')
-            await session.send_client_content(
-                turns=genai_types.Content(
-                    parts=[chunk_part.part], role=chunk_part.role
-                ),
-                turn_complete=True if turn_complete is None else turn_complete,
-            )
+            if (
+                self._default_input_transport
+                == DefaultInputTransport.REALTIME_INPUT
+            ):
+              if content_api.is_text(chunk_part.mimetype):
+                logging.debug(
+                    '%s - Live Processor: sending default realtime text',
+                    time.perf_counter(),
+                )
+                await session.send_realtime_input(text=chunk_part.text)
+              elif chunk_part.part.inline_data:
+                await session.send_realtime_input(
+                    media=chunk_part.part.inline_data
+                )
+              else:
+                raise ValueError(
+                    'Default realtime input only supports text or inline media.'
+                )
+            else:
+              logging.debug(
+                  '%s - Live Processor: sending client content: %s',
+                  time.perf_counter(),
+                  chunk_part.part,
+              )
+              turn_complete = chunk_part.get_metadata('turn_complete')
+              await session.send_client_content(
+                  turns=genai_types.Content(
+                      parts=[chunk_part.part], role=chunk_part.role
+                  ),
+                  turn_complete=(
+                      True if turn_complete is None else turn_complete
+                  ),
+              )
           else:
             logging.debug(
                 '%s - Live Processor: part passed through: %s',
