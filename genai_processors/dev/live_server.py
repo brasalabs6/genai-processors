@@ -173,6 +173,7 @@ class AIStudioConnection:
     self.is_resetting = False
     # Config dictionary directly transferred to the genai processor.
     self.processor_config = {}
+    self.previous_processor_config = {}
 
   async def send(
       self,
@@ -231,6 +232,7 @@ class AIStudioConnection:
         self.is_resetting = True
         return
       elif is_config(part) and part.metadata:
+        self.previous_processor_config = self.processor_config
         self.processor_config = part.metadata
         logging.info(
             '%s - Config received: %s',
@@ -267,14 +269,31 @@ async def live_server(
           await ais.send(live_processor(ais.receive()))
       else:
         await ais.send(live_processor(ais.receive()))
+    except ConnectionClosed:
+      logging.debug('Connection between AIS and agent has been closed.')
+      break
     except Exception as e:  # pylint: disable=broad-exception-caught
-      logging.info(
+      logging.error(
           '%s - Resetting live server after receiving error :'
           ' %s\n\nTraceback:\n%s',
           time.perf_counter(),
           e,
           traceback.format_exc(),
       )
+      ais.processor_config = ais.previous_processor_config
+      try:
+        await ais_websocket.send(
+            json.dumps(
+                content_api.ProcessorPart(
+                    '',
+                    mimetype=_STATE_MIMETYPE,
+                    metadata={'error': 'pipeline_configuration_failed'},
+                ).to_dict()
+            )
+        )
+      except ConnectionClosed:
+        logging.debug('Connection between AIS and agent has been closed.')
+        break
 
     ais.is_resetting = False
 
@@ -300,7 +319,7 @@ async def run_server(
 ) -> None:
   """Starts the WebSocket server."""
   if trace_dir:
-   os.makedirs(trace_dir, exist_ok=True)
+    os.makedirs(trace_dir, exist_ok=True)
 
   # set this future to exit the server
   stop = asyncio.get_running_loop().create_future()

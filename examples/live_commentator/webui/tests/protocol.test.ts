@@ -1,8 +1,11 @@
 import {describe, expect, it} from 'vitest';
 
 import {
+  DEFAULT_LIVE_MODEL,
+  LIVE_MODELS,
   audioMessage,
   configMessage,
+  isLiveModelId,
   resolveWebSocketUrl,
   textMessage,
 } from '../src/protocol';
@@ -44,9 +47,21 @@ describe('WebSocket protocol', () => {
       role: 'user',
       substream_name: 'realtime',
     });
-    expect(configMessage(0.4)).toEqual({
+    expect(configMessage(0.4, LIVE_MODELS.GEMINI_3_1)).toEqual({
       mimetype: 'application/x-config',
-      metadata: {chattiness: 0.4},
+      metadata: {
+        chattiness: 0.4,
+        live_model: 'gemini-3.1-flash-live-preview',
+      },
     });
+  });
+
+  it('allowlists the two supported live models and defaults to 2.5', () => {
+    expect(DEFAULT_LIVE_MODEL).toBe(
+      'gemini-2.5-flash-native-audio-preview-12-2025',
+    );
+    expect(isLiveModelId(LIVE_MODELS.GEMINI_2_5)).toBe(true);
+    expect(isLiveModelId(LIVE_MODELS.GEMINI_3_1)).toBe(true);
+    expect(isLiveModelId('gemini-arbitrary-live')).toBe(false);
   });
 });

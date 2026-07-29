@@ -8,10 +8,13 @@ import {
   floatToPcm16,
 } from './audio';
 import {
+  DEFAULT_LIVE_MODEL,
+  LiveModelId,
   ProcessorMessage,
   audioMessage,
   configMessage,
   imageMessage,
+  isLiveModelId,
   micOffMessage,
   parseServerMessage,
   resetMessage,
@@ -79,8 +82,9 @@ class LiveCommentatorApp {
     element<HTMLInputElement>('#chattiness');
   private readonly chattinessValue =
     element<HTMLOutputElement>('#chattiness-value');
-  private readonly applyChattiness =
-    element<HTMLButtonElement>('#apply-chattiness');
+  private readonly liveModel = element<HTMLSelectElement>('#live-model');
+  private readonly applySettings =
+    element<HTMLButtonElement>('#apply-settings');
   private readonly resetButton =
     element<HTMLButtonElement>('#reset-session');
   private readonly frameCanvas =
@@ -108,6 +112,8 @@ class LiveCommentatorApp {
   private modelMessage: HTMLDivElement | null = null;
   private modelTranscript = '';
   private resetConfirmTimer: number | null = null;
+  private appliedLiveModel: LiveModelId = DEFAULT_LIVE_MODEL;
+  private pendingLiveModel: LiveModelId | null = null;
 
   constructor() {
     this.websocketUrl = resolveWebSocketUrl(window.location, window.location.search);
@@ -163,13 +169,27 @@ class LiveCommentatorApp {
         {minimumFractionDigits: 1, maximumFractionDigits: 1},
       );
     });
-    this.applyChattiness.addEventListener('click', () => {
+    this.applySettings.addEventListener('click', () => {
       const value = Number(this.chattiness.value);
-      if (this.send(configMessage(value))) {
+      const selectedModel = this.selectedLiveModel();
+      const modelChanged = selectedModel !== this.appliedLiveModel;
+      if (this.send(configMessage(value, selectedModel))) {
+        this.pendingLiveModel = selectedModel;
         this.player.flush();
         this.finalizeModelMessage();
         this.setAgentState('resetting');
-        this.addMessage('event', `Proatividade alterada para ${value.toFixed(1)}.`);
+        if (modelChanged) {
+          this.clearConversation();
+          this.addMessage(
+            'event',
+            `Modelo alterado para ${this.liveModel.selectedOptions[0]?.text ?? selectedModel}.`,
+          );
+        } else {
+          this.addMessage(
+            'event',
+            `Proatividade alterada para ${value.toFixed(1)}.`,
+          );
+        }
       }
     });
     this.resetButton.addEventListener('click', () => this.confirmOrReset());
@@ -206,7 +226,9 @@ class LiveCommentatorApp {
       this.reconnectAttempt = 0;
       this.setConnectionState('connected');
       this.setAgentState(this.derivedIdleState());
-      this.send(configMessage(Number(this.chattiness.value)));
+      const selectedModel = this.selectedLiveModel();
+      this.pendingLiveModel = selectedModel;
+      this.send(configMessage(Number(this.chattiness.value), selectedModel));
     });
     this.socket.addEventListener('message', (event) => {
       if (typeof event.data !== 'string') return;
@@ -287,12 +309,34 @@ class LiveCommentatorApp {
         this.setAgentState(this.derivedIdleState());
       }
       if (metadata.health_check === true) {
+        if (this.pendingLiveModel) {
+          this.appliedLiveModel = this.pendingLiveModel;
+          this.pendingLiveModel = null;
+        }
         this.setConnectionState('connected');
         if (this.agentState === 'resetting') {
           this.setAgentState(this.derivedIdleState());
         }
       }
+      if (metadata.error === 'pipeline_configuration_failed') {
+        this.pendingLiveModel = null;
+        this.liveModel.value = this.appliedLiveModel;
+        this.player.flush();
+        this.finalizeModelMessage();
+        this.showError(
+          'Falha ao iniciar o modelo',
+          'A configuração anterior foi restaurada. Consulte o arquivo mais recente na pasta logs para ver os detalhes técnicos.',
+        );
+      }
     }
+  }
+
+  private selectedLiveModel(): LiveModelId {
+    if (!isLiveModelId(this.liveModel.value)) {
+      this.liveModel.value = this.appliedLiveModel;
+      return this.appliedLiveModel;
+    }
+    return this.liveModel.value;
   }
 
   private async startMicrophone(): Promise<void> {
@@ -642,7 +686,8 @@ class LiveCommentatorApp {
     const connected = this.connectionState === 'connected';
     this.messageInput.disabled = !connected;
     this.sendButton.disabled = !connected;
-    this.applyChattiness.disabled = !connected;
+    this.applySettings.disabled = !connected;
+    this.liveModel.disabled = !connected;
   }
 
   private setAgentState(state: AgentState): void {

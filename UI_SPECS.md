@@ -61,7 +61,7 @@ Responsabilidades:
 │                                  │                           │
 │ estado vazio quando sem captura  │ [campo de texto] [enviar]│
 ├──────────────────────────────────┴───────────────────────────┤
-│ [Microfone] [Câmera] [Tela]  Chattiness ─────  [Aplicar]     │
+│ [Microfone] [Câmera] [Tela] [Modelo] Chattiness [Aplicar]    │
 │ [Resetar sessão]                         privacidade/status  │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -221,7 +221,21 @@ Câmera e tela são mutuamente exclusivas.
 
 Mover o slider não deve reiniciar. Somente aplicar envia configuração.
 
-### 6.7 Reset
+### 6.7 Modelo Live
+
+- `<select>` fechado, sem campo de ID arbitrário;
+- padrão: “Gemini 2.5 Flash Native Audio — compatível”;
+- opção: “Gemini 3.1 Flash Live Preview — novo”;
+- um único botão “Aplicar configurações” aplica modelo e `chattiness`;
+- não persistir em local storage;
+- reconnect mantém a seleção em memória;
+- reload volta ao padrão 2.5.
+
+Se o modelo mudou, aplicar deve fazer flush de áudio, limpar a conversa visível,
+mostrar evento de troca e entrar em `resetting`. Capturas ativas não são
+encerradas. Se apenas `chattiness` mudou, a conversa visível é preservada.
+
+### 6.8 Reset
 
 Botão secundário com confirmação leve textual, sem modal bloqueante:
 
@@ -229,7 +243,7 @@ Botão secundário com confirmação leve textual, sem modal bloqueante:
 - segundo clique envia reset;
 - após timeout volta ao normal.
 
-### 6.8 Erros
+### 6.9 Erros
 
 Região `role=alert`/`aria-live=assertive`:
 
@@ -267,6 +281,7 @@ Estado mínimo:
 - microfone;
 - fonte visual;
 - chattiness local/aplicado;
+- modelo selecionado, pendente e aplicado;
 - mensagem parcial do modelo;
 - histórico limitado;
 - erro atual;
@@ -279,6 +294,7 @@ Estados impossíveis:
 - microfone marcado ativo sem track viva;
 - falando sem `AudioContext`;
 - conectado sem objeto WebSocket aberto;
+- modelo aplicado fora da allowlist;
 
 ## 8. Conexão WebSocket
 
@@ -312,6 +328,23 @@ intencional durante unload não reconecta.
 
 Mídia não deve ser armazenada enquanto desconectado. Texto do usuário pode ser
 rejeitado com feedback em vez de ficar indefinidamente pendente.
+
+### 8.4 Configuração
+
+```json
+{
+  "mimetype": "application/x-config",
+  "metadata": {
+    "chattiness": 0.5,
+    "live_model": "gemini-2.5-flash-native-audio-preview-12-2025"
+  }
+}
+```
+
+Somente os dois valores presentes no `<select>` são construídos pelo protocolo.
+Enquanto a configuração está pendente, a UI aguarda `health_check`. Em
+`pipeline_configuration_failed`, descarta o pendente, restaura o valor aplicado
+e aponta para a pasta `logs`.
 
 ## 9. Captura de áudio
 
@@ -425,6 +458,7 @@ Mapeamento de estado:
 | `generation_complete` | `ready` |
 | `interrupted` | flush + `interrupted`, depois `ready` |
 | `health_check` | conexão saudável |
+| `pipeline_configuration_failed` | flush, reverte modelo e mostra erro seguro |
 | output transcription | atualiza mensagem parcial |
 | socket close | `reconnecting` |
 
@@ -499,6 +533,8 @@ O preview usa `aspect-ratio: 16 / 9` e nunca força viewport maior que a tela.
 - falar sobre o áudio;
 - enviar texto;
 - mudar chattiness;
+- alternar 2.5 → 3.1 → 2.5 mantendo capturas ativas;
+- simular falha do modelo e verificar reversão + mensagem de logs;
 - resetar;
 - desligar backend e observar reconexão;
 - testar layout estreito.
@@ -513,5 +549,7 @@ O preview usa `aspect-ratio: 16 / 9` e nunca força viewport maior que a tela.
 - Preview corresponde à fonte enviada.
 - Áudio recebido é audível e pode ser interrompido.
 - Erros não deixam botões em estado falso.
+- O seletor nunca aceita um terceiro ID.
+- Troca de modelo limpa conversa; mudança só de proatividade não limpa.
 - Nenhum erro bloqueante aparece no console durante fluxo feliz.
 - Interface permanece utilizável em 360 px de largura.

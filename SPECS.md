@@ -55,6 +55,7 @@ Gemini atual e o pacote base não podem depender de CUDA.
 - Entrada de texto.
 - Transcrição de saída.
 - Controle de `chattiness`.
+- Seleção explícita entre os dois modelos Gemini Live suportados.
 - Reset de sessão.
 - Estados de conexão, captura e agente.
 - Servidor HTTP local para o build Vite.
@@ -63,7 +64,6 @@ Gemini atual e o pacote base não podem depender de CUDA.
 
 ### 3.2 Não incluído
 
-- Alteração dos modelos Gemini configurados.
 - Groq Whisper, LLMs alternativas ou TTS local.
 - Persistência de conversas.
 - Autenticação multiusuário.
@@ -75,8 +75,9 @@ Gemini atual e o pacote base não podem depender de CUDA.
 ## 4. Maturidade e compatibilidade
 
 `genai-processors` é uma biblioteca publicada e externamente consumida. A
-mudança da UI não altera `Processor`, `ProcessorPart` ou o protocolo WebSocket
-existente.
+extensão de `LiveProcessor` é aditiva: o transporte padrão continua sendo
+`send_client_content`. `Processor`, `ProcessorPart` e mensagens existentes do
+protocolo WebSocket permanecem compatíveis.
 
 O antigo frontend específico de AI Studio é substituído. O backend
 `commentator_ais.py` permanece como entrada WebSocket compatível enquanto o novo
@@ -146,9 +147,13 @@ No Live Commentator, emite:
 Responsável por traduzir:
 
 - substream `realtime` para `send_realtime_input`;
-- substream padrão para `send_client_content`;
+- substream padrão para o transporte configurado pelo chamador;
 - function responses para `send_tool_response`;
 - mensagens Gemini Live para `ProcessorPart`.
+
+`DefaultInputTransport.CLIENT_CONTENT` é o padrão público. O modo
+`REALTIME_INPUT` envia texto e mídia inline do substream padrão por
+`send_realtime_input`, sem condicional baseada no nome do modelo.
 
 ### 6.4 `LiveCommentator`
 
@@ -214,10 +219,25 @@ EventDetection(
 
 Modelos atuais:
 
-- Live: `gemini-2.5-flash-native-audio-preview-12-2025`.
+- Live padrão: `gemini-2.5-flash-native-audio-preview-12-2025`.
+- Live opcional: `gemini-3.1-flash-live-preview`.
 - Detecção: `gemini-2.5-flash-lite`.
 
-Esses nomes não devem ser modificados nesta entrega.
+Somente os dois IDs Live exatos são aceitos. Não existe entrada arbitrária,
+persistência no navegador nem fallback silencioso.
+
+| Capacidade | Gemini 2.5 | Gemini 3.1 |
+|---|---|---|
+| Transporte do substream padrão | `send_client_content` | `send_realtime_input` |
+| Ferramentas | `NON_BLOCKING` assíncronas | síncronas |
+| Próximo comentário | response `WHEN_IDLE` | texto realtime |
+| Interrupção visual | response `INTERRUPT` | texto realtime + evento `interrupted` |
+| Espera | response `SILENT` | response síncrona + timer local |
+| Parada | cancelamento da call persistente | tool `stop_commentating` |
+
+O perfil 2.5 preserva prompt, tools e scheduling anteriores. O perfil 3.1
+reimplementa os mesmos efeitos de produto por orquestração local porque não
+oferece scheduling assíncrono.
 
 ## 8. Contrato WebSocket
 
@@ -295,12 +315,16 @@ O servidor converte para `audio_stream_end=true` no substream `realtime`.
 ```json
 {
   "mimetype": "application/x-config",
-  "metadata": {"chattiness": 0.5}
+  "metadata": {
+    "chattiness": 0.5,
+    "live_model": "gemini-2.5-flash-native-audio-preview-12-2025"
+  }
 }
 ```
 
 Configuração reinicializa o pipeline da conexão. O valor deve estar no intervalo
-`[0, 1]`.
+`[0, 1]` e `live_model` deve ser um dos dois IDs allowlisted. Se omitido por um
+cliente antigo, o backend usa Gemini 2.5.
 
 ### 8.7 Reset
 
@@ -345,9 +369,14 @@ Estados relevantes:
 - `generation_complete`;
 - `interrupted`;
 - `health_check`.
+- `error=pipeline_configuration_failed`.
 
 Ao receber `interrupted`, a UI deve parar todas as fontes agendadas antes de
 processar novo áudio.
+
+O estado de erro é deliberadamente seguro: não contém mensagem do provider,
+token ou traceback. A UI restaura a seleção aplicada anteriormente e orienta o
+usuário a consultar `logs/`; o traceback completo permanece apenas no arquivo.
 
 ## 9. Requisitos funcionais
 
@@ -402,6 +431,13 @@ Reset deve parar áudio, limpar transcrição e solicitar novo pipeline.
 ### RF-011 Privacidade
 
 Nenhum dado capturado deve ser persistido localmente pelo aplicativo.
+
+### RF-012 Seleção de modelo
+
+O usuário pode selecionar Gemini 2.5 ou Gemini 3.1 e aplicar a configuração. A
+troca deve parar playback, limpar a conversa visível e criar um novo pipeline,
+sem desligar capturas ativas. Alterar somente `chattiness` preserva o histórico.
+Gemini 2.5 é o padrão após reload; a seleção em memória permanece em reconnect.
 
 ## 10. Requisitos não funcionais
 
@@ -468,6 +504,7 @@ restrição.
 | Áudio inválido | Bloco é descartado sem derrubar sessão |
 | Reset/config | Áudio local é interrompido |
 | Desconexão | Playback pendente é descartado |
+| Modelo inválido/indisponível | Sem fallback silencioso; UI reverte seleção e aponta para logs |
 
 ## 12. Evolução para backends alternativos
 
@@ -511,6 +548,11 @@ As tool calls assíncronas do Gemini Live não são contrato portátil.
 - PCM 24 kHz é reproduzido.
 - `interrupted` descarta playback pendente.
 - Chattiness e reset funcionam pelo contrato existente.
+- O seletor oferece somente os dois modelos allowlisted.
+- Trocar modelo faz hard reset visual sem desligar mídia ativa.
+- Gemini 2.5 mantém o fluxo assíncrono anterior.
+- Gemini 3.1 mantém comentário proativo, interrupção, espera e parada por
+  orquestração síncrona local.
 - Testes Python e TypeScript relevantes passam.
 - Um smoke real confirma áudio retornado pelo Live Commentator.
 
@@ -525,4 +567,4 @@ As tool calls assíncronas do Gemini Live não são contrato portátil.
 - `genai_processors/dev/live_server.py`
 - `genai_processors/core/realtime.py`
 - `genai_processors/tests/live_model_test.py`
-- `genai_processors/tests/live_server_test.py`
+- `genai_processors/dev/live_server_test.py`

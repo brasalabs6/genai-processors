@@ -40,6 +40,11 @@ Open <http://127.0.0.1:8000/?wsPort=8765>. The launcher serves the Vite build
 and starts the commentator WebSocket server. The browser never receives the API
 key.
 
+The WebUI defaults to
+`gemini-2.5-flash-native-audio-preview-12-2025` and can switch the active
+session to `gemini-3.1-flash-live-preview`. Applying a different model resets
+the conversation state but keeps active microphone, camera, and screen streams.
+
 Each launcher execution writes a rotating diagnostic file under the
 repository-root `logs/` directory and prints its exact path at startup. Files
 are capped at 10 MiB with five backups. They include timestamps, severity,
@@ -113,10 +118,12 @@ combination of:
 2.  **Voice Activity Detection (VAD)**: Built into the Gemini Live API, VAD
     detects when the user is speaking, allowing the user to interrupt the
     commentary.
-3.  **Async Function Calls**: The Gemini API supports non-blocking function
-    calls. The `LiveCommentator` uses this to schedule future commentary
+3.  **Model-adapted Function Calls**: Gemini 2.5 supports non-blocking function
+    calls. The `LiveCommentator` uses them to schedule future commentary
     *without* interrupting the current utterance. This allows for a more natural
-    and responsive experience. One async function call, `wait_for_user`, is
+    and responsive experience. Gemini 3.1 exposes synchronous tools, so the
+    same product behavior is driven by local timers and realtime text input.
+    One function call, `wait_for_user`, is
     returned by Gemini when the Live Commentator needs to wait for the user to
     answer a question or to do something. It waits for a set duration (currently
     5 seconds) and resumes the commentary if no relevant input is received.
@@ -202,9 +209,9 @@ transitions:
 
 *   **TURN_ON**: Activates the commentator. The model will begin generating
     commentary. This action is triggered by the `start_commentating` async
-    function call. The async nature of the function is what enables the flexible
-    scheduling of the commentary: it can interrupt, wait until the current
-    comment is done, or just be silent and let the user talk.
+    function call. With Gemini 2.5, async scheduling can interrupt, wait until
+    the current comment is done, or stay silent. With Gemini 3.1, the adapter
+    produces those effects through synchronous responses and local scheduling.
 *   **TURN_OFF**: Deactivates the current commentator. The user can still
     ask questions, but the commentator will not automatically generate
     commentaries.

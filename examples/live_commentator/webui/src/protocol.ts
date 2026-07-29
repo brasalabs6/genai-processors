@@ -17,6 +17,19 @@ export interface ProcessorMessage {
   metadata?: Record<string, unknown>;
 }
 
+export const LIVE_MODELS = {
+  GEMINI_2_5: 'gemini-2.5-flash-native-audio-preview-12-2025',
+  GEMINI_3_1: 'gemini-3.1-flash-live-preview',
+} as const;
+
+export type LiveModelId = (typeof LIVE_MODELS)[keyof typeof LIVE_MODELS];
+
+export const DEFAULT_LIVE_MODEL: LiveModelId = LIVE_MODELS.GEMINI_2_5;
+
+export function isLiveModelId(value: string): value is LiveModelId {
+  return Object.values(LIVE_MODELS).some((model) => model === value);
+}
+
 export function resolveWebSocketUrl(
   location: BrowserLocation,
   search: string,
@@ -74,10 +87,16 @@ export function imageMessage(base64Data: string): ProcessorMessage {
   };
 }
 
-export function configMessage(chattiness: number): ProcessorMessage {
+export function configMessage(
+  chattiness: number,
+  liveModel: LiveModelId,
+): ProcessorMessage {
   return {
     mimetype: 'application/x-config',
-    metadata: {chattiness},
+    metadata: {
+      chattiness,
+      live_model: liveModel,
+    },
   };
 }
 

@@ -29,7 +29,7 @@ sequenceDiagram
   Browser->>HTTP: GET /
   HTTP-->>Browser: HTML/JS/CSS
   Browser->>WS: conecta WebSocket
-  Browser->>WS: application/x-config
+  Browser->>WS: config(chattiness, live_model)
   WS->>WS: cria pipeline da sessão
   WS-->>Browser: health_check
 ```
@@ -228,7 +228,24 @@ stateDiagram-v2
 | qualquer ativo | `WAIT_FOR_USER` | `WAITING_FOR_USER` | agenda retomada |
 | qualquer ativo | `STREAM_MEDIA_PART` | `TALKING`, exceto waiting | atualiza TTFT/duração |
 
-## 8. Fluxo de início de comentário
+## 8. Estratégias por perfil Live
+
+```mermaid
+flowchart TD
+  CFG[Config allowlisted] --> PROFILE{Perfil}
+  PROFILE -->|Gemini 2.5| A[Async scheduled]
+  PROFILE -->|Gemini 3.1| S[Sync local orchestration]
+  A --> CC[Default input: client_content]
+  A --> FR[Function responses WHEN_IDLE / INTERRUPT / SILENT]
+  S --> RT[Default input: realtime_input]
+  S --> TXT[Timers e eventos injetam texto realtime]
+  S --> SYNC[Tool responses sem scheduling]
+```
+
+O branch ocorre uma vez na resolução de capacidades. `LiveProcessor` conhece
+somente `DefaultInputTransport`; ele não conhece IDs Gemini.
+
+## 9. Fluxo de início de comentário
 
 ```mermaid
 sequenceDiagram
@@ -247,7 +264,25 @@ sequenceDiagram
   LC-->>UI: áudio limitado
 ```
 
-## 9. Fluxo de barge-in do usuário
+No perfil 3.1, `TURN_ON` não guarda um ID persistente. A resposta síncrona de
+`start_commentating` contém `COMMENT_MSG`; retomadas seguintes são texto
+realtime.
+
+```mermaid
+sequenceDiagram
+  participant ED as EventDetection
+  participant Live as Gemini 3.1
+  participant LC as LiveCommentator
+  ED->>Live: texto realtime "start commentating"
+  Live-->>LC: function_call start_commentating(id)
+  LC->>LC: TURN_ON sem ID persistente
+  LC->>Live: function_response COMMENT_MSG
+  Live-->>LC: PCM + transcrição
+  LC->>LC: timer local agenda próximo comentário
+  LC->>Live: COMMENT_MSG via realtime_input
+```
+
+## 10. Fluxo de barge-in do usuário
 
 ```mermaid
 sequenceDiagram
@@ -267,7 +302,7 @@ sequenceDiagram
   LC-->>UI: novo áudio
 ```
 
-## 10. Fluxo de interrupção visual
+## 11. Fluxo de interrupção visual
 
 ```mermaid
 sequenceDiagram
@@ -289,7 +324,11 @@ sequenceDiagram
 O áudio antigo só é interrompido quando o novo comentário começa, evitando
 silêncio desnecessário.
 
-## 11. Fluxo `wait_for_user`
+No perfil 3.1, `interrupt_request` injeta `INTERRUPT_COMMENT_MSG` por
+`send_realtime_input`. O evento `interrupted` confirma a troca de geração; o
+primeiro PCM novo mantém a mesma semântica de flush no browser.
+
+## 12. Fluxo `wait_for_user`
 
 ```mermaid
 sequenceDiagram
@@ -313,7 +352,12 @@ sequenceDiagram
   end
 ```
 
-## 12. Agendamento e latência
+No perfil 3.1, a resposta de `wait_for_user` não usa `SILENT`; ela instrui o
+modelo a encerrar o turno silenciosamente. O timer local e suas regras de
+cancelamento permanecem iguais. `stop_commentating` encerra o timer e executa
+`TURN_OFF`.
+
+## 13. Agendamento e latência
 
 Para cada geração, o comentarista guarda:
 
@@ -334,7 +378,7 @@ O próximo comentário é solicitado próximo ao fim do áudio atual. `chattines
 controla probabilisticamente se a solicitação ocorre; tentativas recusadas são
 reavaliadas a cada 3 segundos.
 
-## 13. Estado da WebUI
+## 14. Estado da WebUI
 
 ```mermaid
 stateDiagram-v2
@@ -350,12 +394,13 @@ stateDiagram-v2
   INTERRUPTED --> CONNECTED: fila limpa
   DISCONNECTED --> CONNECTING: backoff
   CONNECTED --> ERROR: falha local recuperável
+  RESETTING --> ERROR: pipeline_configuration_failed
   ERROR --> CONNECTED: erro reconhecido/recurso reativado
 ```
 
 Captura visual é estado ortogonal: `NONE`, `CAMERA` ou `SCREEN`.
 
-## 14. Reset e configuração
+## 15. Reset e configuração
 
 Configuração e reset encerram o stream de entrada atual no servidor. O loop
 `live_server` cria uma nova instância de pipeline na mesma conexão e envia um
@@ -368,9 +413,24 @@ A UI deve:
 3. enviar comando/configuração;
 4. indicar reinicialização;
 5. aceitar health check;
-6. continuar capturas ativas somente após conexão saudável.
+6. manter streams de microfone/câmera/tela ativos durante o reset.
 
-## 15. Encerramento
+```mermaid
+stateDiagram-v2
+  [*] --> Applied25
+  Applied25 --> Pending31: aplicar Gemini 3.1
+  Pending31 --> Applied31: health_check
+  Pending31 --> Applied25: pipeline_configuration_failed
+  Applied31 --> Pending25: aplicar Gemini 2.5
+  Pending25 --> Applied25: health_check
+  Pending25 --> Applied31: pipeline_configuration_failed
+```
+
+Troca de modelo limpa conversa e áudio. Configuração apenas de `chattiness`
+preserva o histórico. Um erro reverte o `<select>` para o último modelo aplicado
+e expõe detalhes somente no log.
+
+## 16. Encerramento
 
 Ao receber `SIGINT`/`KeyboardInterrupt`:
 
@@ -387,7 +447,7 @@ Ao fechar/recarregar a aba:
 - `AudioContext` é fechado;
 - WebSocket é fechado intencionalmente.
 
-## 16. Diagnóstico por logs
+## 17. Diagnóstico por logs
 
 O launcher instala o handler de arquivo antes de validar ou abrir serviços. O
 arquivo ativo é informado no terminal e segue:
@@ -413,7 +473,7 @@ Ao reportar um erro, preservar o arquivo da execução correspondente e informar
 o horário aproximado da ação. Nunca anexar `.env`, API keys, áudio bruto ou
 frames de tela. `--debug` deve ser usado para reproduções controladas.
 
-## 17. Workflow de desenvolvimento
+## 18. Workflow de desenvolvimento
 
 Mudanças comportamentais seguem:
 
@@ -441,12 +501,13 @@ Checklist por mudança:
 9. Fazer smoke HTTP/WebSocket e, quando aplicável, API real.
 10. Verificar secrets, artefatos gerados e estado Git.
 
-## 18. Matriz de validação
+## 19. Matriz de validação
 
 | Área | Validação |
 |---|---|
 | Máquina do comentarista | testes unitários + smoke Live |
-| Protocolo WebSocket | `live_server_test.py` |
+| Protocolo WebSocket | `genai_processors/dev/live_server_test.py` |
+| Perfis e tools | `examples/live_commentator/commentator_test.py` |
 | Launcher HTTP | teste com porta efêmera |
 | Conversão PCM | testes TypeScript |
 | URL WebSocket | testes TypeScript |
