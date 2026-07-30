@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "scenarios": [
+    {
+      "id": "red_object_on_desk_ptbr",
+      "description": "A desktop scene with a clearly visible red object and a Portuguese voice request.",
+      "image_prompt": "Create a realistic 16:9 desktop scene for testing a vision assistant. Show a clean wooden desk with one clearly visible bright red coffee mug in the center, a closed notebook beside it, neutral lighting, no people, no text, no logos.",
+      "audio_script": "Leonidas, diga o que você vê e confirme que me ouviu.",
+      "expected_terms": ["mesa", "vermelho", "caneca", "ouvi"],
+      "timeout_seconds": 45,
+      "minimum_audio_seconds": 0.25
+    }
+  ]
+}

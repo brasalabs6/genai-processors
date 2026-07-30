@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="Leonidas — agente conversacional multimodal local" />
+    <title>Leonidas</title>
+  </head>
+  <body>
+    <div id="app" class="app-shell">
+      <header class="session-bar">
+        <div class="brand">
+          <span class="brand-mark">Λ</span>
+          <div><strong>Leonidas</strong><small>agente multimodal local</small></div>
+        </div>
+        <div class="status-strip" aria-live="polite">
+          <span id="rest-status" class="status neutral">API</span>
+          <span id="ws-status" class="status neutral">WebSocket</span>
+          <span id="session-status" class="status neutral">Parado</span>
+        </div>
+        <div class="session-actions">
+          <button id="start-session" class="primary">Iniciar</button>
+          <button id="stop-session" disabled>Parar</button>
+          <button id="apply-config" disabled>Aplicar</button>
+        </div>
+      </header>
+
+      <div id="error-banner" class="error-banner" role="alert" hidden>
+        <strong id="error-title">Erro</strong><span id="error-detail"></span>
+        <button id="dismiss-error" aria-label="Fechar erro">×</button>
+      </div>
+
+      <main class="dashboard">
+        <section class="panel capture-panel">
+          <div class="panel-heading"><div><span class="eyebrow">Contexto</span><h1>Visão e voz</h1></div><span id="capture-state" class="quiet">Sem captura</span></div>
+          <div class="preview-stage">
+            <video id="preview" autoplay muted playsinline hidden></video>
+            <div id="preview-empty" class="preview-empty"><span>◎</span><p>Ative a câmera ou compartilhe a tela</p></div>
+          </div>
+          <div class="capture-controls">
+            <button id="microphone" aria-pressed="false"><span>Mic</span><small>Desligado</small></button>
+            <button id="camera" aria-pressed="false"><span>Câmera</span><small>Desligada</small></button>
+            <button id="screen" aria-pressed="false"><span>Tela</span><small>Não compartilhada</small></button>
+          </div>
+          <p class="hint">Use fones se o cancelamento de eco do navegador não for suficiente.</p>
+        </section>
+
+        <section class="panel conversation-panel">
+          <div class="panel-heading"><div><span class="eyebrow">Sessão</span><h2>Conversa</h2></div><button id="clear-conversation" class="ghost">Limpar</button></div>
+          <div id="conversation" class="conversation" aria-live="polite"><div class="empty-copy">A conversa aparecerá aqui. O conteúdo não é persistido.</div></div>
+          <form id="message-form" class="message-form">
+            <textarea id="message" rows="2" placeholder="Fale ou escreva para o Leonidas…" aria-label="Mensagem"></textarea>
+            <button type="submit" class="primary">Enviar</button>
+          </form>
+        </section>
+
+        <section class="panel metrics-panel">
+          <div class="panel-heading"><div><span class="eyebrow">Realtime</span><h2>Latência</h2></div><span id="session-duration" class="quiet">00:00</span></div>
+          <div class="metric-grid">
+            <article><span>TTFA atual</span><strong id="metric-current">—</strong></article>
+            <article><span>TTFA p50</span><strong id="metric-p50">—</strong></article>
+            <article><span>TTFA p95</span><strong id="metric-p95">—</strong></article>
+            <article><span>Startup</span><strong id="metric-startup">—</strong></article>
+          </div>
+          <div class="counter-row"><span>Frames <b id="frames-count">0</b></span><span>Áudio in <b id="audio-in-count">0</b></span><span>Áudio out <b id="audio-out-count">0</b></span></div>
+        </section>
+
+        <section class="panel config-panel">
+          <div class="panel-heading"><div><span class="eyebrow">Controle</span><h2>Configuração</h2></div><span id="draft-status" class="quiet">Ativa</span></div>
+          <div class="form-grid">
+            <label>Modelo<select id="model"></select></label>
+            <label>Preset<select id="preset"><option value="low_latency">Baixa latência</option><option value="balanced">Equilibrado</option><option value="quality">Qualidade</option></select></label>
+            <label>Voz<div class="inline-field"><select id="voice"></select><button id="preview-voice" type="button">Ouvir</button></div></label>
+            <label>Proatividade <output id="chattiness-value">50%</output><input id="chattiness" type="range" min="0" max="1" step="0.05" /></label>
+          </div>
+          <label class="objective-label">Objetivo e persona<textarea id="objective" rows="5" maxlength="12000"></textarea><small><span id="objective-count">0</span>/12.000 · instruções internas permanecem protegidas</small></label>
+          <details class="advanced">
+            <summary>Configuração avançada</summary>
+            <div class="form-grid advanced-grid">
+              <label>Intervalo de frames (ms)<input id="frame-interval" type="number" min="250" max="10000" /></label>
+              <label>Largura máxima<input id="frame-width" type="number" min="160" max="1920" /></label>
+              <label>Altura máxima<input id="frame-height" type="number" min="120" max="1080" /></label>
+              <label>Qualidade JPEG<input id="jpeg-quality" type="number" min="0.3" max="0.95" step="0.05" /></label>
+              <label>Resolução do modelo<select id="model-resolution"><option value="low">Baixa</option><option value="medium">Média</option><option value="high">Alta</option></select></label>
+              <label>Temperatura<input id="temperature" type="number" min="0" max="2" step="0.1" placeholder="Padrão" /></label>
+              <label id="thinking-level-wrap">Thinking<select id="thinking-level"><option value="">Padrão</option><option value="minimal">Mínimo</option><option value="low">Baixo</option><option value="medium">Médio</option><option value="high">Alto</option></select></label>
+              <label id="thinking-budget-wrap">Thinking budget<input id="thinking-budget" type="number" min="0" placeholder="Padrão" /></label>
+              <label>VAD início<select id="vad-start"><option value="">Padrão</option><option value="high">Alta sensibilidade</option><option value="low">Baixa sensibilidade</option></select></label>
+              <label>VAD fim<select id="vad-end"><option value="">Padrão</option><option value="high">Alta sensibilidade</option><option value="low">Baixa sensibilidade</option></select></label>
+              <label>Padding inicial (ms)<input id="vad-padding" type="number" min="0" max="10000" placeholder="Padrão" /></label>
+              <label>Silêncio final (ms)<input id="vad-silence" type="number" min="0" max="10000" placeholder="Padrão" /></label>
+            </div>
+          </details>
+        </section>
+
+        <section class="panel logs-panel">
+          <div class="panel-heading"><div><span class="eyebrow">Diagnóstico</span><h2>Logs</h2></div><div class="log-actions"><button id="pause-logs">Pausar</button><button id="clear-logs" class="ghost">Limpar tela</button></div></div>
+          <div class="log-toolbar"><select id="log-file"><option value="">Tail ao vivo</option></select><select id="log-level"><option value="">Todos os níveis</option><option>ERROR</option><option>WARNING</option><option>INFO</option><option>DEBUG</option></select><input id="log-search" type="search" placeholder="Filtrar logs" /></div>
+          <pre id="logs" tabindex="0" aria-label="Logs do Leonidas"></pre>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

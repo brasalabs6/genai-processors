@@ -248,7 +248,15 @@ class Processor(abc.ABC):
           async for p in streams.dequeue(output_queue):
             yield p
         finally:
-          await task
+          if not task.done():
+            task.cancel()
+          try:
+            await task
+          except asyncio.CancelledError:
+            # Closing or cancelling the consumer must also tear down the
+            # background producer. The consumer's own cancellation or
+            # GeneratorExit continues after this finally block.
+            pass
       else:
         async for p in _normalize_part_stream(
             self.call(stream_input()), producer=self.call

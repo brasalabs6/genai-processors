@@ -46,6 +46,35 @@ class ProcessorPipelineTest(parameterized.TestCase):
     for part in content_api.ProcessorContent(result):
       self.assertEqual(part.substream_name, 'status')
 
+  def test_cancelling_output_cancels_background_producer_immediately(self):
+    producer_finished = asyncio.Event()
+
+    @processor.processor_function
+    async def blocked_processor(
+        content: processor.ProcessorStream,
+    ) -> AsyncIterable[content_api.ProcessorPartTypes]:
+      del content
+      try:
+        await asyncio.sleep(0.25)
+        yield 'late output'
+      finally:
+        producer_finished.set()
+
+    async def cancel_output():
+      output = blocked_processor(content_api.ProcessorContent(['input']))
+      task = asyncio.create_task(anext(output.__aiter__()))
+      await asyncio.sleep(0)
+      started = time.perf_counter()
+      task.cancel()
+      with self.assertRaises(asyncio.CancelledError):
+        await task
+      return time.perf_counter() - started
+
+    elapsed = asyncio.run(cancel_output())
+
+    self.assertLess(elapsed, 0.1)
+    self.assertTrue(producer_finished.is_set())
+
   def test_chain_processors(self):
     @processor.processor_function
     async def processor_0(

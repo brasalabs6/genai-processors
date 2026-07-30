@@ -6,6 +6,7 @@ node_modules/
 build/
 dist/
 /logs/
+/leonidas/.runtime/
 
 # API keys and secrets.
 .env
