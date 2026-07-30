@@ -302,7 +302,9 @@ async def live_server(
       await ais_websocket.send(
           json.dumps(
               content_api.ProcessorPart(
-                  '', metadata={'health_check': True}
+                  '',
+                  mimetype=_STATE_MIMETYPE,
+                  metadata={'health_check': True},
               ).to_dict()
           )
       )
