@@ -14,12 +14,15 @@ from leonidas import api
 from leonidas import log_store
 
 
-_ALLOWED_ORIGINS = {
-    'http://127.0.0.1:8000',
-    'http://localhost:8000',
-    'http://127.0.0.1:5173',
-    'http://localhost:5173',
-}
+def local_origins(web_port: int) -> tuple[str | None, ...]:
+  """Returns browser origins permitted for this local HTTP server."""
+  return (
+      None,
+      f'http://127.0.0.1:{web_port}',
+      f'http://localhost:{web_port}',
+      'http://127.0.0.1:5173',
+      'http://localhost:5173',
+  )
 
 
 class _ThreadingHTTPServer(server.ThreadingHTTPServer):
@@ -49,13 +52,17 @@ def create_server(
     def log_message(self, format_string: str, *args: Any) -> None:
       # Access logs deliberately omit query strings and request bodies.
       del format_string, args
-      logging.info(
-          'HTTP %s %s', self.command, self.path.split('?', maxsplit=1)[0]
+      path = self.path.split('?', maxsplit=1)[0]
+      logger = (
+          logging.debug
+          if path in ('/api/v1/metrics', '/api/v1/resources')
+          else logging.info
       )
+      logger('HTTP %s %s', self.command, path)
 
     def _origin_allowed(self) -> bool:
       origin = self.headers.get('Origin')
-      return origin is None or origin in _ALLOWED_ORIGINS
+      return origin in local_origins(self.server.server_port)
 
     def _send(self, response: api.ApiResponse) -> None:
       body = (

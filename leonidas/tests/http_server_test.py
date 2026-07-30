@@ -64,6 +64,37 @@ class HttpServerTest(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(status, 200)
     self.assertEqual(body['data']['method'], 'GET')
 
+  async def test_allows_same_origin_when_running_on_non_default_port(self):
+    def fetch():
+      host, port = self.server.server_address
+      req = request.Request(
+          f'http://{host}:{port}/api/v1/session',
+          headers={'Origin': f'http://127.0.0.1:{port}'},
+      )
+      with request.urlopen(req, timeout=2) as response:
+        return response.status, json.loads(response.read())
+
+    status, body = await asyncio.to_thread(fetch)
+    self.assertEqual(status, 200)
+    self.assertEqual(body['data']['method'], 'GET')
+
+  async def test_rejects_unallowlisted_origin(self):
+    def fetch():
+      host, port = self.server.server_address
+      req = request.Request(
+          f'http://{host}:{port}/api/v1/session',
+          headers={'Origin': 'http://evil.example'},
+      )
+      try:
+        request.urlopen(req, timeout=2)
+      except request.HTTPError as exc:
+        return exc.code, json.loads(exc.read())
+      raise AssertionError('request unexpectedly succeeded')
+
+    status, body = await asyncio.to_thread(fetch)
+    self.assertEqual(status, 403)
+    self.assertEqual(body['error']['code'], 'origin_forbidden')
+
   def test_rejects_non_loopback_bind(self):
     with self.assertRaisesRegex(ValueError, '127.0.0.1'):
       http_server.create_server(
