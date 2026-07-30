@@ -27,9 +27,19 @@ export interface GenerationConfig {
   context_target_tokens: number | null;
 }
 
+export interface CascadeConfig {
+  stt_model_id: string;
+  llm_model_id: string;
+  tts_model_id: string;
+  reasoning_effort: 'low' | 'medium' | 'high';
+  language: 'pt';
+  device: 'auto' | 'cuda' | 'cpu';
+  voice_id: string;
+}
+
 export interface AgentConfig {
   schema_version: 1;
-  pipeline_id: 'gemini_live';
+  pipeline_id: 'gemini_live' | 'cascade_local';
   model_id: string;
   voice_name: string | null;
   objective: string;
@@ -38,6 +48,7 @@ export interface AgentConfig {
   media: MediaConfig;
   vad: VadConfig;
   generation: GenerationConfig;
+  cascade: CascadeConfig;
 }
 
 export interface ConfigSnapshot {
@@ -50,16 +61,35 @@ export interface ConfigSnapshot {
 export interface ModelCapability {
   id: string;
   label: string;
-  thinking_field: 'thinking_level' | 'thinking_budget';
+  thinking_field?: 'thinking_level' | 'thinking_budget';
+}
+
+export interface GeminiPipelineCapability {
+  id: 'gemini_live';
+  label: string;
+  implemented: boolean;
+  vision: boolean;
+  models: ModelCapability[];
+}
+
+export interface CascadePipelineCapability {
+  id: 'cascade_local';
+  label: string;
+  implemented: boolean;
+  vision: false;
+  input_modalities: string[];
+  output_modalities: string[];
+  stt_models: string[];
+  llm_models: string[];
+  tts_models: string[];
+  voices: string[];
+  reasoning_efforts: Array<'low' | 'medium' | 'high'>;
+  devices: Array<'auto' | 'cuda' | 'cpu'>;
 }
 
 export interface Capabilities {
   schema_version: number;
-  pipelines: Array<{
-    id: string;
-    label: string;
-    models: ModelCapability[];
-  }>;
+  pipelines: Array<GeminiPipelineCapability | CascadePipelineCapability>;
   voices: string[];
   presets: string[];
 }

@@ -69,5 +69,56 @@ class GeminiLiveConfigurationTest(unittest.TestCase):
     self.assertEqual(live_config.thinking_config.thinking_level, 'MEDIUM')
 
 
+class PipelineRegistryTest(unittest.TestCase):
+
+  def test_constructs_cascade_from_capabilities_and_local_voice(self):
+    from pathlib import Path
+    import tempfile
+
+    from leonidas.pipelines import registry
+    from genai_processors import processor
+
+    class Synthesizer:
+
+      def validate_runtime(self):
+        pass
+
+    class Resources:
+
+      def transcriber(self, _model_id, _device):
+        return object()
+
+      def synthesizer(self, _model_id, _device):
+        return Synthesizer()
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+      voice = Path(temp_dir) / 'voice.wav'
+      voice.write_bytes(b'RIFF-demo')
+      factory = registry.PipelineRegistry(
+          google_api_key=None,
+          groq_api_key='groq-test',
+          voices={'leonidas': voice},
+          cascade_resources=Resources(),
+      )
+      value = config.AgentConfig.default().with_updates(
+          {
+              'pipeline_id': capabilities.PIPELINE_CASCADE,
+              'model_id': capabilities.GROQ_GPT_OSS_20B,
+          }
+      )
+      result = factory.create(value)
+
+    self.assertIsInstance(result, processor.Processor)
+
+  def test_provider_key_is_required_only_for_selected_pipeline(self):
+    from leonidas.pipelines import registry
+
+    factory = registry.PipelineRegistry(
+        google_api_key=None, groq_api_key=None, voices={}
+    )
+    with self.assertRaisesRegex(ValueError, 'GOOGLE_API_KEY'):
+      factory.create(config.AgentConfig.default())
+
+
 if __name__ == '__main__':
   unittest.main()

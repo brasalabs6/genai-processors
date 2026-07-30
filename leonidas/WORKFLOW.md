@@ -14,6 +14,10 @@ flowchart LR
   SM --> REG[Pipeline Registry]
   REG --> G25[Gemini Live 2.5]
   REG --> G31[Gemini Live 3.1]
+  REG --> CAS[Cascade local]
+  CAS --> STT[Parakeet v3]
+  STT --> GRQ[Groq GPT-OSS]
+  GRQ --> XTTS[XTTS v2]
   G25 --> RATE[RateLimitAudio]
   G31 --> RATE
   RATE --> WS
@@ -107,6 +111,47 @@ flowchart LR
 
 O profile decide transports, tools e campos do SDK. A máquina de estados não
 contém condicionais baseadas em nomes de modelo.
+
+## Pipeline cascata
+
+```mermaid
+stateDiagram-v2
+  [*] --> idle
+  idle --> listening: PCM recebido
+  listening --> transcribing: VAD end of speech
+  transcribing --> thinking: Parakeet final
+  thinking --> speaking: Groq response
+  speaking --> idle: XTTS complete
+  speaking --> interrupted: VAD start of speech
+  thinking --> interrupted: VAD start of speech
+  interrupted --> listening: playback flushed
+  transcribing --> error: STT/device failure
+  thinking --> error: Groq failure
+  speaking --> error: XTTS failure
+```
+
+```mermaid
+sequenceDiagram
+  participant Browser
+  participant VAD
+  participant Parakeet
+  participant Groq
+  participant Parent
+  participant XTTS
+  Browser->>VAD: PCM 16 kHz / 30 ms frames
+  VAD-->>Browser: start_of_speech
+  VAD->>Parakeet: utterance final <= 30 s
+  Parakeet-->>Browser: final transcription
+  Parakeet->>Groq: objective + bounded history + user text
+  Groq-->>Browser: response text
+  Groq->>Parent: response
+  Parent->>XTTS: JSONL em subprocesso .venv-xtts
+  loop PCM <= 50 ms
+    XTTS-->>Parent: PCM/base64
+    Parent-->>Browser: audio/pcm;rate=24000
+  end
+  Parent-->>Browser: generation_complete
+```
 
 ## Start e Stop
 

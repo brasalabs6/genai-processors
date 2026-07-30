@@ -42,6 +42,28 @@ class AgentConfigTest(unittest.TestCase):
     with self.assertRaisesRegex(config.ConfigValidationError, 'voice_name'):
       config.AgentConfig.from_dict(value)
 
+  def test_cascade_configuration_is_explicit_and_validated(self):
+    value = config.AgentConfig.default().with_updates(
+        {
+            'pipeline_id': capabilities.PIPELINE_CASCADE,
+            'model_id': capabilities.GROQ_GPT_OSS_20B,
+            'cascade': {
+                'reasoning_effort': 'high',
+                'device': 'cuda',
+                'voice_id': 'leonidas',
+            },
+        }
+    )
+
+    self.assertEqual(value.cascade.reasoning_effort, 'high')
+    self.assertEqual(value.cascade.device, 'cuda')
+    self.assertEqual(value.voice_name, None)
+
+    invalid = value.to_dict()
+    invalid['cascade']['reasoning_effort'] = 'extreme'
+    with self.assertRaisesRegex(config.ConfigValidationError, 'reasoning'):
+      config.AgentConfig.from_dict(invalid)
+
 
 class ConfigStoreTest(unittest.TestCase):
 
@@ -81,6 +103,25 @@ class ConfigStoreTest(unittest.TestCase):
       self.assertEqual(snapshot.draft.performance_preset, 'low_latency')
       self.assertEqual(snapshot.draft.media.frame_interval_ms, 500)
       self.assertEqual(snapshot.draft.generation.thinking_budget, 0)
+
+  def test_pipeline_and_model_switch_is_one_validated_transition(self):
+    with tempfile.TemporaryDirectory() as temp_dir:
+      store = config.ConfigStore(Path(temp_dir) / 'config.json')
+      snapshot = store.update_draft(
+          {
+              'pipeline_id': capabilities.PIPELINE_CASCADE,
+              'model_id': capabilities.GROQ_GPT_OSS_20B,
+              'cascade': {
+                  'llm_model_id': capabilities.GROQ_GPT_OSS_20B,
+              },
+          },
+          expected_revision=0,
+      )
+
+      self.assertEqual(
+          snapshot.draft.pipeline_id, capabilities.PIPELINE_CASCADE
+      )
+      self.assertEqual(snapshot.draft.model_id, capabilities.GROQ_GPT_OSS_20B)
 
   def test_promote_and_restore_active_are_transactional(self):
     with tempfile.TemporaryDirectory() as temp_dir:

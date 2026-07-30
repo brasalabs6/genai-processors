@@ -33,3 +33,39 @@ somente configuração local não sensível e é ignorado pelo Git.
 Assets e relatórios ficam em `leonidas/.runtime/e2e` e não devem ser
 versionados. O comando retorna falha se qualquer profile não entregar áudio
 válido dentro dos thresholds documentados.
+
+## Pipeline Parakeet + Groq + XTTS
+
+O processo principal usa Transformers 5 para o Parakeet. XTTS fica em
+`.venv-xtts` porque Coqui TTS 0.27.5 requer Transformers 4.57.6. Instale os
+dois ambientes sem adicionar CUDA à dependência base:
+
+```bash
+.venv/bin/python -m pip install -e '.[dev,contrib,cascade]'
+./leonidas/cascade/install_xtts.sh
+.venv/bin/python -m leonidas.cascade.prepare_voice
+```
+
+XTTS v2 usa CPML e o downloader exige que uma pessoa confirme se possui licença
+comercial ou aceita os termos não comerciais. Revise e responda ao prompt uma
+vez; o agente não aceita termos automaticamente:
+
+```bash
+.venv-xtts/bin/python -m TTS.bin.synthesize \
+  --model_name tts_models/multilingual/multi-dataset/xtts_v2 \
+  --text 'Teste de voz do Leonidas.' \
+  --speaker_wav leonidas/.runtime/voices/leonidas.wav \
+  --language_idx pt \
+  --use_cuda \
+  --out_path /tmp/leonidas-xtts-test.wav
+```
+
+Depois do download/aceite, valide a composição real:
+
+```bash
+GROQ_API_KEY='...' .venv/bin/python -m leonidas.e2e.cascade_smoke --device cuda
+GOOGLE_API_KEY='...' GROQ_API_KEY='...' .venv/bin/python -m leonidas
+```
+
+O primeiro smoke baixa o Parakeet para o cache Hugging Face. A referência de
+voz, pesos, mídia e resultados permanecem fora do Git.

@@ -3,7 +3,7 @@
 ## Goal Metadata
 
 - Goal type: `implementation-program`
-- Version: `20260730-0031`
+- Version: `20260730-0038`
 - Owner/repo: `local/genai-processors`
 - Local path: `/home/guilherme/genai-processors`
 - Primary branch: `main`
@@ -18,6 +18,76 @@ Parakeet v3 → Groq reasoning → XTTS v2/CUDA, possui controle local, Vite Web
 observabilidade e validação empírica com mídia demo gerada pelo Gemini. O plano
 operacional detalhado e seu progresso vivem em
 `/home/guilherme/genai-processors/leonidas/PLAN.md`.
+
+Continuação 2026-07-30 reconciliada sem mudança de escopo: avançar auditoria e
+diagnóstico CUDA seguros enquanto o aceite jurídico XTTS permanece uma decisão
+humana explícita.
+
+Input sobre reinicialização reconciliado em 2026-07-30: o usuário autorizou
+reiniciar manualmente a máquina para recuperar o driver após `NVRM Xid 31`.
+Não usar reset de GPU ou unload privilegiado enquanto a interface gráfica
+utiliza a placa. Depois do reboot, validar o preflight Leonidas e
+`torch.cuda.is_available()` antes de repetir o smoke Parakeet CUDA. A decisão
+de licença XTTS continua independente e pendente.
+
+O usuário confirmou que o reboot foi concluído. A ordem obrigatória agora é
+diagnóstico pós-boot, preflight e somente então smoke CUDA do Parakeet, sem
+declarar recuperação antes da evidência desses comandos.
+
+A tentativa inicial de diagnóstico foi interrompida e não constitui evidência.
+Após o comando de continuação do usuário, repetir diagnóstico e preflight por
+completo antes de iniciar o smoke real.
+
+Diagnóstico repetido: CUDA recuperado e operação PyTorch na RTX 2060 aprovada.
+O preflight passou todos os itens disponíveis, exceto o aceite humano XTTS. O
+usuário pediu como aceitar: orientar o downloader interativo e deixar claro que
+`y` só deve ser informado se houver licença comercial aplicável ou concordância
+com a CPML para uso não comercial; o agente não aceita em nome do usuário.
+
+O smoke Parakeet CUDA carregou o modelo, mas falhou por `input_features` FP32
+contra pesos/bias FP16. Classificar como bug confirmado do adapter, adicionar
+teste de regressão e corrigir antes de repetir o smoke; não atribuir a falha ao
+driver CUDA.
+
+O usuário declarou que o XTTS será usado de forma não comercial sob a CPML e
+autorizou explicitamente o agente a confirmar o prompt. Executar o downloader
+interativo oficial, responder `y`, validar o marcador criado pelo próprio
+Coqui e realizar o smoke de síntese. A autorização não cobre uso comercial.
+
+O usuário solicitou a medição de VRAM do Parakeet e confirmação da versão. O
+modelo configurado é `nvidia/parakeet-tdt-0.6b-v3`; medir pico alocado/reservado
+durante inferência CUDA corrigida e verificar em fonte oficial se v3 permanece
+a versão publicada mais recente, sem inferir isso apenas do nome.
+
+Evidência obtida: Parakeet v3 CUDA PASS, 83 caracteres em 8,12 s, com pico
+PyTorch de 1,205 GiB alocados e 1,238 GiB reservados. A model card oficial da
+NVIDIA declara v3 como a versão corrente do TDT 0.6B multilingual.
+
+Gate de revisão encontrou hang em erro de provider com input realtime aberto.
+Regressão falhou por timeout antes da correção e passou depois que a exceção
+foi encaminhada à fila de saída e a task de resposta passou a ser recolhida no
+cleanup. Suíte atual: 70 passed/2 live skipped, Pyink/Flake8 verdes; UI 11
+passed mais typecheck/build.
+
+Aceite CPML não comercial foi confirmado pelo downloader oficial. XTTS baixou
+1,87 GB e sintetizou fala real em CUDA em 2,645 s. O primeiro E2E encontrou
+resposta JSON de áudio maior que o limite default de 64 KiB; regressão realista
+de 70.000 bytes falhou antes e passou após definir limite bounded de 64 MiB.
+
+E2E real completo passou: Parakeet → Groq → XTTS em CUDA, 89 caracteres de
+transcrição, 77 de resposta, 7,84 s de PCM e 49,40 s total. Memória simultânea:
+1.376 MiB Parakeet + 2.084 MiB XTTS = 3.460 MiB. Cleanup deixou zero processos
+`cascade_smoke`/`xtts_worker` órfãos.
+
+Cancelamento XTTS empírico passou com cleanup em 2,02 s e zero worker órfão.
+Gate final: 70 passed/2 live skipped, 11 Vite passed, typecheck/build,
+Pyink/Flake8, preflight completo e diff check verdes. Revisar stage sem
+`.agents/`, `resources/`, `leonidas_draft.md`, pesos, voz ou runtime; então
+criar commit e tag anotada do milestone cascata.
+
+Stage final revisado e limpo de artefatos privados/não relacionados. O
+checkpoint desta execução cria o commit cascata e a tag anotada
+`leonidas-v0.2.0`.
 
 ## Success Criteria
 
@@ -66,6 +136,9 @@ operacional detalhado e seu progresso vivem em
   contrato multimodal interno e WebSocket.
 - Nenhuma dependência base obrigatória de CUDA; engines locais permanecem
   isolados como runtime opcional e declaram device/VRAM/fallback.
+- Parakeet/Transformers 5 permanece no ambiente principal; XTTS/Coqui usa
+  `.venv-xtts` e subprocesso persistente devido ao conflito comprovado de API
+  do Transformers. Monkey patches e downgrade do Parakeet são proibidos.
 - Todo comportamento novo segue Red-Green-Refactor.
 - UI é implementada diretamente com Vite + TypeScript, sem Gemini como agente.
 
@@ -112,7 +185,8 @@ por mocks; mocks provam apenas o contrato offline.
    tag anotada `leonidas-v0.1.0`.
 7. Atualizar os três specs para a pipeline cascata antes de implementá-la.
 8. Verificar ambiente CUDA/Python e instalar adapters opcionais compatíveis.
-9. Implementar, testar e integrar Parakeet v3, Groq reasoning e XTTS v2.
+9. Implementar, testar e integrar Parakeet v3, Groq reasoning e XTTS v2,
+   isolando XTTS em ambiente/processo próprio conforme decisão de runtime.
 10. Rodar smokes reais por estágio e end-to-end, auditar tudo e produzir o
     relatório final ampliado.
 
@@ -155,6 +229,17 @@ Após cada novo input do usuário, voltar ao passo 1 antes de executar a mudanç
 - Evidência Gemini 2026-07-30: suíte combinada 113 passed/1 live skipped,
   frontend 8 passed + typecheck/build, smoke standalone Start/Stop e E2E real
   PASS nos modelos 2.5 e 3.1; detalhes redigidos em `leonidas/PLAN.md`.
+- Milestone Gemini commitado em `85f5d9b` e tagueado com a tag anotada
+  `leonidas-v0.1.0`; a implementação cascata começa após esse boundary.
+- Evidência cascata parcial 2026-07-30: 49+ testes Python e 10 testes Vite
+  verdes; Groq GPT-OSS 20B real respondeu em 0,31 s; referência de voz Gemini
+  TTS validada com 10 s; CUDA RTX 2060/5,78 GiB e runtime XTTS isolado
+  importaram corretamente. O usuário autorizou explicitamente a CPML para uso
+  não comercial; aceite, download e smoke XTTS podem prosseguir.
+- Parakeet v3 real passou em CPU (723 blocos, 83 caracteres, semântica válida,
+  19,32 s). Após reboot, CUDA voltou a funcionar; o bug FP32/FP16 foi coberto
+  por regressão e corrigido. Smoke CUDA passou em 8,12 s, pico 1,205 GiB
+  alocado/1,238 GiB reservado.
 
 ## Stop Conditions
 

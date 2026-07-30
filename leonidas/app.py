@@ -15,6 +15,7 @@ from leonidas import runtime
 from leonidas import telemetry
 from leonidas import voice_preview
 from leonidas import websocket_server
+from leonidas.cascade import resources
 from leonidas.pipelines import registry
 
 
@@ -33,9 +34,13 @@ def _parser() -> argparse.ArgumentParser:
   return parser
 
 
-def validate_runtime(web_root: Path, api_key: str | None) -> None:
-  if not api_key:
-    raise ValueError('GOOGLE_API_KEY is required')
+def validate_runtime(
+    web_root: Path,
+    google_api_key: str | None,
+    groq_api_key: str | None,
+) -> None:
+  if not google_api_key and not groq_api_key:
+    raise ValueError('GOOGLE_API_KEY or GROQ_API_KEY is required')
   if not (web_root / 'index.html').is_file():
     raise FileNotFoundError(
         f'Vite build not found at {web_root}. Run `npm run build` from '
@@ -43,16 +48,31 @@ def validate_runtime(web_root: Path, api_key: str | None) -> None:
     )
 
 
-async def run(args: argparse.Namespace, api_key: str) -> None:
+async def run(
+    args: argparse.Namespace,
+    google_api_key: str | None,
+    groq_api_key: str | None,
+) -> None:
   loop = asyncio.get_running_loop()
   metrics = telemetry.MetricsStore()
   log_path, logs, log_bus, handlers = logging_setup.install(
       args.log_dir.resolve(), debug=args.debug
   )
   store = config.ConfigStore(args.runtime_dir.resolve() / 'config.json')
-  pipelines = registry.PipelineRegistry(api_key)
+  voices = {'leonidas': args.runtime_dir.resolve() / 'voices' / 'leonidas.wav'}
+  cascade_resources = resources.CascadeResources(voices=voices)
+  pipelines = registry.PipelineRegistry(
+      google_api_key,
+      groq_api_key,
+      voices=voices,
+      cascade_resources=cascade_resources,
+  )
   manager = runtime.SessionManager(store, pipelines.create, metrics=metrics)
-  preview = voice_preview.GeminiVoicePreview(api_key)
+  preview = voice_preview.VoicePreviewRouter(
+      google_api_key=google_api_key,
+      voices=voices,
+      cascade_resources=cascade_resources,
+  )
   control_api = api.ControlApi(
       config_store=store,
       session=manager,
@@ -89,6 +109,9 @@ async def run(args: argparse.Namespace, api_key: str) -> None:
     )
   finally:
     await manager.stop()
+    await preview.close()
+    await pipelines.close()
+    await cascade_resources.close()
     httpd.shutdown()
     httpd.server_close()
     http_thread.join(timeout=2)
@@ -99,10 +122,11 @@ async def run(args: argparse.Namespace, api_key: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
   args = _parser().parse_args(argv)
-  api_key = os.environ.get('GOOGLE_API_KEY')
+  google_api_key = os.environ.get('GOOGLE_API_KEY')
+  groq_api_key = os.environ.get('GROQ_API_KEY')
   try:
-    validate_runtime(args.web_root.resolve(), api_key)
-    asyncio.run(run(args, api_key or ''))
+    validate_runtime(args.web_root.resolve(), google_api_key, groq_api_key)
+    asyncio.run(run(args, google_api_key, groq_api_key))
   except KeyboardInterrupt:
     return 130
   except (ValueError, FileNotFoundError) as exc:

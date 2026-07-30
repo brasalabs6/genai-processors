@@ -16,7 +16,14 @@ from leonidas import telemetry
 
 class VoicePreview(Protocol):
 
-  async def preview(self, model_id: str, voice_name: str, text: str) -> bytes:
+  async def preview(
+      self,
+      model_id: str,
+      voice_name: str,
+      text: str,
+      *,
+      device: str = 'auto',
+  ) -> bytes:
     ...
 
 
@@ -117,13 +124,31 @@ class ControlApi:
       if method == 'POST' and path == '/api/v1/voices/preview':
         model_id = str(body.get('model_id', ''))
         voice_name = str(body.get('voice_name', ''))
-        capabilities.resolve_model(model_id)
-        if voice_name not in capabilities.VOICES:
+        if model_id in (
+            capabilities.GROQ_GPT_OSS_20B,
+            capabilities.GROQ_GPT_OSS_120B,
+        ):
+          supported_voices = capabilities.CASCADE_VOICES
+        else:
+          capabilities.resolve_model(model_id)
+          supported_voices = capabilities.VOICES
+        if voice_name not in supported_voices:
           raise config.ConfigValidationError('voice_name is not supported')
+        draft = self._config.snapshot().draft
+        device = (
+            draft.cascade.device
+            if model_id
+            in (
+                capabilities.GROQ_GPT_OSS_20B,
+                capabilities.GROQ_GPT_OSS_120B,
+            )
+            else 'auto'
+        )
         audio = await self._voice_preview.preview(
             model_id,
             voice_name,
             str(body.get('text', 'Olá, eu sou Leonidas. Como posso ajudar?')),
+            device=device,
         )
         return ApiResponse(
             200,
@@ -144,5 +169,11 @@ class ControlApi:
       return _error(404, 'invalid_log_id', str(exc))
     except (config.ConfigValidationError, ValueError) as exc:
       return _error(422, 'invalid_configuration', str(exc))
+    except RuntimeError:
+      return _error(
+          503,
+          'runtime_unavailable',
+          'The selected runtime dependency is unavailable',
+      )
     except TimeoutError:
       return _error(504, 'provider_timeout', 'The provider did not respond')

@@ -1,6 +1,7 @@
 import './styles.css';
 
 import {controlApi} from './api';
+import {effectiveConfig, modelsForPipeline, visionForPipeline} from './capabilities';
 import {PcmPlayer} from './audio';
 import {MediaController} from './media';
 import {
@@ -46,6 +47,7 @@ class LeonidasApp {
   private durationTimer: number | null = null;
 
   private readonly model = element<HTMLSelectElement>('#model');
+  private readonly pipeline = element<HTMLSelectElement>('#pipeline');
   private readonly voice = element<HTMLSelectElement>('#voice');
   private readonly preset = element<HTMLSelectElement>('#preset');
   private readonly objective = element<HTMLTextAreaElement>('#objective');
@@ -57,7 +59,7 @@ class LeonidasApp {
       this.preview,
       (message) => this.send(message),
       () => this.session.state === 'running' && this.socket?.readyState === WebSocket.OPEN,
-      () => this.config?.draft.media ?? {
+      () => this.config ? effectiveConfig(this.config, this.session.state).media : {
         frame_interval_ms: 1000, max_width: 1280, max_height: 720,
         jpeg_quality: 0.75, model_resolution: 'medium',
       },
@@ -115,8 +117,19 @@ class LeonidasApp {
       }
     });
 
-    this.model.addEventListener('change', () => void this.updateDraft({model_id: this.model.value}));
-    this.voice.addEventListener('change', () => void this.updateDraft({voice_name: this.voice.value || null}));
+    this.pipeline.addEventListener('change', () => void this.changePipeline());
+    this.model.addEventListener('change', () => {
+      const updates = this.pipeline.value === 'cascade_local'
+        ? {model_id: this.model.value, cascade: {llm_model_id: this.model.value}}
+        : {model_id: this.model.value};
+      void this.updateDraft(updates);
+    });
+    this.voice.addEventListener('change', () => {
+      const updates = this.pipeline.value === 'cascade_local'
+        ? {cascade: {voice_id: this.voice.value}}
+        : {voice_name: this.voice.value || null};
+      void this.updateDraft(updates);
+    });
     this.preset.addEventListener('change', () => void this.updateDraft({performance_preset: this.preset.value}));
     this.chattiness.addEventListener('change', () => void this.updateDraft({chattiness: Number(this.chattiness.value)}));
     this.chattiness.addEventListener('input', () => {
@@ -127,6 +140,8 @@ class LeonidasApp {
     });
     this.objective.addEventListener('change', () => void this.updateDraft({objective: this.objective.value}));
     element('#preview-voice').addEventListener('click', () => void this.previewVoice());
+    element('#reasoning-effort').addEventListener('change', () => void this.updateDraft({cascade: {reasoning_effort: element<HTMLSelectElement>('#reasoning-effort').value}}));
+    element('#cascade-device').addEventListener('change', () => void this.updateDraft({cascade: {device: element<HTMLSelectElement>('#cascade-device').value}}));
 
     this.bindAdvanced();
     element('#pause-logs').addEventListener('click', () => {
@@ -190,6 +205,24 @@ class LeonidasApp {
       }
       this.showError('Configuração não salva', this.errorText(error));
     }
+  }
+
+  private async changePipeline(): Promise<void> {
+    if (!this.capabilities || !this.config) return;
+    const id = this.pipeline.value as AgentConfig['pipeline_id'];
+    const models = modelsForPipeline(this.capabilities, id);
+    const modelId = models[0]?.id;
+    if (!modelId) return this.showError('Pipeline indisponível', 'Nenhum modelo compatível foi anunciado pelo backend.');
+    if (this.session.state === 'stopped' && !visionForPipeline(this.capabilities, id)) {
+      await this.media.stopVisual();
+    }
+    const updates = id === 'cascade_local'
+      ? {
+          pipeline_id: id, model_id: modelId, voice_name: null,
+          cascade: {llm_model_id: modelId},
+        }
+      : {pipeline_id: id, model_id: modelId, voice_name: null};
+    await this.updateDraft(updates);
   }
 
   private async apply(): Promise<void> {
@@ -284,16 +317,22 @@ class LeonidasApp {
 
   private renderCapabilities(): void {
     if (!this.capabilities) return;
-    const models = this.capabilities.pipelines.flatMap((pipeline) => pipeline.models);
-    this.model.innerHTML = models.map((item) => `<option value="${item.id}">${item.label}</option>`).join('');
-    this.voice.innerHTML = '<option value="">Automática</option>' + this.capabilities.voices.map((voice) => `<option>${voice}</option>`).join('');
+    this.pipeline.innerHTML = this.capabilities.pipelines
+      .filter((item) => item.implemented)
+      .map((item) => `<option value="${item.id}">${item.label}</option>`).join('');
   }
 
   private renderConfig(): void {
     if (!this.config || !this.capabilities) return;
     const draft = this.config.draft;
+    this.pipeline.value = draft.pipeline_id;
+    const models = modelsForPipeline(this.capabilities, draft.pipeline_id);
+    this.model.innerHTML = models.map((item) => `<option value="${item.id}">${item.label}</option>`).join('');
     this.model.value = draft.model_id;
-    this.voice.value = draft.voice_name ?? '';
+    const pipeline = this.capabilities.pipelines.find((item) => item.id === draft.pipeline_id);
+    const voices = pipeline?.id === 'cascade_local' ? pipeline.voices : this.capabilities.voices;
+    this.voice.innerHTML = (pipeline?.id === 'gemini_live' ? '<option value="">Automática</option>' : '') + voices.map((voice) => `<option>${voice}</option>`).join('');
+    this.voice.value = draft.pipeline_id === 'cascade_local' ? draft.cascade.voice_id : draft.voice_name ?? '';
     this.preset.value = draft.performance_preset;
     this.objective.value = draft.objective;
     element('#objective-count').textContent = String(draft.objective.length);
@@ -311,9 +350,19 @@ class LeonidasApp {
     element<HTMLSelectElement>('#vad-end').value = draft.vad.end_sensitivity ?? '';
     element<HTMLInputElement>('#vad-padding').value = draft.vad.prefix_padding_ms?.toString() ?? '';
     element<HTMLInputElement>('#vad-silence').value = draft.vad.silence_duration_ms?.toString() ?? '';
-    const model = this.capabilities.pipelines.flatMap((pipeline) => pipeline.models).find((item) => item.id === draft.model_id);
+    const model = models.find((item) => item.id === draft.model_id);
     element('#thinking-level-wrap').hidden = model?.thinking_field !== 'thinking_level';
     element('#thinking-budget-wrap').hidden = model?.thinking_field !== 'thinking_budget';
+    const cascadeDraft = draft.pipeline_id === 'cascade_local';
+    element('#cascade-settings').hidden = !cascadeDraft;
+    element('#preset-wrap').hidden = cascadeDraft;
+    element('#chattiness-wrap').hidden = cascadeDraft;
+    element('#advanced-config').hidden = cascadeDraft;
+    element<HTMLSelectElement>('#reasoning-effort').value = draft.cascade.reasoning_effort;
+    element<HTMLSelectElement>('#cascade-device').value = draft.cascade.device;
+    element<HTMLInputElement>('#cascade-stt').value = draft.cascade.stt_model_id;
+    element<HTMLInputElement>('#cascade-tts').value = draft.cascade.tts_model_id;
+    this.renderCaptureCapabilities();
     const dirty = this.config.dirty_fields.length;
     element('#draft-status').textContent = dirty ? `Rascunho · ${dirty} alteração${dirty > 1 ? 'ões' : ''}` : 'Ativa';
     element<HTMLButtonElement>('#apply-config').disabled = dirty === 0;
@@ -326,12 +375,25 @@ class LeonidasApp {
     element<HTMLButtonElement>('#start-session').disabled = this.session.state !== 'stopped' || this.socket?.readyState !== WebSocket.OPEN;
     element<HTMLButtonElement>('#stop-session').disabled = this.session.state === 'stopped' || this.session.state === 'stopping';
     element<HTMLTextAreaElement>('#message').disabled = this.session.state !== 'running';
+    this.renderCaptureCapabilities();
     if (this.session.state === 'stopped' || this.session.state === 'error') this.player.flush();
     if (this.durationTimer !== null) window.clearInterval(this.durationTimer);
     if (this.session.started_at) {
       this.durationTimer = window.setInterval(() => this.renderDuration(), 1000);
       this.renderDuration();
     } else element('#session-duration').textContent = '00:00';
+  }
+
+  private renderCaptureCapabilities(): void {
+    if (!this.config || !this.capabilities) return;
+    const selected = effectiveConfig(this.config, this.session.state);
+    const vision = visionForPipeline(this.capabilities, selected.pipeline_id);
+    for (const selector of ['#camera', '#screen']) {
+      element<HTMLButtonElement>(selector).disabled = !vision;
+    }
+    element('#preview-empty').querySelector('p')!.textContent = vision
+      ? 'Ative a câmera ou compartilhe a tela'
+      : 'A pipeline Local + Groq não aceita câmera ou tela.';
   }
 
   private renderDuration(): void {

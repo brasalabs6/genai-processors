@@ -31,8 +31,8 @@ class FakeSession:
 
 class FakePreview:
 
-  async def preview(self, model_id, voice_name, text):
-    del model_id, voice_name, text
+  async def preview(self, model_id, voice_name, text, *, device='auto'):
+    del model_id, voice_name, text, device
     return b'RIFFfake-wave'
 
 
@@ -100,6 +100,18 @@ class ControlApiTest(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(response.status, 200)
     self.assertEqual(response.content_type, 'audio/wav')
     self.assertTrue(response.body.startswith(b'RIFF'))
+
+  async def test_cascade_voice_preview_uses_its_own_allowlist(self):
+    response = await self.control.dispatch(
+        'POST',
+        '/api/v1/voices/preview',
+        {
+            'model_id': 'openai/gpt-oss-20b',
+            'voice_name': 'leonidas',
+        },
+    )
+    self.assertEqual(response.status, 200)
+    self.assertEqual(response.content_type, 'audio/wav')
 
   async def test_unknown_route_is_structured(self):
     response = await self.control.dispatch('GET', '/api/v1/nope')

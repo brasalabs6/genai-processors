@@ -7,6 +7,13 @@ from typing import Any
 MODEL_LIVE_2_5 = 'gemini-2.5-flash-native-audio-preview-12-2025'
 MODEL_LIVE_3_1 = 'gemini-3.1-flash-live-preview'
 DEFAULT_MODEL = MODEL_LIVE_2_5
+PIPELINE_GEMINI = 'gemini_live'
+PIPELINE_CASCADE = 'cascade_local'
+PARAKEET_V3_MODEL = 'nvidia/parakeet-tdt-0.6b-v3'
+GROQ_GPT_OSS_20B = 'openai/gpt-oss-20b'
+GROQ_GPT_OSS_120B = 'openai/gpt-oss-120b'
+XTTS_V2_MODEL = 'tts_models/multilingual/multi-dataset/xtts_v2'
+CASCADE_VOICES = ('leonidas',)
 
 VOICES = (
     'Zephyr',
@@ -103,11 +110,26 @@ def public_capabilities() -> dict[str, Any]:
       'schema_version': 1,
       'pipelines': [
           {
-              'id': 'gemini_live',
+              'id': PIPELINE_GEMINI,
               'label': 'Gemini Live',
               'implemented': True,
+              'vision': True,
               'models': [model.to_public_dict() for model in _MODELS.values()],
-          }
+          },
+          {
+              'id': PIPELINE_CASCADE,
+              'label': 'Local + Groq',
+              'implemented': True,
+              'vision': False,
+              'input_modalities': ['audio', 'text'],
+              'output_modalities': ['audio', 'text', 'transcription'],
+              'stt_models': [PARAKEET_V3_MODEL],
+              'llm_models': [GROQ_GPT_OSS_20B, GROQ_GPT_OSS_120B],
+              'tts_models': [XTTS_V2_MODEL],
+              'voices': list(CASCADE_VOICES),
+              'reasoning_efforts': ['low', 'medium', 'high'],
+              'devices': ['auto', 'cuda', 'cpu'],
+          },
       ],
       'voices': list(VOICES),
       'presets': ['low_latency', 'balanced', 'quality'],

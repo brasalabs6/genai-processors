@@ -3,11 +3,13 @@
 import asyncio
 import io
 import wave
+from pathlib import Path
 
 from google import genai
 from google.genai import types
 
 from leonidas import capabilities
+from leonidas.cascade import resources
 
 
 class GeminiVoicePreview:
@@ -76,3 +78,54 @@ class GeminiVoicePreview:
       wav_file.setframerate(24000)
       wav_file.writeframes(pcm)
     return output.getvalue()
+
+
+class VoicePreviewRouter:
+  """Routes previews without exposing provider details to the control API."""
+
+  def __init__(
+      self,
+      *,
+      google_api_key: str | None,
+      voices: dict[str, Path],
+      cascade_resources: resources.CascadeResources | None = None,
+  ):
+    self._gemini = (
+        GeminiVoicePreview(google_api_key) if google_api_key else None
+    )
+    self._owns_resources = cascade_resources is None
+    self._resources = cascade_resources or resources.CascadeResources(
+        voices=voices
+    )
+    self._lock = asyncio.Lock()
+
+  async def preview(
+      self,
+      model_id: str,
+      voice_name: str,
+      text: str,
+      *,
+      device: str = 'auto',
+  ) -> bytes:
+    if model_id in (
+        capabilities.GROQ_GPT_OSS_20B,
+        capabilities.GROQ_GPT_OSS_120B,
+    ):
+      try:
+        async with self._lock:
+          synthesizer = self._resources.synthesizer(
+              capabilities.XTTS_V2_MODEL, device
+          )
+          pcm = await synthesizer.synthesize(
+              text[:240], voice_id=voice_name, language='pt'
+          )
+      except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+      return GeminiVoicePreview._wav(pcm)
+    if self._gemini is None:
+      raise ValueError('GOOGLE_API_KEY is required for Gemini voice preview')
+    return await self._gemini.preview(model_id, voice_name, text)
+
+  async def close(self) -> None:
+    if self._owns_resources:
+      await self._resources.close()

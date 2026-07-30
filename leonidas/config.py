@@ -51,6 +51,17 @@ class GenerationConfig:
 
 
 @dataclasses.dataclass(frozen=True)
+class CascadeConfig:
+  stt_model_id: str = capabilities.PARAKEET_V3_MODEL
+  llm_model_id: str = capabilities.GROQ_GPT_OSS_20B
+  tts_model_id: str = capabilities.XTTS_V2_MODEL
+  reasoning_effort: str = 'medium'
+  language: str = 'pt'
+  device: str = 'auto'
+  voice_id: str = 'leonidas'
+
+
+@dataclasses.dataclass(frozen=True)
 class AgentConfig:
   schema_version: int = 1
   pipeline_id: str = 'gemini_live'
@@ -64,6 +75,7 @@ class AgentConfig:
   generation: GenerationConfig = dataclasses.field(
       default_factory=GenerationConfig
   )
+  cascade: CascadeConfig = dataclasses.field(default_factory=CascadeConfig)
 
   @classmethod
   def default(cls) -> 'AgentConfig':
@@ -89,6 +101,7 @@ class AgentConfig:
           media=MediaConfig(**dict(value.get('media', {}))),
           vad=VadConfig(**dict(value.get('vad', {}))),
           generation=GenerationConfig(**dict(value.get('generation', {}))),
+          cascade=CascadeConfig(**dict(value.get('cascade', {}))),
       )
     except (TypeError, ValueError) as exc:
       raise ConfigValidationError(str(exc)) from exc
@@ -101,16 +114,29 @@ class AgentConfig:
   def with_updates(self, updates: Mapping[str, Any]) -> 'AgentConfig':
     merged = self.to_dict()
     for key, value in updates.items():
-      if key in ('media', 'vad', 'generation') and isinstance(value, Mapping):
+      if key in ('media', 'vad', 'generation', 'cascade') and isinstance(
+          value, Mapping
+      ):
         merged[key].update(value)
       else:
         merged[key] = value
-    if 'model_id' in updates and updates['model_id'] != self.model_id:
+    target_pipeline = str(merged.get('pipeline_id', self.pipeline_id))
+    if (
+        target_pipeline == capabilities.PIPELINE_GEMINI
+        and 'model_id' in updates
+        and updates['model_id'] != self.model_id
+    ):
       profile = capabilities.resolve_model(str(updates['model_id']))
       if profile.thinking_field == 'thinking_level':
         merged['generation']['thinking_budget'] = None
       else:
         merged['generation']['thinking_level'] = None
+    if target_pipeline == capabilities.PIPELINE_CASCADE:
+      if 'model_id' in updates:
+        merged['cascade']['llm_model_id'] = str(updates['model_id'])
+      elif self.pipeline_id != capabilities.PIPELINE_CASCADE:
+        merged['model_id'] = merged['cascade']['llm_model_id']
+      merged['voice_name'] = None
     return self.from_dict(merged)
 
   def with_preset(self, preset: str) -> 'AgentConfig':
@@ -149,17 +175,31 @@ class AgentConfig:
   def validate(self) -> None:
     if self.schema_version != 1:
       raise ConfigValidationError('schema_version must be 1')
-    if self.pipeline_id != 'gemini_live':
-      raise ConfigValidationError('pipeline_id must be gemini_live')
-    try:
-      profile = capabilities.resolve_model(self.model_id)
-    except ValueError as exc:
-      raise ConfigValidationError(str(exc)) from exc
-    if (
-        self.voice_name is not None
-        and self.voice_name not in capabilities.VOICES
+    if self.pipeline_id not in (
+        capabilities.PIPELINE_GEMINI,
+        capabilities.PIPELINE_CASCADE,
     ):
-      raise ConfigValidationError('voice_name is not supported')
+      raise ConfigValidationError('pipeline_id is unsupported')
+    profile = None
+    if self.pipeline_id == capabilities.PIPELINE_GEMINI:
+      try:
+        profile = capabilities.resolve_model(self.model_id)
+      except ValueError as exc:
+        raise ConfigValidationError(str(exc)) from exc
+      if (
+          self.voice_name is not None
+          and self.voice_name not in capabilities.VOICES
+      ):
+        raise ConfigValidationError('voice_name is not supported')
+    else:
+      if self.model_id not in (
+          capabilities.GROQ_GPT_OSS_20B,
+          capabilities.GROQ_GPT_OSS_120B,
+      ):
+        raise ConfigValidationError('model_id is unsupported for cascade')
+      if self.voice_name is not None:
+        raise ConfigValidationError('voice_name is only supported by Gemini')
+      self._validate_cascade()
     if not 1 <= len(self.objective.strip()) <= 12000:
       raise ConfigValidationError(
           'objective must contain 1 to 12000 characters'
@@ -182,12 +222,12 @@ class AgentConfig:
         0 <= self.generation.temperature <= 2
     ):
       raise ConfigValidationError('generation.temperature is out of range')
-    if profile.thinking_field == 'thinking_budget':
+    if profile is not None and profile.thinking_field == 'thinking_budget':
       if self.generation.thinking_level is not None:
         raise ConfigValidationError(
             'generation.thinking_level is unsupported by this model'
         )
-    elif self.generation.thinking_budget is not None:
+    elif profile is not None and self.generation.thinking_budget is not None:
       raise ConfigValidationError(
           'generation.thinking_budget is unsupported by this model'
       )
@@ -217,6 +257,22 @@ class AgentConfig:
       raise ConfigValidationError(
           'context_target_tokens must be smaller than context_trigger_tokens'
       )
+
+  def _validate_cascade(self) -> None:
+    if self.cascade.stt_model_id != capabilities.PARAKEET_V3_MODEL:
+      raise ConfigValidationError('cascade.stt_model_id is unsupported')
+    if self.cascade.llm_model_id != self.model_id:
+      raise ConfigValidationError('cascade.llm_model_id must match model_id')
+    if self.cascade.tts_model_id != capabilities.XTTS_V2_MODEL:
+      raise ConfigValidationError('cascade.tts_model_id is unsupported')
+    if self.cascade.reasoning_effort not in ('low', 'medium', 'high'):
+      raise ConfigValidationError('cascade.reasoning_effort is invalid')
+    if self.cascade.language != 'pt':
+      raise ConfigValidationError('cascade.language must be pt')
+    if self.cascade.device not in ('auto', 'cuda', 'cpu'):
+      raise ConfigValidationError('cascade.device is invalid')
+    if self.cascade.voice_id not in capabilities.CASCADE_VOICES:
+      raise ConfigValidationError('cascade.voice_id is unsupported')
 
 
 @dataclasses.dataclass(frozen=True)
@@ -299,16 +355,11 @@ class ConfigStore:
             f'Expected revision {expected_revision}, current {self._revision}'
         )
       remaining = dict(updates)
-      if 'model_id' in remaining:
-        self._draft = self._draft.with_updates(
-            {'model_id': remaining.pop('model_id')}
-        )
-      if 'performance_preset' in remaining:
-        self._draft = self._draft.with_preset(
-            str(remaining.pop('performance_preset'))
-        )
+      preset = remaining.pop('performance_preset', None)
       if remaining:
         self._draft = self._draft.with_updates(remaining)
+      if preset is not None:
+        self._draft = self._draft.with_preset(str(preset))
       self._revision += 1
       self._persist()
       return self.snapshot()

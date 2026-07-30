@@ -69,13 +69,23 @@
         <section class="panel config-panel">
           <div class="panel-heading"><div><span class="eyebrow">Controle</span><h2>Configuração</h2></div><span id="draft-status" class="quiet">Ativa</span></div>
           <div class="form-grid">
+            <label>Pipeline<select id="pipeline"></select></label>
             <label>Modelo<select id="model"></select></label>
-            <label>Preset<select id="preset"><option value="low_latency">Baixa latência</option><option value="balanced">Equilibrado</option><option value="quality">Qualidade</option></select></label>
+            <label id="preset-wrap">Preset<select id="preset"><option value="low_latency">Baixa latência</option><option value="balanced">Equilibrado</option><option value="quality">Qualidade</option></select></label>
             <label>Voz<div class="inline-field"><select id="voice"></select><button id="preview-voice" type="button">Ouvir</button></div></label>
-            <label>Proatividade <output id="chattiness-value">50%</output><input id="chattiness" type="range" min="0" max="1" step="0.05" /></label>
+            <label id="chattiness-wrap">Proatividade <output id="chattiness-value">50%</output><input id="chattiness" type="range" min="0" max="1" step="0.05" /></label>
+          </div>
+          <div id="cascade-settings" class="cascade-settings" hidden>
+            <p class="hint">Pipeline sem visão: áudio local pelo Parakeet v3, reasoning no Groq e fala local pelo XTTS v2.</p>
+            <div class="form-grid">
+              <label>Reasoning<select id="reasoning-effort"><option value="low">Baixo</option><option value="medium">Médio</option><option value="high">Alto</option></select></label>
+              <label>Device<select id="cascade-device"><option value="auto">Automático</option><option value="cuda">CUDA</option><option value="cpu">CPU</option></select></label>
+              <label>STT<input id="cascade-stt" readonly /></label>
+              <label>TTS<input id="cascade-tts" readonly /></label>
+            </div>
           </div>
           <label class="objective-label">Objetivo e persona<textarea id="objective" rows="5" maxlength="12000"></textarea><small><span id="objective-count">0</span>/12.000 · instruções internas permanecem protegidas</small></label>
-          <details class="advanced">
+          <details id="advanced-config" class="advanced">
             <summary>Configuração avançada</summary>
             <div class="form-grid advanced-grid">
               <label>Intervalo de frames (ms)<input id="frame-interval" type="number" min="250" max="10000" /></label>

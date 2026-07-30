@@ -81,11 +81,21 @@ Seções básica, objetivo e avançada.
 
 Básica:
 
-- pipeline (read-only nesta versão);
-- modelo;
+- pipeline Gemini Live ou Cascata local;
+- modelo Gemini ou modelo Groq, conforme a pipeline;
 - voz, com Automática e botão Ouvir;
 - chattiness;
 - preset low latency, balanced ou quality.
+
+Quando Cascata local estiver selecionada, a seção mostra Parakeet v3, GPT-OSS
+20B/120B, reasoning effort, device e voz XTTS. Câmera e tela ficam desabilitadas
+com a mensagem “Visão ainda não suportada nesta pipeline”; microfone e texto
+continuam disponíveis. Falhas de CUDA, download, Groq ou voz mostram o estágio
+exato e a ação de recuperação.
+
+O erro de runtime XTTS deve distinguir ambiente ausente, referência de voz
+ausente e termos CPML ainda não aceitos. A UI nunca oferece um botão que aceite
+licença automaticamente; ela mostra o comando de preparação documentado.
 
 Objetivo:
 

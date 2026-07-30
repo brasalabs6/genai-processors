@@ -15,6 +15,7 @@
   --amber: #edbd73;
   --red: #ff8d85;
 }
+[hidden] { display: none !important; }
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; background: radial-gradient(circle at 15% -20%, #193126 0, transparent 34rem), var(--bg); }
@@ -68,6 +69,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .capture-controls button small { color: var(--muted); font-weight: 500; }
 .capture-controls button[aria-pressed="true"] { border-color: #4b9568; background: #133420; }
 .hint { margin: 12px 0 0; }
+.cascade-settings { margin-top: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: rgba(8, 18, 15, 0.55); }
 
 .conversation-panel { display: flex; flex-direction: column; }
 .conversation { flex: 1; overflow-y: auto; min-height: 370px; max-height: 470px; padding: 12px; border: 1px solid var(--line); border-radius: 13px; background: #0a0e0c; }
