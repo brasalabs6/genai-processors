@@ -19,7 +19,16 @@ class MetricsStore:
     self._max_series = max_series
     self._samples: dict[str, collections.deque[float]] = {}
     self._counters: collections.Counter[str] = collections.Counter()
+    self._session_sequence = 0
     self._lock = threading.Lock()
+
+  def reset_session(self) -> int:
+    """Starts a fresh in-memory metric scope for one session attempt."""
+    with self._lock:
+      self._samples.clear()
+      self._counters.clear()
+      self._session_sequence += 1
+      return self._session_sequence
 
   def observe(self, name: str, value: float) -> None:
     with self._lock:
@@ -54,6 +63,7 @@ class MetricsStore:
         }
       return {
           'timestamp': time.time(),
+          'session_sequence': self._session_sequence,
           'metrics': metrics,
           'counters': dict(self._counters),
       }
