@@ -87,6 +87,15 @@ class ControlApi:
         }
     )
 
+  def _reset_metrics_for_new_session(self) -> None:
+    state = self._session.snapshot().get('state')
+    if state not in (
+        runtime.SessionState.STARTING.value,
+        runtime.SessionState.RUNNING.value,
+        runtime.SessionState.STOPPING.value,
+    ):
+      self._metrics.reset_session()
+
   async def dispatch(
       self,
       method: str,
@@ -108,10 +117,16 @@ class ControlApi:
         )
         return _json_response(snapshot.to_dict())
       if method == 'POST' and path == '/api/v1/config/apply':
+        if self._session.snapshot().get('state') in (
+            runtime.SessionState.STARTING.value,
+            runtime.SessionState.RUNNING.value,
+        ):
+          self._metrics.reset_session()
         return _json_response(await self._session.apply_config())
       if method == 'GET' and path == '/api/v1/session':
         return _json_response(self._session.snapshot())
       if method == 'POST' and path == '/api/v1/session/start':
+        self._reset_metrics_for_new_session()
         snapshot = await self._session.start()
         return _json_response(
             snapshot, status=202 if snapshot.get('state') == 'starting' else 200
