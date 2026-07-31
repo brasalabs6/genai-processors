@@ -8,6 +8,7 @@ from typing import Any
 from genai_processors import content_api
 from genai_processors import processor
 
+from leonidas.cascade import transcript_filter
 from leonidas.cascade import vad
 from leonidas import telemetry
 
@@ -83,8 +84,12 @@ class CascadeProcessor(processor.Processor):
     self._metrics.observe(
         'local_tts_ms', (time.perf_counter() - started) * 1000
     )
+    if not pcm or len(pcm) % 2:
+      raise RuntimeError('XTTS returned invalid PCM16 audio')
     yield self._state('speaking')
-    chunk_bytes = 2400
+    # 100 ms chunks reduce WebAudio scheduling pressure while preserving
+    # responsive interruption. The player still orders chunks by generation.
+    chunk_bytes = 4800
     for offset in range(0, len(pcm), chunk_bytes):
       yield content_api.ProcessorPart(
           pcm[offset : offset + chunk_bytes],
@@ -155,6 +160,15 @@ class CascadeProcessor(processor.Processor):
       self._metrics.observe(
           'local_stt_ms', (time.perf_counter() - started) * 1000
       )
+      duration = len(event.audio) / (16000 * 2)
+      if transcript_filter.is_probable_short_artifact(
+          transcript,
+          audio_duration_seconds=duration,
+          language=self._language,
+      ):
+        self._metrics.increment('stt_artifacts_rejected')
+        await output.put(self._state('listening'))
+        return
       if not transcript:
         await output.put(self._state('listening'))
         return
