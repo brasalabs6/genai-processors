@@ -47,6 +47,9 @@ Regras:
 - Apply habilita quando há draft válido e dirty fields.
 - Apply & Restart mostra confirmação quando a sessão está running.
 - `interrupted` e `stopped` chamam `PcmPlayer.clear()` sincronamente.
+- falha ao criar ou retomar `AudioContext` mostra erro `Áudio indisponível`
+  com ação para desbloquear novamente a saída; nunca é rotulada como mensagem
+  WebSocket inválida.
 - Controles de captura continuam independentes da sessão, mas não enviam mídia
   quando ela não está running.
 
@@ -128,6 +131,8 @@ junto ao campo e no resumo acessível.
 
 - cards TTFA atual, p50, p95 e duração;
 - startup, interruption flush, frames e chunks;
+- candidatos VAD rejeitados, utterances aceitas, interrupções de turno e
+  cancelamentos do TTS;
 - sparklines limitadas às últimas 100 amostras;
 - `—` em vez de zero quando não há medição.
 

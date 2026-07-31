@@ -23,6 +23,84 @@ from leonidas.cascade import xtts_process
 
 class EndpointDetectorTest(unittest.TestCase):
 
+  @staticmethod
+  def _frame(amplitude: float) -> bytes:
+    samples = np.full(480, int(32767 * amplitude), dtype='<i2')
+    return samples.tobytes()
+
+  def test_hybrid_gate_rejects_digital_silence_and_constant_noise(self):
+    silence_gate = vad.AdaptiveSpeechGate(is_speech=lambda _frame: True)
+    noise_gate = vad.AdaptiveSpeechGate(is_speech=lambda _frame: True)
+
+    decisions = [silence_gate.classify(self._frame(0.0)) for _ in range(30)]
+    decisions += [noise_gate.classify(self._frame(0.01)) for _ in range(70)]
+
+    self.assertFalse(any(item.speech for item in decisions))
+    self.assertTrue(any(item.raw_speech for item in decisions))
+
+  def test_hybrid_gate_preserves_short_speech_after_calibration(self):
+    gate = vad.AdaptiveSpeechGate(
+        is_speech=lambda frame: frame != self._frame(0)
+    )
+    detector = vad.EndpointDetector(speech_gate=gate)
+    silence = self._frame(0)
+    speech = self._frame(0.2)
+
+    events = []
+    for frame in ([silence] * 10) + ([speech] * 4) + ([silence] * 15):
+      events.extend(detector.push(frame))
+
+    self.assertIn('start', [event.kind for event in events])
+    utterances = [event for event in events if event.kind == 'utterance']
+    self.assertEqual(len(utterances), 1)
+    self.assertGreater(len(utterances[0].audio), 0)
+
+  def test_hybrid_gate_does_not_start_for_a_single_click(self):
+    gate = vad.AdaptiveSpeechGate(
+        is_speech=lambda frame: frame != self._frame(0)
+    )
+    detector = vad.EndpointDetector(speech_gate=gate)
+    silence = self._frame(0)
+
+    events = []
+    for frame in ([silence] * 10) + [self._frame(0.8)] + ([silence] * 12):
+      events.extend(detector.push(frame))
+
+    self.assertNotIn('start', [event.kind for event in events])
+    self.assertNotIn('utterance', [event.kind for event in events])
+
+  def test_hybrid_endpoint_reports_one_rejected_noise_burst(self):
+    gate = vad.AdaptiveSpeechGate(is_speech=lambda _frame: True)
+    detector = vad.EndpointDetector(speech_gate=gate)
+    noise = self._frame(0.01)
+
+    events = []
+    for _ in range(30):
+      events.extend(detector.push(noise))
+
+    self.assertEqual([event.kind for event in events], ['candidate_rejected'])
+
+  def test_arbitrary_stream_alignment_does_not_split_a_natural_pause(self):
+    silence = self._frame(0)
+    speech = self._frame(0.2)
+    detector = vad.EndpointDetector(
+        speech_gate=vad.AdaptiveSpeechGate(
+            is_speech=lambda frame: frame != silence
+        )
+    )
+    # Five seconds is not divisible by a 30 ms VAD frame. Keep the remainder
+    # to reproduce arbitrary microphone alignment.
+    stream = (b'\0' * (16000 * 2 * 5)) + (speech * 8) + (silence * 12)
+    stream += (speech * 8) + (silence * 15)
+
+    events = []
+    for offset in range(0, len(stream) - vad.FRAME_BYTES + 1, vad.FRAME_BYTES):
+      events.extend(detector.push(stream[offset : offset + vad.FRAME_BYTES]))
+    events.extend(detector.flush())
+
+    self.assertEqual([event.kind for event in events].count('start'), 1)
+    self.assertEqual([event.kind for event in events].count('utterance'), 1)
+
   def test_emits_bounded_utterance_after_speech_and_silence(self):
     speech = b'\x01\x00' * 480
     silence = b'\x00\x00' * 480
@@ -619,6 +697,54 @@ class CascadeResourcesTest(unittest.IsolatedAsyncioTestCase):
 
 class CascadeProcessorTest(unittest.IsolatedAsyncioTestCase):
 
+  async def test_rejected_noise_never_reaches_stt_or_interrupts(self):
+    class Unused:
+
+      async def transcribe(self, _audio):
+        self.fail('STT must not run for rejected noise')
+
+      async def respond(self, **_kwargs):
+        self.fail('Groq must not run for rejected noise')
+
+      async def synthesize(self, _text, **_kwargs):
+        self.fail('XTTS must not run for rejected noise')
+
+      def fail(self, message):
+        raise AssertionError(message)
+
+    noise = np.full(480, int(32767 * 0.01), dtype='<i2').tobytes()
+    endpoint = vad.EndpointDetector(
+        speech_gate=vad.AdaptiveSpeechGate(is_speech=lambda _frame: True)
+    )
+    metrics = telemetry.MetricsStore()
+
+    async def inputs():
+      yield content_api.ProcessorPart(
+          noise * 30,
+          mimetype='audio/pcm;rate=16000',
+          metadata={'audio_stream_end': True},
+      )
+
+    unused = Unused()
+    cascade = pipeline.CascadeProcessor(
+        transcriber=unused,
+        reasoner=unused,
+        synthesizer=unused,
+        objective='Ajude.',
+        model_id='openai/gpt-oss-20b',
+        reasoning_effort='medium',
+        voice_id='leonidas',
+        endpoint_detector=endpoint,
+        metrics=metrics,
+    )
+
+    output = [part async for part in cascade(inputs())]
+
+    self.assertEqual(output, [])
+    self.assertEqual(
+        metrics.snapshot()['counters']['vad_candidates_rejected'], 1
+    )
+
   async def test_turn_publishes_stages_and_stage_latencies(self):
     class Transcriber:
 
@@ -657,7 +783,9 @@ class CascadeProcessorTest(unittest.IsolatedAsyncioTestCase):
         if part.mimetype == 'application/x-state'
     ]
 
-    self.assertEqual(stages, ['thinking', 'speaking', 'listening'])
+    self.assertEqual(
+        stages, ['thinking', 'synthesizing', 'speaking', 'listening']
+    )
     observed = metrics.snapshot()['metrics']
     self.assertIn('groq_reasoning_ms', observed)
     self.assertIn('local_tts_ms', observed)
@@ -832,6 +960,7 @@ class CascadeProcessorTest(unittest.IsolatedAsyncioTestCase):
           b'\x01\x00' * 480, mimetype='audio/pcm;rate=16000'
       )
 
+    metrics = telemetry.MetricsStore()
     cascade = pipeline.CascadeProcessor(
         transcriber=Transcriber(),
         reasoner=Reasoner(),
@@ -841,6 +970,7 @@ class CascadeProcessorTest(unittest.IsolatedAsyncioTestCase):
         reasoning_effort='medium',
         voice_id='leonidas',
         endpoint_detector=endpoint,
+        metrics=metrics,
     )
     stream = cascade(inputs()).__aiter__()
     first = None
@@ -857,6 +987,10 @@ class CascadeProcessorTest(unittest.IsolatedAsyncioTestCase):
     self.assertTrue(interrupted.get_metadata('interrupted'))
     release_cleanup.set()
     _ = [part async for part in stream]
+    counters = metrics.snapshot()['counters']
+    self.assertEqual(counters['vad_utterances_started'], 1)
+    self.assertEqual(counters['turn_interruptions'], 1)
+    self.assertEqual(counters['local_tts_cancelled'], 1)
 
   async def test_failed_turn_is_retrieved_and_stops_the_session(self):
     calls = 0

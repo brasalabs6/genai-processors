@@ -86,15 +86,39 @@ export class PcmPlayer {
   private context: AudioContext | null = null;
   private nextPlaybackTime = 0;
   private readonly scheduled = new Set<AudioBufferSourceNode>();
+  private queue: Promise<void> = Promise.resolve();
+  private generation = 0;
+
+  constructor(
+    private readonly contextFactory: () => AudioContext = () =>
+      new AudioContext({latencyHint: 'interactive'}),
+  ) {}
 
   async unlock(): Promise<void> {
     const context = this.getContext();
     if (context.state === 'suspended') {
       await context.resume();
     }
+    if (context.state !== 'running') {
+      throw new Error(`AudioContext não está ativo: ${context.state}.`);
+    }
   }
 
-  enqueue(base64Data: string, mimetype: string): void {
+  enqueue(base64Data: string, mimetype: string): Promise<void> {
+    const generation = this.generation;
+    const operation = this.queue.then(() =>
+      this.enqueueNow(base64Data, mimetype, generation),
+    );
+    this.queue = operation.catch(() => undefined);
+    return operation;
+  }
+
+  private async enqueueNow(
+    base64Data: string,
+    mimetype: string,
+    generation: number,
+  ): Promise<void> {
+    if (generation !== this.generation) return;
     const sampleRate = parseSampleRate(mimetype);
     if (!sampleRate) {
       throw new Error(`Missing PCM sample rate in ${mimetype}.`);
@@ -107,8 +131,12 @@ export class PcmPlayer {
     // example when the tab loses focus). Resume opportunistically so output
     // is not silently scheduled into a suspended graph.
     if (context.state === 'suspended') {
-      void context.resume().catch(() => undefined);
+      await context.resume();
     }
+    if (context.state !== 'running') {
+      throw new Error(`AudioContext não está ativo: ${context.state}.`);
+    }
+    if (generation !== this.generation) return;
     const buffer = context.createBuffer(1, samples.length, sampleRate);
     buffer.copyToChannel(new Float32Array(samples), 0);
     const source = context.createBufferSource();
@@ -125,6 +153,7 @@ export class PcmPlayer {
   }
 
   flush(): void {
+    this.generation += 1;
     for (const source of this.scheduled) {
       try {
         source.stop();
@@ -146,7 +175,7 @@ export class PcmPlayer {
 
   private getContext(): AudioContext {
     if (!this.context || this.context.state === 'closed') {
-      this.context = new AudioContext({latencyHint: 'interactive'});
+      this.context = this.contextFactory();
       this.nextPlaybackTime = this.context.currentTime;
     }
     return this.context;

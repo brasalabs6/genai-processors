@@ -1,6 +1,7 @@
 import {describe, expect, it} from 'vitest';
 
 import {
+  PcmPlayer,
   StreamingResampler,
   bytesToBase64,
   floatToPcm16,
@@ -37,5 +38,49 @@ describe('audio helpers', () => {
     expect(first.length + second.length).toBeGreaterThanOrEqual(319);
     expect(first.length + second.length).toBeLessThanOrEqual(320);
     expect(second[0]).toBeGreaterThan(first[first.length - 1] ?? 0);
+  });
+
+  it('resumes a suspended context before scheduling PCM output', async () => {
+    const starts: number[] = [];
+    const context = {
+      state: 'suspended',
+      currentTime: 1,
+      destination: {},
+      async resume() { this.state = 'running'; },
+      createBuffer: (_channels: number, samples: number, rate: number) => ({
+        duration: samples / rate,
+        copyToChannel: () => undefined,
+      }),
+      createBufferSource: () => ({
+        buffer: null,
+        connect: () => undefined,
+        addEventListener: () => undefined,
+        start: (at: number) => starts.push(at),
+        stop: () => undefined,
+      }),
+    };
+    const player = new PcmPlayer(
+      () => context as unknown as AudioContext,
+    );
+
+    await player.enqueue('AQI=', 'audio/pcm;rate=24000');
+
+    expect(context.state).toBe('running');
+    expect(starts).toEqual([1.02]);
+  });
+
+  it('surfaces a browser refusal to resume audio', async () => {
+    const context = {
+      state: 'suspended',
+      currentTime: 0,
+      async resume() { throw new Error('resume blocked'); },
+    };
+    const player = new PcmPlayer(
+      () => context as unknown as AudioContext,
+    );
+
+    await expect(
+      player.enqueue('AQI=', 'audio/pcm;rate=24000'),
+    ).rejects.toThrow('resume blocked');
   });
 });

@@ -139,7 +139,12 @@ sequenceDiagram
   participant Parent
   participant XTTS
   Browser->>VAD: PCM 16 kHz / 30 ms frames
-  VAD-->>Browser: start_of_speech
+  VAD->>VAD: WebRTC mode 3 + noise floor/RMS
+  alt ruído ou silêncio
+    VAD->>VAD: rejeitar candidato sem interromper
+  else fala confirmada (4 de 6 frames)
+    VAD-->>Browser: start_of_speech
+  end
   VAD->>Parakeet: utterance final <= 30 s
   Parakeet-->>Browser: final transcription
   Parakeet->>Groq: objective + bounded history + user text
@@ -152,6 +157,10 @@ sequenceDiagram
   end
   Parent-->>Browser: generation_complete
 ```
+
+Um `start_of_speech` só existe após confirmação híbrida. Isso preserva
+barge-in de fala curta, mas impede que ruído de microfone cancele Groq/XTTS.
+Utterances abaixo dos mínimos de voz são descartadas antes do Parakeet.
 
 ### Preparação local
 

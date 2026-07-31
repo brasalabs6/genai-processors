@@ -79,8 +79,13 @@ browser PCM 16 kHz -> WebRTC VAD/endpointing -> Parakeet TDT 0.6B v3
   Transformers 4.57.x. O protocolo privado é JSON Lines em stdin/stdout com
   áudio base64; morte do worker falha a sessão e nunca troca silenciosamente de
   engine.
-- VAD aceita somente PCM mono 16-bit/16 kHz, frames de 30 ms, pre-roll de 300 ms,
-  início após 90 ms de fala e fim após 450 ms de silêncio.
+- VAD aceita somente PCM mono 16-bit/16 kHz e frames de 30 ms. A cascata usa
+  WebRTC VAD modo 3 combinado com energia adaptativa: calibração inicial de
+  300 ms, piso de ruído pelo percentil 20 de uma janela de 2 s, margem de
+  10 dB, limiar entre -52 e -32 dBFS, pre-roll de 180 ms, início com 4 frames
+  positivos em uma janela de 6 e fim após 15 frames negativos. Utterances com
+  menos de 4 frames de voz ou proporção de voz menor que 12% são descartadas
+  antes do STT. Ruído candidato nunca produz `start` nem interrompe TTS.
 - Utterances são limitadas a 30 s. Histórico é limitado a 20 turnos e não é
   persistido.
 - A pipeline cascata v0.2 declara `vision=false`: o catálogo Groq disponível
@@ -280,6 +285,8 @@ Por sessão:
 - chunks de áudio enviados/recebidos.
 - carga local, STT, Groq e TTS (`local_model_load_ms`, `local_stt_ms`,
   `groq_reasoning_ms`, `local_tts_ms`).
+- decisões do endpoint local (`vad_candidates_rejected`,
+  `vad_utterances_started`, `turn_interruptions`, `local_tts_cancelled`).
 
 O backend mantém no máximo 100 amostras por métrica e calcula valor atual,
 média, p50 e p95. Métricas são memória-volátil e não incluem conteúdo.
@@ -304,6 +311,9 @@ vincular em interfaces diferentes de `127.0.0.1` nesta versão.
 - Voz, objetivo, presets e overrides são validados e aplicados explicitamente.
 - A UI nunca reinicia uma sessão durante a edição do draft.
 - Stop e interrupção limpam o áudio imediatamente.
+- Silêncio e ruído estável não criam turnos; fala curta real continua aceita.
+- Uma resposta local só conclui após gerar PCM 24 kHz válido e
+  `generation_complete`; erro ao retomar o `AudioContext` fica visível na UI.
 - Métricas e logs são visíveis sem expor conteúdo sensível.
 - Reload restaura a última configuração válida, mas nunca uma credencial.
 - Testes Python e TypeScript, typecheck, build, Pyink e Flake8 relevantes passam.

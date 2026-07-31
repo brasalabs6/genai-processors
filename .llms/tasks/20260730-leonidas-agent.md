@@ -35,6 +35,21 @@ mostrou PCM 24 kHz válido chegando pelo WebSocket; a prova Parakeet real não
 contém mais `<blank>`. Validação aprovada: 88 testes Python (2 live skipped),
 14 Vitest, typecheck/build, Pyink, Flake8 e diff check.
 
+### Execução complementar: VAD híbrido
+
+Evidência da sessão real: 10 inferências STT, 7 respostas Groq, 9 flushes e
+zero síntese TTS concluída. O endpoint permissivo tratava ruído como fala e
+cancelava a resposta. Preservar `sim/não/aham`, substituir o detector por
+WebRTC modo 3 + piso de ruído/RMS/histerese, não filtrar palavras válidas,
+expor métricas de decisão e validar silêncio, fala curta, barge-in e PCM real.
+O E2E com início desalinhado comprovou que o fim de fala deve usar 15 frames
+(450 ms), não 12, para não dividir uma frase natural em dois turnos.
+
+Estado concluído: silêncio + fala real pelo standalone geraram uma única
+transcrição, zero interrupções, uma síntese XTTS e 681.056 bytes de PCM em 284
+chunks. Smoke CUDA e regressões Gemini 2.5/3.1 passaram. A UI expõe contadores
+VAD/interrupção/cancelamento e falhas de `AudioContext` com erro específico.
+
 ## Goal Metadata
 
 - Goal type: `implementation-program`

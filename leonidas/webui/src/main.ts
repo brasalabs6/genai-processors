@@ -52,6 +52,7 @@ class LeonidasApp {
   private durationTimer: number | null = null;
   private metricsTimer: number | null = null;
   private metricsRequestPending = false;
+  private audioPlaybackFailed = false;
   private resources: ResourceSnapshot = {
     schema_version: 1,
     overall_state: 'unloaded',
@@ -262,6 +263,7 @@ class LeonidasApp {
   private async start(): Promise<void> {
     try {
       await this.player.unlock();
+      this.audioPlaybackFailed = false;
       this.session = await controlApi.start();
       this.renderSession();
     } catch (error) { this.showError('Sessão não iniciada', this.errorText(error)); }
@@ -356,7 +358,12 @@ class LeonidasApp {
       }
       const inline = message.part?.inline_data;
       if (inline?.data && inline.mime_type?.startsWith('audio/')) {
-        this.player.enqueue(inline.data, inline.mime_type);
+        void this.player.enqueue(inline.data, inline.mime_type).catch((error) => {
+          if (!this.audioPlaybackFailed) {
+            this.audioPlaybackFailed = true;
+            this.showError('Áudio indisponível', this.errorText(error));
+          }
+        });
         return;
       }
       const text = message.part?.text;
@@ -516,6 +523,10 @@ class LeonidasApp {
     element('#frames-count').textContent = String(snapshot.counters.frames_received ?? 0);
     element('#audio-in-count').textContent = String(snapshot.counters.audio_chunks_received ?? 0);
     element('#audio-out-count').textContent = String(snapshot.counters.audio_chunks_sent ?? 0);
+    element('#vad-start-count').textContent = String(snapshot.counters.vad_utterances_started ?? 0);
+    element('#vad-rejected-count').textContent = String(snapshot.counters.vad_candidates_rejected ?? 0);
+    element('#interruptions-count').textContent = String(snapshot.counters.turn_interruptions ?? 0);
+    element('#tts-cancelled-count').textContent = String(snapshot.counters.local_tts_cancelled ?? 0);
   }
 
   private connectLogs(): void {

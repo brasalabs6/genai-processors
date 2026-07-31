@@ -56,6 +56,29 @@ Validação: 88 testes Python (2 live opt-in ignorados), 14 Vitest, typecheck,
 build, Pyink, Flake8 e `git diff --check`; transcrição real pós-correção ficou
 `Leônidas, diga o que você vê, e confirme que me ouviu.`.
 
+### Onda VAD híbrido e áudio local — concluída 2026-07-31
+
+A sessão manual seguinte mostrou falsos turnos válidos lexicalmente (`Okay`,
+`Yeah`, `Mm-hmm`) durante silêncio absoluto e novamente nenhum áudio. A
+telemetria correlacionou 10 STTs, 7 respostas Groq, 9 flushes e nenhum
+`local_tts_ms`/`audio_chunks_sent`: o VAD iniciava fala após somente 90 ms de
+ruído e cancelava o XTTS antes da síntese. O usuário decidiu preservar falas
+curtas reais. Implementar o gate híbrido definido em `SPECS.md`, sem blacklist
+textual, instrumentar rejeições/interrupções/cancelamentos e provar silêncio,
+fala curta, barge-in e resposta PCM ponta a ponta.
+
+O primeiro E2E WebSocket detectou que 12 frames finais dividiam a fixture real
+quando a fala começava fora do alinhamento de 30 ms. A varredura 12/15/18/20/
+24/30 provou que 15 frames (450 ms) preservam um turno único; este valor
+substitui os 12 frames iniciais e possui regressão de alinhamento arbitrário.
+
+Evidência final: 5 s de silêncio digital concatenados à fala real produziram
+zero turno durante o silêncio e exatamente uma utterance limpa, sem
+interrupção nem TTS cancelado. Pelo servidor standalone/WebSocket, XTTS
+concluiu uma síntese, enviou 284 chunks/681.056 bytes de PCM 24 kHz e publicou
+`generation_complete`. O smoke CUDA direto passou com 8,28 s de áudio. Gemini
+2.5 passou com 6,12 s/TTFA 9,30 s e Gemini 3.1 com 10,88 s/TTFA 7,15 s.
+
 Repositório: `/home/guilherme/genai-processors`
 
 Task durável: `/home/guilherme/genai-processors/.llms/tasks/20260730-leonidas-agent.md`

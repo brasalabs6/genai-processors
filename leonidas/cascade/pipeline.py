@@ -71,14 +71,19 @@ class CascadeProcessor(processor.Processor):
     self._history.extend((('user', prompt), ('assistant', response)))
     self._history = self._history[-self._history_turns * 2 :]
     yield content_api.ProcessorPart(response, role='model')
-    yield self._state('speaking')
+    yield self._state('synthesizing')
     started = time.perf_counter()
-    pcm = await self._synthesizer.synthesize(
-        response, voice_id=self._voice_id, language=self._language
-    )
+    try:
+      pcm = await self._synthesizer.synthesize(
+          response, voice_id=self._voice_id, language=self._language
+      )
+    except asyncio.CancelledError:
+      self._metrics.increment('local_tts_cancelled')
+      raise
     self._metrics.observe(
         'local_tts_ms', (time.perf_counter() - started) * 1000
     )
+    yield self._state('speaking')
     chunk_bytes = 2400
     for offset in range(0, len(pcm), chunk_bytes):
       yield content_api.ProcessorPart(
@@ -116,6 +121,7 @@ class CascadeProcessor(processor.Processor):
         response_task = None
         await finished
         return
+      self._metrics.increment('turn_interruptions')
       await output.put(
           content_api.ProcessorPart(
               '', metadata={'interrupted': True, 'interrupt_request': True}
@@ -135,7 +141,11 @@ class CascadeProcessor(processor.Processor):
 
     async def handle_event(event: vad.EndpointEvent) -> None:
       if event.kind == 'start':
+        self._metrics.increment('vad_utterances_started')
         await interrupt()
+        return
+      if event.kind == 'candidate_rejected':
+        self._metrics.increment('vad_candidates_rejected')
         return
       if event.kind != 'utterance':
         return
