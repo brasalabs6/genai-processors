@@ -1,0 +1,133 @@
+import asyncio
+import unittest
+
+from leonidas.cascade import resources
+
+
+class ResourceLifecycleTest(unittest.IsolatedAsyncioTestCase):
+
+  async def test_successful_generation_closes_and_evicts_previous_workers(self):
+    created = {}
+
+    class Resource:
+
+      def __init__(self, model_id):
+        self.model_id = model_id
+        self.closed = False
+
+      async def load(self, progress=None):
+        del progress
+        return {'device': 'cpu'}
+
+      async def close(self):
+        self.closed = True
+
+    def factory(**kwargs):
+      value = Resource(kwargs['model_id'])
+      created.setdefault(kwargs['model_id'], []).append(value)
+      return value
+
+    pool = resources.CascadeResources(
+        voices={},
+        device_resolver=lambda _requested: 'cpu',
+        transcriber_factory=factory,
+        synthesizer_factory=factory,
+    )
+    await pool.ensure_ready('stt-a', 'tts-a', 'cpu')
+    first_generation = pool.snapshot()['generation']
+    await pool.ensure_ready('stt-b', 'tts-b', 'cpu')
+
+    self.assertEqual(pool.snapshot()['generation'], first_generation + 1)
+    self.assertTrue(created['stt-a'][0].closed)
+    self.assertTrue(created['tts-a'][0].closed)
+    self.assertFalse(created['stt-b'][0].closed)
+    self.assertFalse(created['tts-b'][0].closed)
+    self.assertEqual(list(pool._transcribers), [('stt-b', 'cpu')])
+    self.assertEqual(list(pool._synthesizers), [('tts-b', 'cpu')])
+    await pool.close()
+
+  async def test_waiter_for_another_key_does_not_inherit_failed_generation(self):
+    loaded = []
+
+    class Resource:
+
+      def __init__(self, model_id):
+        self.model_id = model_id
+
+      async def load(self, progress=None):
+        del progress
+        loaded.append(self.model_id)
+        await asyncio.sleep(0)
+        if self.model_id == 'stt-failing':
+          raise RuntimeError('candidate failed')
+        return {'device': 'cpu'}
+
+      async def close(self):
+        pass
+
+    def factory(**kwargs):
+      return Resource(kwargs['model_id'])
+
+    pool = resources.CascadeResources(
+        voices={},
+        device_resolver=lambda _requested: 'cpu',
+        transcriber_factory=factory,
+        synthesizer_factory=factory,
+    )
+
+    failed, successful = await asyncio.gather(
+        pool.ensure_ready('stt-failing', 'tts-failing', 'cpu'),
+        pool.ensure_ready('stt-good', 'tts-good', 'cpu'),
+        return_exceptions=True,
+    )
+
+    self.assertIsInstance(failed, RuntimeError)
+    self.assertIsInstance(successful, dict)
+    self.assertEqual(successful['overall_state'], 'ready')
+    self.assertEqual(loaded, ['stt-failing', 'stt-good', 'tts-good'])
+    await pool.close()
+
+  async def test_close_cancels_inflight_preparation_before_closing_worker(self):
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    class BlockingResource:
+
+      def __init__(self):
+        self.closed = False
+
+      async def load(self, progress=None):
+        del progress
+        started.set()
+        try:
+          await asyncio.Future()
+        except asyncio.CancelledError:
+          cancelled.set()
+          raise
+
+      async def close(self):
+        self.closed = True
+
+    stt = BlockingResource()
+    tts = BlockingResource()
+    pool = resources.CascadeResources(
+        voices={},
+        device_resolver=lambda _requested: 'cpu',
+        transcriber_factory=lambda **_kwargs: stt,
+        synthesizer_factory=lambda **_kwargs: tts,
+    )
+    preparation = asyncio.create_task(
+        pool.ensure_ready('stt', 'tts', 'cpu')
+    )
+    await started.wait()
+
+    await asyncio.wait_for(pool.close(), timeout=0.2)
+    await asyncio.gather(preparation, return_exceptions=True)
+
+    self.assertTrue(cancelled.is_set())
+    self.assertTrue(stt.closed)
+    self.assertTrue(tts.closed)
+
+
+if __name__ == '__main__':
+  unittest.main()
