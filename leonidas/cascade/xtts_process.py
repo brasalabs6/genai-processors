@@ -190,7 +190,12 @@ class XttsWorkerSynthesizer:
       except (BrokenPipeError, ConnectionResetError):
         await self._invalidate_worker(process)
         raise RuntimeError('XTTS worker connection was lost') from None
-      except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+      except (
+          json.JSONDecodeError,
+          UnicodeDecodeError,
+          ValueError,
+          RuntimeError,
+      ):
         await self._invalidate_worker(process)
         raise
 
