@@ -22,10 +22,10 @@ class MetricsStoreTest(unittest.TestCase):
     store.increment('frames_sent', amount=2)
     self.assertEqual(store.snapshot()['counters']['frames_sent'], 2)
 
-  def test_latency_tracker_observes_first_output_after_latest_input(self):
+  def test_latency_tracker_observes_first_output_after_turn_boundary(self):
     store = telemetry.MetricsStore()
     tracker = telemetry.LatencyTracker(store, clock=lambda: 10.0)
-    tracker.mark_input()
+    tracker.mark_turn_boundary()
     tracker._clock = lambda: 10.125
     tracker.mark_output_audio()
     tracker._clock = lambda: 11.0
@@ -33,6 +33,32 @@ class MetricsStoreTest(unittest.TestCase):
 
     samples = store.snapshot()['metrics']['ttfa_ms']['samples']
     self.assertEqual(samples, [125.0])
+
+  def test_transport_activity_does_not_move_an_existing_boundary(self):
+    moments = iter((10.0, 10.5))
+    store = telemetry.MetricsStore()
+    tracker = telemetry.LatencyTracker(store, clock=lambda: next(moments))
+
+    tracker.mark_turn_boundary()
+    # There is intentionally no per-audio-chunk API. Continuous transport
+    # cannot rewrite the endpointed turn start time.
+    tracker.mark_output_audio()
+
+    self.assertEqual(
+        store.snapshot()['metrics']['ttfa_ms']['samples'], [500.0]
+    )
+
+  def test_metric_series_count_is_bounded(self):
+    store = telemetry.MetricsStore(max_series=2)
+    store.observe('first', 1)
+    store.observe('second', 2)
+
+    with self.assertRaisesRegex(ValueError, 'series limit'):
+      store.observe('untrusted-third', 3)
+
+    # Existing allowlisted series remain writable at the bound.
+    store.observe('first', 4)
+    self.assertEqual(store.snapshot()['metrics']['first']['current'], 4)
 
 
 if __name__ == '__main__':
