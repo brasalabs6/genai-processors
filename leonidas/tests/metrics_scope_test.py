@@ -1,4 +1,5 @@
 import unittest
+from unittest import mock
 
 from leonidas import api
 from leonidas import config
@@ -46,7 +47,7 @@ class MetricScopeTest(unittest.IsolatedAsyncioTestCase):
     self.metrics = telemetry.MetricsStore()
     self.session = _Session()
     self.control = api.ControlApi(
-        config_store=unittest.mock.Mock(spec=config.ConfigStore),
+        config_store=mock.Mock(spec=config.ConfigStore),
         session=self.session,
         metrics=self.metrics,
         logs=_Logs(),
