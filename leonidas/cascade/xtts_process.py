@@ -178,9 +178,7 @@ class XttsWorkerSynthesizer:
         response_task = asyncio.create_task(
             self._read_response(process, request_id, progress)
         )
-        response = await asyncio.wait_for(
-            response_task, timeout=self._timeout
-        )
+        response = await asyncio.wait_for(response_task, timeout=self._timeout)
         if payload.get('op') == 'synthesize':
           encoded_audio = response.get('audio')
           if not isinstance(encoded_audio, str):
