@@ -27,7 +27,9 @@ class BoundedConversationHistoryTest(unittest.TestCase):
     history = context.BoundedConversationHistory(
         max_turns=20, trigger_tokens=12, target_tokens=8
     )
-    history.append('pergunta recente muito longa', 'resposta recente muito longa')
+    history.append(
+        'pergunta recente muito longa', 'resposta recente muito longa'
+    )
 
     messages, removed = history.for_prompt(objective='x', prompt='y')
 
@@ -43,7 +45,12 @@ class BoundedConversationHistoryTest(unittest.TestCase):
 
     self.assertEqual(
         history.snapshot(),
-        [('user', 'u2'), ('assistant', 'a2'), ('user', 'u3'), ('assistant', 'a3')],
+        [
+            ('user', 'u2'),
+            ('assistant', 'a2'),
+            ('user', 'u3'),
+            ('assistant', 'a3'),
+        ],
     )
 
   def test_rejects_invalid_token_limits(self):
