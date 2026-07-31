@@ -167,6 +167,7 @@ class XttsWorkerSynthesizer:
         raise RuntimeError('XTTS worker pipes are unavailable')
       request_id = uuid.uuid4().hex
       request = {'id': request_id, **payload}
+      response_task: asyncio.Task[dict[str, Any]] | None = None
       try:
         process.stdin.write(
             (json.dumps(request, ensure_ascii=False) + '\n').encode()
@@ -175,18 +176,19 @@ class XttsWorkerSynthesizer:
         response_task = asyncio.create_task(
             self._read_response(process, request_id, progress)
         )
-        try:
-          return await asyncio.wait_for(response_task, timeout=self._timeout)
-        except asyncio.CancelledError:
+        return await asyncio.wait_for(response_task, timeout=self._timeout)
+      except asyncio.CancelledError:
+        if response_task is not None:
           response_task.cancel()
           await asyncio.gather(response_task, return_exceptions=True)
-          await self._invalidate_worker(process)
-          raise
-        except TimeoutError:
+        await self._invalidate_worker(process)
+        raise
+      except TimeoutError:
+        if response_task is not None:
           response_task.cancel()
           await asyncio.gather(response_task, return_exceptions=True)
-          await self._invalidate_worker(process)
-          raise
+        await self._invalidate_worker(process)
+        raise
       except (BrokenPipeError, ConnectionResetError):
         await self._invalidate_worker(process)
         raise RuntimeError('XTTS worker connection was lost') from None
