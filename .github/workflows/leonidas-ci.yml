@@ -97,7 +97,7 @@ jobs:
         run: npm run build
 
   package:
-    name: Packaging, wheel install and import smoke
+    name: Core package build, wheel install and import smoke
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -111,10 +111,11 @@ jobs:
       - run: python -m twine check dist/*
       - name: Install the built wheel with declared base dependencies
         run: python -m pip install dist/*.whl
-      - name: Verify installed imports and dependency consistency
+      - name: Verify the installed wheel outside the checkout
         run: |
+          cd "$RUNNER_TEMP"
           python -m pip check
-          python -c "import genai_processors; import leonidas.app"
+          python -c "import genai_processors; print(genai_processors.__file__)"
 
   protocol-stress:
     name: Worker protocol and cancellation stress
