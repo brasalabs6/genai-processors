@@ -1,5 +1,9 @@
 export const MICROPHONE_SAMPLE_RATE = 16000;
 
+const INITIAL_RESERVOIR_SECONDS = 0.08;
+const UNDERRUN_RECOVERY_SECONDS = 0.02;
+const CONTIGUOUS_EPSILON_SECONDS = 0.005;
+
 export function parseSampleRate(mimetype: string): number | null {
   const match = /(?:^|;)\s*rate=(\d+)/i.exec(mimetype);
   return match ? Number(match[1]) : null;
@@ -145,13 +149,25 @@ export class PcmPlayer {
     const source = context.createBufferSource();
     source.buffer = buffer;
     source.connect(context.destination);
-    source.addEventListener('ended', () => this.scheduled.delete(source), {
-      once: true,
-    });
+    source.addEventListener('ended', () => {
+      this.scheduled.delete(source);
+      source.disconnect();
+    }, {once: true});
 
-    // Keep a small initial reservoir. Subsequent chunks remain gapless because
-    // nextPlaybackTime is advanced from the exact duration of the prior chunk.
-    const startAt = Math.max(context.currentTime + 0.08, this.nextPlaybackTime);
+    // Only the first chunk receives the full reservoir. Once a continuous
+    // timeline exists, every following chunk starts at the exact prior end.
+    // The previous `max(currentTime + 80 ms, nextPlaybackTime)` applied the
+    // reservoir repeatedly and inserted audible micro-gaps whenever the main
+    // thread advanced between WebSocket chunks.
+    const continuous =
+      this.nextPlaybackTime > context.currentTime + CONTIGUOUS_EPSILON_SECONDS;
+    const startAt = continuous
+      ? this.nextPlaybackTime
+      : context.currentTime + (
+          this.scheduled.size === 0
+            ? INITIAL_RESERVOIR_SECONDS
+            : UNDERRUN_RECOVERY_SECONDS
+        );
     source.start(startAt);
     this.nextPlaybackTime = startAt + buffer.duration;
     this.scheduled.add(source);
