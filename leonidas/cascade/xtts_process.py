@@ -20,6 +20,7 @@ ProgressCallback = Callable[[str], Awaitable[None]]
 
 
 class XttsWorkerSynthesizer:
+  """Serializes XTTS requests and recreates poisoned workers deterministically."""
 
   sample_rate = 24000
 
@@ -53,13 +54,14 @@ class XttsWorkerSynthesizer:
     )
     self._lock = asyncio.Lock()
     self._stderr_task: asyncio.Task[None] | None = None
-    self._drain_task: asyncio.Task[None] | None = None
     self._timeout = timeout
     self._diagnostics: collections.deque[str] = collections.deque(maxlen=40)
 
   async def _start(self) -> asyncio.subprocess.Process:
     if self._process is not None and self._process.returncode is None:
       return self._process
+    if self._process is not None:
+      await self._invalidate_worker(self._process)
     self.validate_runtime()
     self._process = await asyncio.create_subprocess_exec(
         str(self._python),
@@ -160,34 +162,52 @@ class XttsWorkerSynthesizer:
       *,
       progress: ProgressCallback | None = None,
   ) -> dict[str, Any]:
-    await self._lock.acquire()
-    release_lock = True
-    try:
+    async with self._lock:
       process = await self._start()
       if process.stdin is None or process.stdout is None:
+        await self._invalidate_worker(process)
         raise RuntimeError('XTTS worker pipes are unavailable')
       request_id = uuid.uuid4().hex
       request = {'id': request_id, **payload}
-      process.stdin.write(
-          (json.dumps(request, ensure_ascii=False) + '\n').encode()
-      )
-      await process.stdin.drain()
-      response_task = asyncio.create_task(
-          self._read_response(process, request_id, progress)
-      )
+      response_task: asyncio.Task[dict[str, Any]] | None = None
       try:
-        return await asyncio.wait_for(
-            asyncio.shield(response_task), timeout=self._timeout
+        process.stdin.write(
+            (json.dumps(request, ensure_ascii=False) + '\n').encode()
         )
-      except (asyncio.CancelledError, TimeoutError):
-        release_lock = False
-        self._drain_task = asyncio.create_task(
-            self._drain_cancelled_response(response_task)
+        await process.stdin.drain()
+        response_task = asyncio.create_task(
+            self._read_response(process, request_id, progress)
         )
+        response = await asyncio.wait_for(response_task, timeout=self._timeout)
+        if payload.get('op') == 'synthesize':
+          encoded_audio = response.get('audio')
+          if not isinstance(encoded_audio, str):
+            raise ValueError('XTTS worker returned no base64 audio')
+          base64.b64decode(encoded_audio, validate=True)
+        return response
+      except asyncio.CancelledError:
+        if response_task is not None:
+          response_task.cancel()
+          await asyncio.gather(response_task, return_exceptions=True)
+        await self._invalidate_worker(process)
         raise
-    finally:
-      if release_lock:
-        self._lock.release()
+      except TimeoutError:
+        if response_task is not None:
+          response_task.cancel()
+          await asyncio.gather(response_task, return_exceptions=True)
+        await self._invalidate_worker(process)
+        raise
+      except (BrokenPipeError, ConnectionResetError):
+        await self._invalidate_worker(process)
+        raise RuntimeError('XTTS worker connection was lost') from None
+      except (
+          json.JSONDecodeError,
+          UnicodeDecodeError,
+          ValueError,
+          RuntimeError,
+      ):
+        await self._invalidate_worker(process)
+        raise
 
   async def _read_response(
       self,
@@ -222,28 +242,36 @@ class XttsWorkerSynthesizer:
         )
       return response
 
-  async def _drain_cancelled_response(
-      self, response_task: asyncio.Task[dict[str, Any]]
+  async def _invalidate_worker(
+      self, process: asyncio.subprocess.Process | None = None
   ) -> None:
-    try:
-      await response_task
-    finally:
-      self._lock.release()
+    target = process or self._process
+    if target is self._process:
+      self._process = None
+    if target is not None:
+      if target.stdin is not None:
+        try:
+          target.stdin.close()
+        except (BrokenPipeError, ConnectionResetError):
+          pass
+      if target.returncode is None:
+        try:
+          target.terminate()
+        except ProcessLookupError:
+          pass
+        try:
+          await asyncio.wait_for(target.wait(), timeout=2)
+        except asyncio.TimeoutError:
+          try:
+            target.kill()
+          except ProcessLookupError:
+            pass
+          await target.wait()
+    stderr_task = self._stderr_task
+    self._stderr_task = None
+    if stderr_task is not None:
+      await asyncio.gather(stderr_task, return_exceptions=True)
 
   async def close(self) -> None:
-    process = self._process
-    self._process = None
-    if process is not None and process.returncode is None:
-      if process.stdin is not None:
-        process.stdin.close()
-      try:
-        await asyncio.wait_for(process.wait(), timeout=2)
-      except asyncio.TimeoutError:
-        process.terminate()
-        await process.wait()
-    if self._drain_task is not None:
-      await asyncio.gather(self._drain_task, return_exceptions=True)
-      self._drain_task = None
-    if self._stderr_task is not None:
-      await asyncio.gather(self._stderr_task, return_exceptions=True)
-      self._stderr_task = None
+    async with self._lock:
+      await self._invalidate_worker()

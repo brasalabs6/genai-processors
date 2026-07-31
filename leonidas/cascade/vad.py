@@ -81,8 +81,6 @@ class AdaptiveSpeechGate:
     raw_speech = self._is_speech(frame)
     calibrating = self._frames_seen < self._calibration_frames
     self._frames_seen += 1
-    if calibrating:
-      self._levels.append(level)
     threshold = max(
         self._minimum_threshold_dbfs,
         min(
@@ -90,10 +88,21 @@ class AdaptiveSpeechGate:
             self._noise_floor() + self._noise_margin_db,
         ),
     )
-    speech = not calibrating and raw_speech and level >= threshold
+    # Calibration must reject low steady noise without making the first 300 ms
+    # of a real command categorically impossible. A conservative provisional
+    # threshold accepts clearly voiced energy immediately; quieter speech is
+    # retained by pre-roll and becomes eligible once the floor settles.
+    decision_threshold = (
+        min(-38.0, threshold + 14.0) if calibrating else threshold
+    )
+    speech = raw_speech and level >= decision_threshold
+    # Feed each non-speech frame into the adaptive floor exactly once. The old
+    # calibration branch appended the same sample twice and biased the window.
     if not speech:
       self._levels.append(level)
-    return FrameDecision(speech, raw_speech, level, threshold, calibrating)
+    return FrameDecision(
+        speech, raw_speech, level, decision_threshold, calibrating
+    )
 
 
 class EndpointDetector:

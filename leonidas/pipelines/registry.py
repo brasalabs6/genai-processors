@@ -47,6 +47,11 @@ class PipelineRegistry:
       if not self._groq_api_key:
         raise ValueError('GROQ_API_KEY is required for cascade_local')
       cascade = agent_config.cascade
+      generation = agent_config.generation
+      context_trigger = generation.context_trigger_tokens or 6000
+      context_target = generation.context_target_tokens or min(
+          4500, context_trigger - 1
+      )
       try:
         transcriber = self._resources.transcriber(
             cascade.stt_model_id, cascade.device
@@ -64,6 +69,8 @@ class PipelineRegistry:
             reasoning_effort=cascade.reasoning_effort,
             voice_id=cascade.voice_id,
             language=cascade.language,
+            context_trigger_tokens=context_trigger,
+            context_target_tokens=context_target,
             metrics=self._metrics,
         )
         return cascade_processor + rate_limit_audio.RateLimitAudio(24000)

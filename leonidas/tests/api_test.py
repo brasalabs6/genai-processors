@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 from leonidas import api
 from leonidas import config
@@ -94,7 +95,7 @@ class ControlApiTest(unittest.IsolatedAsyncioTestCase):
     )
 
   async def test_starting_session_returns_accepted(self):
-    self.control._session.start = unittest.mock.AsyncMock(
+    self.control._session.start = mock.AsyncMock(
         return_value={'state': 'starting'}
     )
 

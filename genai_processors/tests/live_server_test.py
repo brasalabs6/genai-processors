@@ -15,7 +15,6 @@
 
 """Tests for live_server."""
 
-import asyncio
 import base64
 import json
 from typing import Any, AsyncIterable
@@ -25,7 +24,6 @@ from absl.testing import absltest
 from absl.testing import parameterized
 from genai_processors import content_api
 from genai_processors import processor
-from genai_processors import streams
 from genai_processors.dev import live_server
 from websockets.exceptions import ConnectionClosed
 
@@ -139,7 +137,7 @@ class LiveServerTest(parameterized.TestCase, unittest.IsolatedAsyncioTestCase):
         # Health check after config update as the live server restarts.
         {
             'metadata': {'health_check': True},
-            'mimetype': 'text/plain',
+            'mimetype': 'application/x-state',
             'part': {'text': ''},
             'role': '',
             'substream_name': '',
@@ -275,10 +273,17 @@ class LiveServerTest(parameterized.TestCase, unittest.IsolatedAsyncioTestCase):
     valid = json.dumps({'part': {'text': 'ok'}})
     ws = MockWebsocket([malformed, valid])
     expected_outputs = [
-        # Server restarts after malformed JSON, so we expect a health check.
+        {
+            'metadata': {'error': 'pipeline_configuration_failed'},
+            'mimetype': 'application/x-state',
+            'part': {'text': ''},
+            'role': '',
+            'substream_name': '',
+        },
+        # The explicit error is followed by health after the restart.
         {
             'metadata': {'health_check': True},
-            'mimetype': 'text/plain',
+            'mimetype': 'application/x-state',
             'part': {'text': ''},
             'role': '',
             'substream_name': '',
@@ -299,10 +304,8 @@ class LiveServerTest(parameterized.TestCase, unittest.IsolatedAsyncioTestCase):
         ais_websocket=ws,  # pytype: disable=wrong-arg-types
     )
 
-    # The malformed JSON triggers an exception in receive(),
-    # which is caught by the loop in live_server.
-    # We should still see the response for the second valid message.
-    # Note: live_server restarts the processor on exception.
+    # The malformed JSON triggers the explicit error state and a processor
+    # restart. The valid message is still handled by the fresh processor.
     actual_outputs = [json.loads(output) for output in ws.outputs]
     self.assertEqual(actual_outputs, expected_outputs)
 

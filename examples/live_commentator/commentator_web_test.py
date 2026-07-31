@@ -19,6 +19,7 @@ class CommentatorWebTest(unittest.TestCase):
         'gemini-2.5-flash-native-audio-preview-12-2025',
     )
 
+  @mock.patch.dict(os.environ, {'GOOGLE_API_KEY': 'test-key'})
   @mock.patch.object(commentator_web.commentator, 'create_live_commentator')
   def test_pipeline_factory_forwards_selected_live_model(self, create_pipeline):
     commentator_web.create_live_commentator(
@@ -29,7 +30,7 @@ class CommentatorWebTest(unittest.TestCase):
     )
 
     create_pipeline.assert_called_once_with(
-        api_key=mock.ANY,
+        api_key='test-key',
         chattiness=0.25,
         unsafe_string_list=None,
         live_model_name=commentator_web.commentator.MODEL_LIVE_3_1,
