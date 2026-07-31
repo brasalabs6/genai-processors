@@ -177,6 +177,44 @@ class RuntimeTest(unittest.IsolatedAsyncioTestCase):
     await manager.stop()
     await manager.detach_media()
 
+  async def test_preparation_failure_can_be_retried_without_reloading_page(
+      self,
+  ):
+    attempts = 0
+
+    async def preparer(_config):
+      nonlocal attempts
+      attempts += 1
+      if attempts == 1:
+        raise RuntimeError('temporary model load failure')
+
+    manager = runtime.SessionManager(
+        self.store,
+        lambda _: EchoProcessor(),
+        pipeline_preparer=preparer,
+        requires_preparation=lambda _config: True,
+        stop_timeout=0.2,
+    )
+    await manager.attach_media(self.outputs.append)
+
+    await manager.start()
+    for _ in range(20):
+      if manager.snapshot()['state'] == 'error':
+        break
+      await asyncio.sleep(0)
+    self.assertEqual(manager.snapshot()['state'], 'error')
+
+    # A retry from the error state must create a fresh preparation/start path.
+    await manager.start()
+    for _ in range(20):
+      if manager.snapshot()['state'] == 'running':
+        break
+      await asyncio.sleep(0)
+    self.assertEqual(attempts, 2)
+    self.assertEqual(manager.snapshot()['state'], 'running')
+    await manager.stop()
+    await manager.detach_media()
+
 
 if __name__ == '__main__':
   unittest.main()

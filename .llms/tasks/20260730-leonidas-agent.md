@@ -1,5 +1,23 @@
 # Implementar e validar o agente Leonidas
 
+## Reconciliação da troca de executor 2026-07-31
+
+O usuário solicitou a continuidade pelo executor Luna e exigiu um commit do
+estado já alterado antes de qualquer modificação adicional. Esse checkpoint é
+`68c2cb5` (`chore(leonidas): checkpoint local model observability work`). O
+executor deve reler este arquivo e `leonidas/PLAN.md` antes de cada novo input,
+preservar Gemini 2.5/3.1 como regressão e validar a implementação atual antes
+de ampliar o escopo. Se a tarefa se tornar insegura ou houver falha repetida
+sem hipótese nova, registrar a evidência e informar o usuário em vez de
+ocultar o problema.
+
+Evidência da continuação: os workers reais Parakeet v3 e XTTS v2 alcançaram
+readiness em CUDA na composição de produção; o smoke E2E local com Groq
+passou após o warm-up. A WebUI agora permite nova tentativa após erro de
+preparação e informa a fase de carregamento/aquecimento de cada componente.
+Foram aprovados 77 testes Python, 14 Vitest, typecheck/build, Pyink, Flake8 e
+diff check.
+
 ## Goal Metadata
 
 - Goal type: `implementation-program`

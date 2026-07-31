@@ -428,7 +428,10 @@ class LeonidasApp {
     const labels = {stopped: 'Parado', starting: 'Iniciando', running: 'Em sessão', stopping: 'Parando', error: 'Erro'};
     const tone = this.session.state === 'running' ? 'ok' : this.session.state === 'error' ? 'error' : this.session.state === 'starting' || this.session.state === 'stopping' ? 'warn' : 'neutral';
     this.setStatus('#session-status', labels[this.session.state], tone);
-    element<HTMLButtonElement>('#start-session').disabled = this.session.state !== 'stopped' || this.socket?.readyState !== WebSocket.OPEN;
+    // A preparation failure is retryable: the backend creates a fresh
+    // processor/worker request on the next Start. Keeping Start enabled here
+    // avoids forcing a full-page reload after a transient CUDA/model error.
+    element<HTMLButtonElement>('#start-session').disabled = ['starting', 'running', 'stopping'].includes(this.session.state) || this.socket?.readyState !== WebSocket.OPEN;
     element<HTMLButtonElement>('#stop-session').disabled = this.session.state === 'stopped' || this.session.state === 'stopping';
     element<HTMLTextAreaElement>('#message').disabled = this.session.state !== 'running';
     this.renderCaptureCapabilities();
@@ -604,6 +607,15 @@ class LeonidasApp {
       ready: 'Pronto',
       error: 'Erro',
     };
+    const phases: Record<string, string> = {
+      validating: 'Validando dependências',
+      loading: 'Carregando pesos',
+      loading_weights: 'Carregando pesos',
+      warming: 'Aquecendo inferência',
+      ready: 'Pronto',
+      error: 'Falha no carregamento',
+      unloaded: 'Aguardando Start',
+    };
     card.dataset.state = state;
     card.querySelector<HTMLElement>('.resource-state')!.textContent = labels[state];
     const memory = component?.memory_reserved_mib
@@ -616,6 +628,7 @@ class LeonidasApp {
       ? `${component.error.message} ${component.error.recovery}`
       : [
           component?.model_id,
+          component?.phase ? phases[component.phase] ?? component.phase : null,
           component?.device,
           component?.gpu_name,
           memory,

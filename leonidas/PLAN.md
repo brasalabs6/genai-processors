@@ -2,6 +2,30 @@
 
 Versão: 20260730-0041
 
+## Reconciliação da troca de executor 2026-07-31
+
+O usuário pediu continuidade sob o executor Luna e determinou que o estado
+existente fosse preservado em commit antes de qualquer nova alteração. O
+checkpoint foi criado como `68c2cb5` (`chore(leonidas): checkpoint local model
+observability work`). Esta troca de executor não altera escopo nem contratos:
+Gemini 2.5/3.1 continuam regressão obrigatória, e a próxima onda deve validar
+o estado efetivo dos workers locais e da WebUI antes de novas mudanças.
+
+Regra operacional adicional: se a complexidade ou uma falha repetida exceder
+a capacidade de execução segura, registrar evidência concreta e avisar o
+usuário; não mascarar falhas nem trocar de arquitetura sem atualizar este
+plano e a task durável.
+
+Validação desta continuação: a composição real `CascadeResources` atingiu
+`stt=ready` e `tts=ready` em CUDA (RTX 2060), com Parakeet v3 em cerca de
+29,7 s e XTTS v2 em cerca de 35,4 s; o smoke completo
+`Parakeet → Groq → XTTS` passou em 13,0 s após o warm-up, gerando 89
+caracteres transcritos, 77 caracteres de resposta e 8,25 s de PCM. A UI foi
+ajustada para permitir retry depois de erro de preparação e exibir a fase
+detalhada (`loading_weights`, `warming`, etc.). Regressão adicionada para
+retry do runtime; suíte passou com 77 testes Python, 14 Vitest, typecheck,
+build, Pyink, Flake8 e `git diff --check`.
+
 Repositório: `/home/guilherme/genai-processors`
 
 Task durável: `/home/guilherme/genai-processors/.llms/tasks/20260730-leonidas-agent.md`
