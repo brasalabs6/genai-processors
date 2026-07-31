@@ -108,7 +108,9 @@ class ResourceLifecycleTest(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(len(created['tts-b']), 2)
     await pool.close()
 
-  async def test_waiter_for_another_key_does_not_inherit_failed_generation(self):
+  async def test_waiter_for_another_key_does_not_inherit_failed_generation(
+      self,
+  ):
     loaded = []
 
     class Resource:
@@ -178,9 +180,7 @@ class ResourceLifecycleTest(unittest.IsolatedAsyncioTestCase):
         transcriber_factory=lambda **_kwargs: stt,
         synthesizer_factory=lambda **_kwargs: tts,
     )
-    preparation = asyncio.create_task(
-        pool.ensure_ready('stt', 'tts', 'cpu')
-    )
+    preparation = asyncio.create_task(pool.ensure_ready('stt', 'tts', 'cpu'))
     await started.wait()
 
     await asyncio.wait_for(pool.close(), timeout=0.2)
