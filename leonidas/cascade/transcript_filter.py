@@ -22,9 +22,11 @@ _WORD_RE = re.compile(r"[^a-z0-9' ]+")
 
 
 def _canonical(text: str) -> str:
-  normalized = unicodedata.normalize('NFKD', text).encode(
-      'ascii', errors='ignore'
-  ).decode('ascii')
+  normalized = (
+      unicodedata.normalize('NFKD', text)
+      .encode('ascii', errors='ignore')
+      .decode('ascii')
+  )
   return ' '.join(_WORD_RE.sub(' ', normalized.lower()).split())
 
 
