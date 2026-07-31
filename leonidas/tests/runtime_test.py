@@ -198,14 +198,16 @@ class RuntimeTest(unittest.IsolatedAsyncioTestCase):
 
     async def listener(snapshot):
       # Re-entering a lifecycle method would deadlock if listeners were still
-      # invoked while `_lock` was held.
+      # invoked while `_lock` was held. The expected ownership error is then
+      # isolated by the broadcaster rather than escaping Start.
       observed.append(snapshot['state'])
       if snapshot['state'] == 'running':
         await self.manager.attach_media(self.outputs.append)
 
     self.manager.add_state_listener(listener)
-    with self.assertRaises(runtime.MediaAlreadyConnectedError):
-      await asyncio.wait_for(self.manager.start(), timeout=0.2)
+    snapshot = await asyncio.wait_for(self.manager.start(), timeout=0.2)
+
+    self.assertEqual(snapshot['state'], 'running')
     self.assertEqual(observed, ['running'])
     await self.manager.stop()
 
