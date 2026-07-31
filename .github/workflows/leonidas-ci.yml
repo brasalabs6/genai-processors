@@ -1,0 +1,144 @@
+name: Leonidas CI
+
+on:
+  pull_request:
+    paths:
+      - 'leonidas/**'
+      - 'genai_processors/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - '.github/workflows/leonidas-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'leonidas/**'
+      - 'genai_processors/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - '.github/workflows/leonidas-ci.yml'
+  workflow_dispatch:
+    inputs:
+      run_live_cuda:
+        description: 'Run credentialed CUDA/live validation on a self-hosted runner'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: leonidas-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  python-quality:
+    name: Python ${{ matrix.python-version }} · tests and quality
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install project and development dependencies
+        run: python -m pip install -e '.[dev,cascade]'
+      - name: Compile Python sources
+        run: python -m compileall -q leonidas genai_processors
+      - name: Run Leonidas unit and subprocess integration tests
+        run: python -m unittest discover -s leonidas/tests -p '*_test.py' -v
+      - name: Run repository tests
+        run: python -m pytest -q --disable-warnings --maxfail=1
+      - name: Check formatting
+        run: pyink --check leonidas
+      - name: Run Flake8
+        run: flake8 leonidas
+      - name: Verify clean patches
+        run: git diff --check
+
+  webui:
+    name: WebUI · typecheck, tests and production build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: leonidas/webui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: leonidas/webui/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test -- --reporter=verbose
+      - name: Production build
+        run: npm run build
+
+  package:
+    name: Packaging and import smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install build twine
+      - run: python -m build
+      - run: python -m twine check dist/*
+      - run: python -c "import genai_processors; import leonidas.app"
+
+  protocol-stress:
+    name: Worker protocol and cancellation stress
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -e '.[dev,cascade]'
+      - name: Repeat cancellation and lifecycle regressions
+        run: |
+          for attempt in 1 2 3 4 5; do
+            echo "stress attempt ${attempt}"
+            python -m unittest -v \
+              leonidas.tests.cascade_test.XttsAdapterTest \
+              leonidas.tests.cascade_test.ParakeetWorkerTest \
+              leonidas.tests.cascade_test.CascadeProcessorTest \
+              leonidas.tests.runtime_test.RuntimeTest
+          done
+
+  live-cuda:
+    name: CUDA + provider live validation
+    if: github.event_name == 'workflow_dispatch' && inputs.run_live_cuda
+    runs-on: [self-hosted, linux, x64, cuda, leonidas]
+    timeout-minutes: 45
+    environment: leonidas-live
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate private runtime prerequisites without printing secrets
+        run: python -m leonidas.cascade.preflight --device cuda
+      - name: Run opt-in cascade live tests
+        env:
+          LEONIDAS_RUN_LIVE_CASCADE: '1'
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        run: python -m unittest -v leonidas.e2e.tests.cascade_live_test
+      - name: Run Gemini live regressions
+        env:
+          LEONIDAS_RUN_LIVE: '1'
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        run: python -m unittest discover -s leonidas/e2e/tests -p '*live_test.py' -v
