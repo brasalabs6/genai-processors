@@ -57,16 +57,22 @@ function installBlobAudioCleanup(): void {
   const tracked = new WeakMap<HTMLMediaElement, string>();
   HTMLMediaElement.prototype.play = function playWithBlobCleanup(): Promise<void> {
     const source = this.currentSrc || this.src;
+    let revoke: (() => void) | null = null;
     if (source.startsWith('blob:') && tracked.get(this) !== source) {
       tracked.set(this, source);
-      const revoke = () => {
+      let revoked = false;
+      revoke = () => {
+        if (revoked) return;
+        revoked = true;
         URL.revokeObjectURL(source);
         tracked.delete(this);
       };
       this.addEventListener('ended', revoke, {once: true});
       this.addEventListener('error', revoke, {once: true});
     }
-    return originalPlay.call(this);
+    const playback = originalPlay.call(this);
+    if (revoke) void playback.catch(revoke);
+    return playback;
   };
 }
 
