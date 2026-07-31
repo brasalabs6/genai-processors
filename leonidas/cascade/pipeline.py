@@ -8,6 +8,7 @@ from typing import Any
 from genai_processors import content_api
 from genai_processors import processor
 
+from leonidas.cascade import context
 from leonidas.cascade import transcript_filter
 from leonidas.cascade import vad
 from leonidas import telemetry
@@ -28,6 +29,8 @@ class CascadeProcessor(processor.Processor):
       language: str = 'pt',
       endpoint_detector: vad.EndpointDetector | None = None,
       history_turns: int = 20,
+      context_trigger_tokens: int | None = None,
+      context_target_tokens: int | None = None,
       metrics: telemetry.MetricsStore | None = None,
   ):
     super().__init__()
@@ -41,8 +44,15 @@ class CascadeProcessor(processor.Processor):
     self._language = language
     self._endpoint = endpoint_detector or vad.EndpointDetector()
     self._audio_buffer = bytearray()
+    trigger = context_trigger_tokens or 6000
+    target = context_target_tokens or min(4500, trigger - 1)
+    self._context = context.BoundedConversationHistory(
+        max_turns=history_turns,
+        trigger_tokens=trigger,
+        target_tokens=target,
+    )
+    # Kept as a read-compatible snapshot for diagnostics and existing callers.
     self._history: list[tuple[str, str]] = []
-    self._history_turns = history_turns
     self._metrics = metrics or telemetry.MetricsStore()
 
   @staticmethod
@@ -58,10 +68,16 @@ class CascadeProcessor(processor.Processor):
       self, prompt: str
   ) -> AsyncIterator[content_api.ProcessorPart]:
     yield self._state('thinking')
+    history, evicted = self._context.for_prompt(
+        objective=self._objective, prompt=prompt
+    )
+    if evicted:
+      self._metrics.increment('context_turns_evicted', evicted)
+    self._history = history
     started = time.perf_counter()
     response = await self._reasoner.respond(
         objective=self._objective,
-        history=self._history,
+        history=history,
         prompt=prompt,
         model_id=self._model_id,
         reasoning_effort=self._reasoning_effort,
@@ -69,8 +85,10 @@ class CascadeProcessor(processor.Processor):
     self._metrics.observe(
         'groq_reasoning_ms', (time.perf_counter() - started) * 1000
     )
-    self._history.extend((('user', prompt), ('assistant', response)))
-    self._history = self._history[-self._history_turns * 2 :]
+    overflow = self._context.append(prompt, response)
+    if overflow:
+      self._metrics.increment('context_turns_evicted', overflow)
+    self._history = self._context.snapshot()
     yield content_api.ProcessorPart(response, role='model')
     yield self._state('synthesizing')
     started = time.perf_counter()
@@ -87,9 +105,9 @@ class CascadeProcessor(processor.Processor):
     if not pcm or len(pcm) % 2:
       raise RuntimeError('XTTS returned invalid PCM16 audio')
     yield self._state('speaking')
-    # 100 ms chunks reduce WebAudio scheduling pressure while preserving
-    # responsive interruption. The player still orders chunks by generation.
-    chunk_bytes = 4800
+    # 75 ms PCM chunks reduce scheduler pressure versus the original 50 ms,
+    # retain progressive delivery, and stay below the player's 80 ms reservoir.
+    chunk_bytes = 3600
     for offset in range(0, len(pcm), chunk_bytes):
       yield content_api.ProcessorPart(
           pcm[offset : offset + chunk_bytes],
