@@ -115,6 +115,7 @@ class ParakeetWorkerTranscriber:
           'model_id': self.model_id,
           'device': self.device,
       }
+      response_task: asyncio.Task[dict[str, Any]] | None = None
       try:
         process.stdin.write(
             (json.dumps(request, ensure_ascii=True) + '\n').encode()
@@ -123,18 +124,19 @@ class ParakeetWorkerTranscriber:
         response_task = asyncio.create_task(
             self._read_response(process, request_id, progress)
         )
-        try:
-          return await asyncio.wait_for(response_task, timeout=self._timeout)
-        except asyncio.CancelledError:
+        return await asyncio.wait_for(response_task, timeout=self._timeout)
+      except asyncio.CancelledError:
+        if response_task is not None:
           response_task.cancel()
           await asyncio.gather(response_task, return_exceptions=True)
-          await self._invalidate_worker(process)
-          raise
-        except TimeoutError:
+        await self._invalidate_worker(process)
+        raise
+      except TimeoutError:
+        if response_task is not None:
           response_task.cancel()
           await asyncio.gather(response_task, return_exceptions=True)
-          await self._invalidate_worker(process)
-          raise
+        await self._invalidate_worker(process)
+        raise
       except (BrokenPipeError, ConnectionResetError):
         await self._invalidate_worker(process)
         raise RuntimeError('Parakeet worker connection was lost') from None
