@@ -2,12 +2,24 @@
 
 import asyncio
 from collections.abc import Callable
+import re
 from typing import Any
 
 import numpy as np
 
 from leonidas import capabilities
 from leonidas.cascade import device as device_selection
+
+
+_SPECIAL_TOKEN_RE = re.compile(r'<(?:blank|pad|unk)>', re.IGNORECASE)
+_PUNCTUATION_SPACE_RE = re.compile(r'\s+([,.;:!?])')
+
+
+def normalize_transcript(text: str) -> str:
+  """Removes Parakeet's decoder control tokens at the STT boundary."""
+  cleaned = _SPECIAL_TOKEN_RE.sub(' ', text)
+  cleaned = ' '.join(cleaned.split())
+  return _PUNCTUATION_SPACE_RE.sub(r'\1', cleaned).strip()
 
 
 def _default_loader(model_id: str, device: str) -> tuple[Any, Any]:
@@ -73,7 +85,7 @@ class ParakeetTranscriber:
     result = self._model.generate(**inputs)
     sequences = getattr(result, 'sequences', result)
     decoded = self._processor.batch_decode(sequences)
-    return decoded[0].strip() if decoded else ''
+    return normalize_transcript(decoded[0]) if decoded else ''
 
   async def transcribe(self, pcm16: bytes) -> str:
     await self._lock.acquire()

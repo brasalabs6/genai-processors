@@ -54,6 +54,14 @@ class EndpointDetectorTest(unittest.TestCase):
 
 class ParakeetAdapterTest(unittest.IsolatedAsyncioTestCase):
 
+  def test_normalizes_decoder_special_tokens_and_punctuation(self):
+    self.assertEqual(
+        parakeet.normalize_transcript(
+            '<blank><blank> Leônidas<blank>, diga <unk> oi!'
+        ),
+        'Leônidas, diga oi!',
+    )
+
   async def test_casts_floating_inputs_to_the_cuda_model_dtype(self):
     class FloatInput:
 

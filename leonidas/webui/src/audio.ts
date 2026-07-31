@@ -103,6 +103,12 @@ export class PcmPlayer {
     if (samples.length === 0) return;
 
     const context = this.getContext();
+    // A media stream can arrive after a browser suspends the context (for
+    // example when the tab loses focus). Resume opportunistically so output
+    // is not silently scheduled into a suspended graph.
+    if (context.state === 'suspended') {
+      void context.resume().catch(() => undefined);
+    }
     const buffer = context.createBuffer(1, samples.length, sampleRate);
     buffer.copyToChannel(new Float32Array(samples), 0);
     const source = context.createBufferSource();

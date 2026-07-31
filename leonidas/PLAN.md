@@ -26,6 +26,36 @@ detalhada (`loading_weights`, `warming`, etc.). Regressão adicionada para
 retry do runtime; suíte passou com 77 testes Python, 14 Vitest, typecheck,
 build, Pyink, Flake8 e `git diff --check`.
 
+## Reconciliação dos problemas observados na sessão local 2026-07-31
+
+O usuário confirmou que Parakeet v3, Groq e o carregamento CUDA estão
+funcionando pela WebUI, mas reportou dois defeitos concretos: (a) o PCM gerado
+pela resposta local não é reproduzido no navegador; (b) a transcrição exibida
+contém tokens literais como `<blank>`. O estado anterior foi preservado antes
+da investigação no commit `30a2044` (`chore(leonidas): checkpoint working local
+cascade session`).
+
+Hipóteses a validar tests-first: a serialização WebSocket pode estar emitindo
+áudio como `inline_data` em um formato que o decoder do frontend não aceita, ou
+o player pode estar recebendo uma taxa/formato incompatível; o adapter
+Parakeet pode estar retornando tokens especiais que devem ser normalizados no
+limite STT, sem alterar o texto original do Gemini. A correção deve preservar
+PCM mono 24 kHz no TTS, PCM 16 kHz no STT, o contrato `ProcessorPart` e os
+smokes Gemini 2.5/3.1.
+
+Diagnóstico e correção desta onda: o Parakeet v3 retornou literalmente
+`'<blank><blank> Leônidas<blank>, diga o que você vê, e confirme que me ouviu.<blank>'`.
+O normalizador agora remove somente tokens de controle allowlisted
+(`<blank>`, `<pad>`, `<unk>`), colapsa whitespace e corrige espaço antes de
+pontuação no adapter STT. A inspeção do WebSocket local confirmou PCM
+`audio/pcm;rate=24000` com payload base64 válido e 27 chunks por resposta; o
+player WebAudio passou a tentar retomar um `AudioContext` suspenso antes de
+agendar cada chunk. O contrato Gemini permanece inalterado.
+
+Validação: 88 testes Python (2 live opt-in ignorados), 14 Vitest, typecheck,
+build, Pyink, Flake8 e `git diff --check`; transcrição real pós-correção ficou
+`Leônidas, diga o que você vê, e confirme que me ouviu.`.
+
 Repositório: `/home/guilherme/genai-processors`
 
 Task durável: `/home/guilherme/genai-processors/.llms/tasks/20260730-leonidas-agent.md`

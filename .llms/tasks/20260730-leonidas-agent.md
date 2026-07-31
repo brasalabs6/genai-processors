@@ -18,6 +18,23 @@ preparação e informa a fase de carregamento/aquecimento de cada componente.
 Foram aprovados 77 testes Python, 14 Vitest, typecheck/build, Pyink, Flake8 e
 diff check.
 
+## Requisito adicional: áudio local e normalização STT 2026-07-31
+
+Na primeira sessão manual bem-sucedida, a UI mostrou respostas de texto do
+Groq e transcrição Parakeet quase em tempo real, mas não reproduziu o áudio
+XTTS e exibiu artefatos `<blank>` no texto transcrito. Antes de editar, o
+estado foi commitado em `30a2044`. Investigar e corrigir os dois caminhos com
+testes de protocolo/player e regressão do adapter STT, sem alterar o exemplo
+original nem quebrar Gemini 2.5/3.1. O aceite é empírico: áudio local deve
+chegar ao `PcmPlayer` e tocar no browser, e a mensagem final não deve conter
+tokens especiais de silêncio/blank.
+
+Implementação concluída nesta onda: normalização STT no adapter Parakeet e
+retomada defensiva do `AudioContext` no `PcmPlayer`. A prova de protocolo local
+mostrou PCM 24 kHz válido chegando pelo WebSocket; a prova Parakeet real não
+contém mais `<blank>`. Validação aprovada: 88 testes Python (2 live skipped),
+14 Vitest, typecheck/build, Pyink, Flake8 e diff check.
+
 ## Goal Metadata
 
 - Goal type: `implementation-program`
