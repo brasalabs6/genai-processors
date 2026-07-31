@@ -177,6 +177,38 @@ class RuntimeTest(unittest.IsolatedAsyncioTestCase):
     await manager.stop()
     await manager.detach_media()
 
+  async def test_failing_state_listener_does_not_abort_lifecycle(self):
+    calls = 0
+
+    async def broken_listener(_snapshot):
+      nonlocal calls
+      calls += 1
+      raise ConnectionError('closed websocket')
+
+    self.manager.add_state_listener(broken_listener)
+    snapshot = await self.manager.start()
+    await self.manager.stop()
+
+    self.assertEqual(snapshot['state'], 'running')
+    self.assertEqual(self.manager.snapshot()['state'], 'stopped')
+    self.assertEqual(calls, 1)
+
+  async def test_state_listener_runs_outside_lifecycle_lock(self):
+    observed = []
+
+    async def listener(snapshot):
+      # Re-entering a lifecycle method would deadlock if listeners were still
+      # invoked while `_lock` was held.
+      observed.append(snapshot['state'])
+      if snapshot['state'] == 'running':
+        await self.manager.attach_media(self.outputs.append)
+
+    self.manager.add_state_listener(listener)
+    with self.assertRaises(runtime.MediaAlreadyConnectedError):
+      await asyncio.wait_for(self.manager.start(), timeout=0.2)
+    self.assertEqual(observed, ['running'])
+    await self.manager.stop()
+
   async def test_preparation_failure_can_be_retried_without_reloading_page(
       self,
   ):
@@ -211,6 +243,37 @@ class RuntimeTest(unittest.IsolatedAsyncioTestCase):
         break
       await asyncio.sleep(0)
     self.assertEqual(attempts, 2)
+    self.assertEqual(manager.snapshot()['state'], 'running')
+    await manager.stop()
+    await manager.detach_media()
+
+  async def test_apply_rolls_back_after_async_preparation_failure(self):
+    original = self.store.snapshot().active
+
+    async def preparer(agent_config):
+      if agent_config.objective == 'invalid candidate':
+        raise RuntimeError('model preparation failed')
+
+    manager = runtime.SessionManager(
+        self.store,
+        lambda _: EchoProcessor(),
+        pipeline_preparer=preparer,
+        requires_preparation=lambda _config: True,
+        stop_timeout=0.2,
+    )
+    await manager.attach_media(self.outputs.append)
+    await manager.start()
+    await manager._wait_until_started()
+    self.store.update_draft(
+        {'objective': 'invalid candidate'}, expected_revision=0
+    )
+
+    with self.assertRaisesRegex(RuntimeError, 'startup failed'):
+      await manager.apply_config()
+
+    snapshot = self.store.snapshot()
+    self.assertEqual(snapshot.active, original)
+    self.assertEqual(snapshot.draft, original)
     self.assertEqual(manager.snapshot()['state'], 'running')
     await manager.stop()
     await manager.detach_media()
