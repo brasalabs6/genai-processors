@@ -19,7 +19,7 @@ ProgressCallback = Callable[[str], Awaitable[None]]
 
 
 class ParakeetWorkerTranscriber:
-  """Keeps Parakeet outside the HTTP/WebSocket server process."""
+  """Keeps Parakeet isolated and recreates workers after protocol failures."""
 
   def __init__(
       self,
@@ -41,7 +41,6 @@ class ParakeetWorkerTranscriber:
     self._process: asyncio.subprocess.Process | None = None
     self._lock = asyncio.Lock()
     self._stderr_task: asyncio.Task[None] | None = None
-    self._drain_task: asyncio.Task[dict[str, Any]] | None = None
     self._diagnostics: collections.deque[str] = collections.deque(maxlen=40)
 
   async def _start(self) -> asyncio.subprocess.Process:
@@ -104,39 +103,44 @@ class ParakeetWorkerTranscriber:
       *,
       progress: ProgressCallback | None = None,
   ) -> dict[str, Any]:
-    await self._lock.acquire()
-    release_lock = True
-    try:
+    async with self._lock:
       process = await self._start()
       if process.stdin is None:
+        await self._invalidate_worker(process)
         raise RuntimeError('Parakeet worker stdin is unavailable')
       request_id = uuid.uuid4().hex
-      payload.update(
-          {
-              'id': request_id,
-              'model_id': self.model_id,
-              'device': self.device,
-          }
-      )
-      process.stdin.write(
-          (json.dumps(payload, ensure_ascii=True) + '\n').encode()
-      )
-      await process.stdin.drain()
-      response_task = asyncio.create_task(
-          self._read_response(process, request_id, progress)
-      )
+      request = {
+          **payload,
+          'id': request_id,
+          'model_id': self.model_id,
+          'device': self.device,
+      }
       try:
-        return await asyncio.wait_for(
-            asyncio.shield(response_task), timeout=self._timeout
+        process.stdin.write(
+            (json.dumps(request, ensure_ascii=True) + '\n').encode()
         )
-      except (asyncio.CancelledError, TimeoutError):
-        release_lock = False
-        self._drain_task = response_task
-        response_task.add_done_callback(lambda _task: self._lock.release())
+        await process.stdin.drain()
+        response_task = asyncio.create_task(
+            self._read_response(process, request_id, progress)
+        )
+        try:
+          return await asyncio.wait_for(response_task, timeout=self._timeout)
+        except asyncio.CancelledError:
+          response_task.cancel()
+          await asyncio.gather(response_task, return_exceptions=True)
+          await self._invalidate_worker(process)
+          raise
+        except TimeoutError:
+          response_task.cancel()
+          await asyncio.gather(response_task, return_exceptions=True)
+          await self._invalidate_worker(process)
+          raise
+      except (BrokenPipeError, ConnectionResetError):
+        await self._invalidate_worker(process)
+        raise RuntimeError('Parakeet worker connection was lost') from None
+      except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+        await self._invalidate_worker(process)
         raise
-    finally:
-      if release_lock:
-        self._lock.release()
 
   async def load(
       self, progress: ProgressCallback | None = None
@@ -161,20 +165,26 @@ class ParakeetWorkerTranscriber:
     )
     return str(response.get('text', '')).strip()
 
-  async def close(self) -> None:
-    process = self._process
-    self._process = None
-    if process is not None and process.returncode is None:
-      if process.stdin is not None:
-        process.stdin.close()
+  async def _invalidate_worker(
+      self, process: asyncio.subprocess.Process | None = None
+  ) -> None:
+    target = process or self._process
+    if target is self._process:
+      self._process = None
+    if target is not None and target.returncode is None:
+      if target.stdin is not None:
+        target.stdin.close()
+      target.terminate()
       try:
-        await asyncio.wait_for(process.wait(), timeout=2)
+        await asyncio.wait_for(target.wait(), timeout=2)
       except asyncio.TimeoutError:
-        process.terminate()
-        await process.wait()
-    if self._drain_task is not None:
-      await asyncio.gather(self._drain_task, return_exceptions=True)
-      self._drain_task = None
-    if self._stderr_task is not None:
-      await asyncio.gather(self._stderr_task, return_exceptions=True)
-      self._stderr_task = None
+        target.kill()
+        await target.wait()
+    stderr_task = self._stderr_task
+    self._stderr_task = None
+    if stderr_task is not None:
+      await asyncio.gather(stderr_task, return_exceptions=True)
+
+  async def close(self) -> None:
+    async with self._lock:
+      await self._invalidate_worker()
