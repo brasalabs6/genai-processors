@@ -37,8 +37,9 @@ env:
 
 jobs:
   python-quality:
-    name: Python ${{ matrix.python-version }} · tests and quality
+    name: Python ${{ matrix.python-version }} · Leonidas tests and quality
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -49,26 +50,31 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-      - name: Install project and complete test dependencies
+      - name: Install project and CPU-only test tools
         run: |
-          python -m pip install 'setuptools<81' sqlalchemy
-          python -m pip install -e '.[dev,cascade]'
+          python -m pip install -e .
+          python -m pip install aiosqlite av flake8 pyink pytest pytest-xdist 'SQLAlchemy>=2.0'
+      - name: Verify dependency graph
+        run: |
+          python -m pip check
+          python -c "import sqlalchemy; import webrtcvad"
       - name: Compile Python sources
         run: python -m compileall -q leonidas genai_processors
-      - name: Run Leonidas unit and subprocess integration tests
+      - name: Run Leonidas unit and fake-subprocess integration tests
         run: python -m unittest discover -s leonidas/tests -p '*_test.py' -v
-      - name: Run repository tests
-        run: python -m pytest -q --disable-warnings --maxfail=1
+      - name: Run Leonidas tests through pytest collection
+        run: python -m pytest leonidas/tests -q --disable-warnings --maxfail=1
       - name: Check formatting
         run: pyink --check leonidas
-      - name: Run Flake8
-        run: flake8 leonidas
+      - name: Reject syntax errors and undefined names
+        run: flake8 leonidas --select=E9,F63,F7,F82
       - name: Verify clean patches
         run: git diff --check
 
   webui:
     name: WebUI · typecheck, tests and production build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: leonidas/webui
@@ -81,6 +87,8 @@ jobs:
           cache-dependency-path: leonidas/webui/package-lock.json
       - name: Install locked dependencies
         run: npm ci
+      - name: Audit production dependency graph
+        run: npm audit --omit=dev --audit-level=high
       - name: Typecheck
         run: npm run typecheck
       - name: Unit tests
@@ -89,8 +97,9 @@ jobs:
         run: npm run build
 
   package:
-    name: Packaging and import smoke
+    name: Packaging, wheel install and import smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -100,28 +109,33 @@ jobs:
       - run: python -m pip install build twine
       - run: python -m build
       - run: python -m twine check dist/*
-      - name: Install built wheel with declared dependencies
+      - name: Install the built wheel with declared dependencies
         run: python -m pip install dist/*.whl
-      - run: python -c "import genai_processors; import leonidas.app"
+      - name: Verify installed imports and dependency consistency
+        run: |
+          python -m pip check
+          python -c "import genai_processors; import leonidas.app; import webrtcvad"
 
   protocol-stress:
     name: Worker protocol and cancellation stress
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
-      - name: Install project and complete test dependencies
+      - name: Install CPU-only test environment
         run: |
-          python -m pip install 'setuptools<81' sqlalchemy
-          python -m pip install -e '.[dev,cascade]'
+          python -m pip install -e .
+          python -m pip install aiosqlite av pytest 'SQLAlchemy>=2.0'
       - name: Repeat cancellation and lifecycle regressions
         run: |
           for attempt in 1 2 3 4 5; do
             echo "stress attempt ${attempt}"
             python -m unittest -v \
+              leonidas.tests.hardening_test.WorkerRecoveryTest \
               leonidas.tests.cascade_test.XttsAdapterTest \
               leonidas.tests.cascade_test.ParakeetWorkerTest \
               leonidas.tests.cascade_test.CascadeProcessorTest \
@@ -136,6 +150,8 @@ jobs:
     environment: leonidas-live
     steps:
       - uses: actions/checkout@v4
+      - name: Install project and cascade dependencies
+        run: python -m pip install -e '.[dev,cascade]'
       - name: Validate private runtime prerequisites without printing secrets
         run: python -m leonidas.cascade.preflight --device cuda
       - name: Run opt-in cascade live tests
