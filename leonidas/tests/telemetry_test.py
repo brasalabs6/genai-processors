@@ -22,6 +22,19 @@ class MetricsStoreTest(unittest.TestCase):
     store.increment('frames_sent', amount=2)
     self.assertEqual(store.snapshot()['counters']['frames_sent'], 2)
 
+  def test_session_reset_clears_samples_and_counters(self):
+    store = telemetry.MetricsStore()
+    store.observe('ttfa_ms', 12)
+    store.increment('audio_chunks_sent', 3)
+
+    sequence = store.reset_session()
+    snapshot = store.snapshot()
+
+    self.assertEqual(sequence, 1)
+    self.assertEqual(snapshot['session_sequence'], 1)
+    self.assertEqual(snapshot['metrics'], {})
+    self.assertEqual(snapshot['counters'], {})
+
   def test_latency_tracker_observes_first_output_after_turn_boundary(self):
     store = telemetry.MetricsStore()
     tracker = telemetry.LatencyTracker(store, clock=lambda: 10.0)
