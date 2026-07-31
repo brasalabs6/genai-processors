@@ -60,6 +60,8 @@ class XttsWorkerSynthesizer:
   async def _start(self) -> asyncio.subprocess.Process:
     if self._process is not None and self._process.returncode is None:
       return self._process
+    if self._process is not None:
+      await self._invalidate_worker(self._process)
     self.validate_runtime()
     self._process = await asyncio.create_subprocess_exec(
         str(self._python),
@@ -176,7 +178,15 @@ class XttsWorkerSynthesizer:
         response_task = asyncio.create_task(
             self._read_response(process, request_id, progress)
         )
-        return await asyncio.wait_for(response_task, timeout=self._timeout)
+        response = await asyncio.wait_for(
+            response_task, timeout=self._timeout
+        )
+        if payload.get('op') == 'synthesize':
+          encoded_audio = response.get('audio')
+          if not isinstance(encoded_audio, str):
+            raise ValueError('XTTS worker returned no base64 audio')
+          base64.b64decode(encoded_audio, validate=True)
+        return response
       except asyncio.CancelledError:
         if response_task is not None:
           response_task.cancel()
@@ -240,15 +250,25 @@ class XttsWorkerSynthesizer:
     target = process or self._process
     if target is self._process:
       self._process = None
-    if target is not None and target.returncode is None:
+    if target is not None:
       if target.stdin is not None:
-        target.stdin.close()
-      target.terminate()
-      try:
-        await asyncio.wait_for(target.wait(), timeout=2)
-      except asyncio.TimeoutError:
-        target.kill()
-        await target.wait()
+        try:
+          target.stdin.close()
+        except (BrokenPipeError, ConnectionResetError):
+          pass
+      if target.returncode is None:
+        try:
+          target.terminate()
+        except ProcessLookupError:
+          pass
+        try:
+          await asyncio.wait_for(target.wait(), timeout=2)
+        except asyncio.TimeoutError:
+          try:
+            target.kill()
+          except ProcessLookupError:
+            pass
+          await target.wait()
     stderr_task = self._stderr_task
     self._stderr_task = None
     if stderr_task is not None:
