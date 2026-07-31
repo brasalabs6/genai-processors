@@ -80,7 +80,7 @@ for line in sys.stdin:
           tts_home=tts_home,
           worker_module='recovering_xtts',
           worker_cwd=root,
-          timeout=0.05,
+          timeout=0.5,
       )
       with self.assertRaises(TimeoutError):
         await adapter.synthesize('primeira', voice_id='leonidas', language='pt')
@@ -152,7 +152,7 @@ for line in sys.stdin:
           python=Path(sys.executable),
           worker_module='recovering_parakeet',
           worker_cwd=root,
-          timeout=0.05,
+          timeout=0.5,
       )
       with self.assertRaises(TimeoutError):
         await adapter.transcribe(b'first')
