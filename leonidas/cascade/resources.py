@@ -14,7 +14,7 @@ from leonidas.cascade import xtts_process
 
 
 class CascadeResources:
-  """Prevents duplicate local models across restart and voice preview paths."""
+  """Owns one active, atomically replaceable local model generation."""
 
   def __init__(
       self,
@@ -43,6 +43,8 @@ class CascadeResources:
     self._prepare_task: asyncio.Task[None] | None = None
     self._prepare_key: tuple[str, str, str] | None = None
     self._ready_key: tuple[str, str, str] | None = None
+    self._generation = 0
+    self._closing = False
 
   @staticmethod
   def _empty_status(component_id: str) -> dict[str, Any]:
@@ -78,6 +80,7 @@ class CascadeResources:
       overall = 'loading'
     return {
         'schema_version': 1,
+        'generation': self._generation,
         'overall_state': overall,
         'components': components,
     }
@@ -100,6 +103,8 @@ class CascadeResources:
     await self._notify()
 
   def transcriber(self, model_id: str, device: str) -> Any:
+    if self._closing:
+      raise RuntimeError('Cascade resources are closing')
     resolved = self._device_resolver(device)
     key = (model_id, resolved)
     if key not in self._transcribers:
@@ -109,6 +114,8 @@ class CascadeResources:
     return self._transcribers[key]
 
   def synthesizer(self, model_id: str, device: str) -> Any:
+    if self._closing:
+      raise RuntimeError('Cascade resources are closing')
     resolved = self._device_resolver(device)
     key = (model_id, resolved)
     if key not in self._synthesizers:
@@ -155,6 +162,14 @@ class CascadeResources:
           load_ms=(time.perf_counter() - started) * 1000,
           error=None,
       )
+    except asyncio.CancelledError:
+      await self._update(
+          component_id,
+          state='unloaded',
+          phase='unloaded',
+          error=None,
+      )
+      raise
     except Exception as exc:
       code = 'cuda_unavailable' if 'CUDA' in str(exc) else 'model_load_failed'
       await self._update(
@@ -173,6 +188,40 @@ class CascadeResources:
       )
       raise
 
+  @staticmethod
+  async def _close_resource(resource: Any) -> None:
+    close = getattr(resource, 'close', None)
+    if close is None:
+      return
+    try:
+      result = close()
+      if inspect.isawaitable(result):
+        await result
+    except Exception as exc:
+      logging.warning(
+          'Cascade resource close failed error_type=%s', type(exc).__name__
+      )
+
+  async def _evict_inactive(
+      self,
+      active_stt: tuple[str, str],
+      active_tts: tuple[str, str],
+  ) -> None:
+    stale: list[Any] = []
+    for key in tuple(self._transcribers):
+      if key != active_stt:
+        stale.append(self._transcribers.pop(key))
+    for key in tuple(self._synthesizers):
+      if key != active_tts:
+        stale.append(self._synthesizers.pop(key))
+    seen: set[int] = set()
+    for resource in stale:
+      identity = id(resource)
+      if identity in seen:
+        continue
+      seen.add(identity)
+      await self._close_resource(resource)
+
   async def _prepare(
       self, stt_model_id: str, tts_model_id: str, device: str
   ) -> None:
@@ -184,15 +233,22 @@ class CascadeResources:
     await self._load_component(
         'tts', tts_model_id, synthesizer, getattr(synthesizer, 'device', device)
     )
-    self._ready_key = (
-        stt_model_id,
-        tts_model_id,
-        getattr(transcriber, 'device', device),
+    ready_device = getattr(transcriber, 'device', device)
+    ready_key = (stt_model_id, tts_model_id, ready_device)
+    # Promote only after both components are ready, then retire the previous
+    # generation. A failed candidate never evicts the working generation.
+    self._ready_key = ready_key
+    self._generation += 1
+    await self._evict_inactive(
+        (stt_model_id, ready_device),
+        (tts_model_id, getattr(synthesizer, 'device', device)),
     )
 
   async def ensure_ready(
       self, stt_model_id: str, tts_model_id: str, device: str
   ) -> dict[str, Any]:
+    if self._closing:
+      raise RuntimeError('Cascade resources are closing')
     resolved = self._device_resolver(device)
     key = (stt_model_id, tts_model_id, resolved)
     while self._ready_key != key:
@@ -207,23 +263,41 @@ class CascadeResources:
           )
         task = self._prepare_task
         preparing_key = self._prepare_key
-      await asyncio.shield(task)
+      try:
+        await asyncio.shield(task)
+      except asyncio.CancelledError:
+        raise
+      except Exception:
+        # A caller waiting for another configuration must not inherit that
+        # generation's failure. Its own key gets a fresh preparation attempt.
+        if preparing_key == key:
+          raise
+        continue
       if preparing_key == key:
         break
     return self.snapshot()
 
   async def close(self) -> None:
-    if self._prepare_task is not None:
-      await asyncio.gather(self._prepare_task, return_exceptions=True)
+    self._closing = True
+    async with self._prepare_lock:
+      task = self._prepare_task
       self._prepare_task = None
       self._prepare_key = None
+      self._ready_key = None
+      if task is not None and not task.done():
+        task.cancel()
+    if task is not None:
+      await asyncio.gather(task, return_exceptions=True)
     values = [*self._transcribers.values(), *self._synthesizers.values()]
     self._transcribers.clear()
     self._synthesizers.clear()
+    seen: set[int] = set()
     for value in values:
-      close = getattr(value, 'close', None)
-      if close is None:
+      if id(value) in seen:
         continue
-      result = close()
-      if inspect.isawaitable(result):
-        await result
+      seen.add(id(value))
+      await self._close_resource(value)
+    self._status = {
+        'stt': self._empty_status('stt'),
+        'tts': self._empty_status('tts'),
+    }
