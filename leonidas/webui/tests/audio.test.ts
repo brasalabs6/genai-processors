@@ -59,6 +59,7 @@ describe('audio helpers', () => {
       createBufferSource: () => ({
         buffer: null,
         connect: () => undefined,
+        disconnect: () => undefined,
         addEventListener: () => undefined,
         start: (at: number) => starts.push(at),
         stop: () => undefined,
@@ -72,6 +73,36 @@ describe('audio helpers', () => {
 
     expect(context.state).toBe('running');
     expect(starts).toEqual([1.08]);
+  });
+
+  it('keeps later chunks contiguous instead of reapplying the reservoir', async () => {
+    const starts: number[] = [];
+    const context = {
+      state: 'running',
+      currentTime: 1,
+      destination: {},
+      createBuffer: (_channels: number, samples: number, rate: number) => ({
+        duration: samples / rate,
+        copyToChannel: () => undefined,
+      }),
+      createBufferSource: () => ({
+        buffer: null,
+        connect: () => undefined,
+        disconnect: () => undefined,
+        addEventListener: () => undefined,
+        start: (at: number) => starts.push(at),
+        stop: () => undefined,
+      }),
+    };
+    const player = new PcmPlayer(() => context as unknown as AudioContext);
+
+    await player.enqueue('AQI=', 'audio/pcm;rate=24000');
+    context.currentTime = 1.05;
+    await player.enqueue('AQI=', 'audio/pcm;rate=24000');
+
+    expect(starts).toHaveLength(2);
+    expect(starts[1]).toBeCloseTo((starts[0] ?? 0) + 1 / 24000, 8);
+    expect(starts[1]).toBeLessThan(1.13);
   });
 
   it('surfaces a browser refusal to resume audio', async () => {
@@ -105,6 +136,7 @@ describe('audio helpers', () => {
       createBufferSource: () => ({
         buffer: null,
         connect: () => undefined,
+        disconnect: () => undefined,
         addEventListener: () => undefined,
         start: (at: number) => starts.push(at),
         stop: () => undefined,
