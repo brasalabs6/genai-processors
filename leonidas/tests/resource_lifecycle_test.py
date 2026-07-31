@@ -46,6 +46,68 @@ class ResourceLifecycleTest(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(list(pool._synthesizers), [('tts-b', 'cpu')])
     await pool.close()
 
+  async def test_failed_candidate_is_closed_and_active_status_is_restored(self):
+    created = {}
+    failing_tts_attempts = 0
+
+    class Resource:
+
+      def __init__(self, model_id, should_fail=False):
+        self.model_id = model_id
+        self.should_fail = should_fail
+        self.closed = False
+
+      async def load(self, progress=None):
+        del progress
+        if self.should_fail:
+          raise RuntimeError('candidate failed')
+        return {'device': 'cpu'}
+
+      async def close(self):
+        self.closed = True
+
+    def factory(**kwargs):
+      nonlocal failing_tts_attempts
+      model_id = kwargs['model_id']
+      should_fail = False
+      if model_id == 'tts-b':
+        failing_tts_attempts += 1
+        should_fail = failing_tts_attempts == 1
+      value = Resource(model_id, should_fail)
+      created.setdefault(model_id, []).append(value)
+      return value
+
+    pool = resources.CascadeResources(
+        voices={},
+        device_resolver=lambda _requested: 'cpu',
+        transcriber_factory=factory,
+        synthesizer_factory=factory,
+    )
+    await pool.ensure_ready('stt-a', 'tts-a', 'cpu')
+    active_generation = pool.snapshot()['generation']
+
+    with self.assertRaisesRegex(RuntimeError, 'candidate failed'):
+      await pool.ensure_ready('stt-b', 'tts-b', 'cpu')
+
+    failed_snapshot = pool.snapshot()
+    self.assertEqual(failed_snapshot['overall_state'], 'ready')
+    self.assertEqual(failed_snapshot['generation'], active_generation)
+    self.assertEqual(failed_snapshot['last_error']['stage'], 'tts')
+    self.assertFalse(created['stt-a'][0].closed)
+    self.assertFalse(created['tts-a'][0].closed)
+    self.assertTrue(created['stt-b'][0].closed)
+    self.assertTrue(created['tts-b'][0].closed)
+    self.assertEqual(list(pool._transcribers), [('stt-a', 'cpu')])
+    self.assertEqual(list(pool._synthesizers), [('tts-a', 'cpu')])
+
+    successful = await pool.ensure_ready('stt-b', 'tts-b', 'cpu')
+    self.assertEqual(successful['overall_state'], 'ready')
+    self.assertEqual(successful['generation'], active_generation + 1)
+    self.assertIsNone(successful['last_error'])
+    self.assertEqual(len(created['stt-b']), 2)
+    self.assertEqual(len(created['tts-b']), 2)
+    await pool.close()
+
   async def test_waiter_for_another_key_does_not_inherit_failed_generation(self):
     loaded = []
 
