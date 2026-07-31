@@ -44,9 +44,7 @@ class MetricsStoreTest(unittest.TestCase):
     # cannot rewrite the endpointed turn start time.
     tracker.mark_output_audio()
 
-    self.assertEqual(
-        store.snapshot()['metrics']['ttfa_ms']['samples'], [500.0]
-    )
+    self.assertEqual(store.snapshot()['metrics']['ttfa_ms']['samples'], [500.0])
 
   def test_metric_series_count_is_bounded(self):
     store = telemetry.MetricsStore(max_series=2)
