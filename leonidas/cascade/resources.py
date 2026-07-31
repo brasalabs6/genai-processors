@@ -39,6 +39,8 @@ class CascadeResources:
         'stt': self._empty_status('stt'),
         'tts': self._empty_status('tts'),
     }
+    self._ready_status: dict[str, dict[str, Any]] | None = None
+    self._last_error: dict[str, Any] | None = None
     self._prepare_lock = asyncio.Lock()
     self._prepare_task: asyncio.Task[None] | None = None
     self._prepare_key: tuple[str, str, str] | None = None
@@ -83,6 +85,7 @@ class CascadeResources:
         'generation': self._generation,
         'overall_state': overall,
         'components': components,
+        'last_error': copy.deepcopy(self._last_error),
     }
 
   async def _notify(self) -> None:
@@ -145,11 +148,7 @@ class CascadeResources:
 
     async def progress(phase: str) -> None:
       state = 'warming' if phase == 'warming' else 'loading'
-      await self._update(
-          component_id,
-          state=state,
-          phase=phase,
-      )
+      await self._update(component_id, state=state, phase=phase)
 
     try:
       await self._update(component_id, state='loading', phase='loading')
@@ -172,19 +171,19 @@ class CascadeResources:
       raise
     except Exception as exc:
       code = 'cuda_unavailable' if 'CUDA' in str(exc) else 'model_load_failed'
+      error = {
+          'stage': component_id,
+          'code': code,
+          'message': f'{component_id.upper()} local não ficou disponível.',
+          'recovery': 'Verifique CUDA, cache do modelo e os logs do Leonidas.',
+      }
+      self._last_error = copy.deepcopy(error)
       await self._update(
           component_id,
           state='error',
           phase='error',
           load_ms=(time.perf_counter() - started) * 1000,
-          error={
-              'stage': component_id,
-              'code': code,
-              'message': f'{component_id.upper()} local não ficou disponível.',
-              'recovery': (
-                  'Verifique CUDA, cache do modelo e os logs do Leonidas.'
-              ),
-          },
+          error=error,
       )
       raise
 
@@ -202,6 +201,15 @@ class CascadeResources:
           'Cascade resource close failed error_type=%s', type(exc).__name__
       )
 
+  async def _close_unique(self, values: list[Any]) -> None:
+    seen: set[int] = set()
+    for resource in values:
+      identity = id(resource)
+      if identity in seen:
+        continue
+      seen.add(identity)
+      await self._close_resource(resource)
+
   async def _evict_inactive(
       self,
       active_stt: tuple[str, str],
@@ -214,34 +222,60 @@ class CascadeResources:
     for key in tuple(self._synthesizers):
       if key != active_tts:
         stale.append(self._synthesizers.pop(key))
-    seen: set[int] = set()
-    for resource in stale:
-      identity = id(resource)
-      if identity in seen:
-        continue
-      seen.add(identity)
-      await self._close_resource(resource)
+    await self._close_unique(stale)
+
+  async def _discard_candidate(
+      self,
+      stt_key: tuple[str, str],
+      tts_key: tuple[str, str],
+      transcriber: Any,
+      synthesizer: Any,
+  ) -> None:
+    candidates: list[Any] = []
+    if self._transcribers.get(stt_key) is transcriber:
+      candidates.append(self._transcribers.pop(stt_key))
+    if self._synthesizers.get(tts_key) is synthesizer:
+      candidates.append(self._synthesizers.pop(tts_key))
+    await self._close_unique(candidates)
 
   async def _prepare(
       self, stt_model_id: str, tts_model_id: str, device: str
   ) -> None:
+    stt_key = (stt_model_id, device)
+    tts_key = (tts_model_id, device)
     transcriber = self.transcriber(stt_model_id, device)
     synthesizer = self.synthesizer(tts_model_id, device)
-    await self._load_component(
-        'stt', stt_model_id, transcriber, getattr(transcriber, 'device', device)
-    )
-    await self._load_component(
-        'tts', tts_model_id, synthesizer, getattr(synthesizer, 'device', device)
-    )
+    try:
+      await self._load_component(
+          'stt',
+          stt_model_id,
+          transcriber,
+          getattr(transcriber, 'device', device),
+      )
+      await self._load_component(
+          'tts',
+          tts_model_id,
+          synthesizer,
+          getattr(synthesizer, 'device', device),
+      )
+    except BaseException:
+      await self._discard_candidate(
+          stt_key, tts_key, transcriber, synthesizer
+      )
+      if self._ready_status is not None:
+        self._status = copy.deepcopy(self._ready_status)
+        await self._notify()
+      raise
+
     ready_device = getattr(transcriber, 'device', device)
-    ready_key = (stt_model_id, tts_model_id, ready_device)
-    # Promote only after both components are ready, then retire the previous
-    # generation. A failed candidate never evicts the working generation.
-    self._ready_key = ready_key
+    ready_tts_device = getattr(synthesizer, 'device', device)
+    self._ready_key = (stt_model_id, tts_model_id, ready_device)
     self._generation += 1
+    self._last_error = None
+    self._ready_status = copy.deepcopy(self._status)
     await self._evict_inactive(
         (stt_model_id, ready_device),
-        (tts_model_id, getattr(synthesizer, 'device', device)),
+        (tts_model_id, ready_tts_device),
     )
 
   async def ensure_ready(
@@ -268,8 +302,6 @@ class CascadeResources:
       except asyncio.CancelledError:
         raise
       except Exception:
-        # A caller waiting for another configuration must not inherit that
-        # generation's failure. Its own key gets a fresh preparation attempt.
         if preparing_key == key:
           raise
         continue
@@ -284,6 +316,7 @@ class CascadeResources:
       self._prepare_task = None
       self._prepare_key = None
       self._ready_key = None
+      self._ready_status = None
       if task is not None and not task.done():
         task.cancel()
     if task is not None:
@@ -291,13 +324,9 @@ class CascadeResources:
     values = [*self._transcribers.values(), *self._synthesizers.values()]
     self._transcribers.clear()
     self._synthesizers.clear()
-    seen: set[int] = set()
-    for value in values:
-      if id(value) in seen:
-        continue
-      seen.add(id(value))
-      await self._close_resource(value)
+    await self._close_unique(values)
     self._status = {
         'stt': self._empty_status('stt'),
         'tts': self._empty_status('tts'),
     }
+    self._last_error = None
