@@ -48,13 +48,17 @@ class SessionManager:
       *,
       metrics: telemetry.MetricsStore | None = None,
       stop_timeout: float = 3.0,
+      state_listener_timeout: float = 1.0,
       pipeline_preparer: PipelinePreparer | None = None,
       requires_preparation: PreparationSelector | None = None,
   ):
+    if stop_timeout <= 0 or state_listener_timeout <= 0:
+      raise ValueError('Session timeouts must be positive')
     self._config_store = config_store
     self._pipeline_factory = pipeline_factory
     self._metrics = metrics or telemetry.MetricsStore()
     self._stop_timeout = stop_timeout
+    self._state_listener_timeout = state_listener_timeout
     self._pipeline_preparer = pipeline_preparer
     self._requires_preparation = requires_preparation or (lambda _config: False)
     self._state = SessionState.STOPPED
@@ -94,16 +98,24 @@ class SessionManager:
       await result
 
   async def _notify_state(self, snapshot: dict[str, Any]) -> None:
-    """Publishes a stable snapshot without holding the session lifecycle lock."""
-    for listener in tuple(self._state_listeners):
+    """Publishes concurrently outside the lifecycle lock with a hard deadline."""
+
+    async def publish(listener: StateListener) -> None:
       try:
-        await self._call(listener, dict(snapshot))
-      except Exception as exc:  # A broken socket must not poison the runtime.
+        await asyncio.wait_for(
+            self._call(listener, dict(snapshot)),
+            timeout=self._state_listener_timeout,
+        )
+      except Exception as exc:  # Broken or stalled sockets cannot poison state.
         self._state_listeners.discard(listener)
         logging.warning(
             'Leonidas state listener removed error_type=%s',
             type(exc).__name__,
         )
+
+    listeners = tuple(self._state_listeners)
+    if listeners:
+      await asyncio.gather(*(publish(listener) for listener in listeners))
 
   def snapshot(self) -> dict[str, Any]:
     return {
@@ -157,7 +169,6 @@ class SessionManager:
           self._state = SessionState.ERROR
           self._last_error = type(exc).__name__
           snapshot = self.snapshot()
-          # Publish the error before preserving the original exception.
           asyncio.create_task(self._notify_state(snapshot))
           raise
       snapshot = self.snapshot()
@@ -199,7 +210,7 @@ class SessionManager:
       )
     except asyncio.CancelledError:
       return
-    except Exception as exc:  # Stored and published after taking the lock.
+    except Exception as exc:
       error = exc
 
     async with self._lock:
@@ -277,7 +288,6 @@ class SessionManager:
       except asyncio.CancelledError:
         pass
       except Exception:
-        # The failed task is being torn down; Start creates a fresh one.
         pass
 
     async with self._lock:
