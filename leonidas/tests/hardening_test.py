@@ -85,7 +85,9 @@ for line in sys.stdin:
       await adapter.close()
     self.assertEqual(pcm, b'pcm')
 
-  async def test_parakeet_timeout_restarts_worker_and_next_request_succeeds(self):
+  async def test_parakeet_timeout_restarts_worker_and_next_request_succeeds(
+      self,
+  ):
     worker_source = """
 import json
 from pathlib import Path
