@@ -259,9 +259,7 @@ class CascadeResources:
           getattr(synthesizer, 'device', device),
       )
     except BaseException:
-      await self._discard_candidate(
-          stt_key, tts_key, transcriber, synthesizer
-      )
+      await self._discard_candidate(stt_key, tts_key, transcriber, synthesizer)
       if self._ready_status is not None:
         self._status = copy.deepcopy(self._ready_status)
         await self._notify()
