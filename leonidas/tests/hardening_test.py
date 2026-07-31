@@ -39,6 +39,20 @@ class TranscriptFilterTest(unittest.TestCase):
 
 class WorkerRecoveryTest(unittest.IsolatedAsyncioTestCase):
 
+  @staticmethod
+  def _xtts_runtime(root: Path) -> tuple[Path, Path]:
+    voice = root / 'voice.wav'
+    voice.write_bytes(b'RIFF-demo')
+    tts_home = root / 'tts'
+    agreement = (
+        tts_home
+        / 'tts_models--multilingual--multi-dataset--xtts_v2'
+        / 'tos_agreed.txt'
+    )
+    agreement.parent.mkdir(parents=True)
+    agreement.write_text('accepted', encoding='utf-8')
+    return voice, tts_home
+
   async def test_xtts_timeout_restarts_worker_and_next_request_succeeds(self):
     worker_source = """
 import base64
@@ -58,26 +72,52 @@ for line in sys.stdin:
     with tempfile.TemporaryDirectory() as temp_dir:
       root = Path(temp_dir)
       (root / 'recovering_xtts.py').write_text(worker_source, encoding='utf-8')
-      voice = root / 'voice.wav'
-      voice.write_bytes(b'RIFF-demo')
-      agreement = (
-          root
-          / 'tts'
-          / 'tts_models--multilingual--multi-dataset--xtts_v2'
-          / 'tos_agreed.txt'
-      )
-      agreement.parent.mkdir(parents=True)
-      agreement.write_text('accepted', encoding='utf-8')
+      voice, tts_home = self._xtts_runtime(root)
       adapter = xtts_process.XttsWorkerSynthesizer(
           device='cpu',
           voices={'leonidas': voice},
           python=Path(sys.executable),
-          tts_home=root / 'tts',
+          tts_home=tts_home,
           worker_module='recovering_xtts',
           worker_cwd=root,
           timeout=0.05,
       )
       with self.assertRaises(TimeoutError):
+        await adapter.synthesize('primeira', voice_id='leonidas', language='pt')
+      pcm = await adapter.synthesize(
+          'segunda', voice_id='leonidas', language='pt'
+      )
+      await adapter.close()
+    self.assertEqual(pcm, b'pcm')
+
+  async def test_xtts_protocol_mismatch_restarts_worker(self):
+    worker_source = """
+import base64
+import json
+from pathlib import Path
+import sys
+marker = Path('protocol-attempt.txt')
+for line in sys.stdin:
+  request = json.loads(line)
+  count = int(marker.read_text() if marker.exists() else '0') + 1
+  marker.write_text(str(count))
+  response_id = 'wrong-id' if count == 1 else request['id']
+  print(json.dumps({'id': response_id, 'audio': base64.b64encode(b'pcm').decode()}), flush=True)
+"""
+    with tempfile.TemporaryDirectory() as temp_dir:
+      root = Path(temp_dir)
+      (root / 'protocol_xtts.py').write_text(worker_source, encoding='utf-8')
+      voice, tts_home = self._xtts_runtime(root)
+      adapter = xtts_process.XttsWorkerSynthesizer(
+          device='cpu',
+          voices={'leonidas': voice},
+          python=Path(sys.executable),
+          tts_home=tts_home,
+          worker_module='protocol_xtts',
+          worker_cwd=root,
+          timeout=1,
+      )
+      with self.assertRaisesRegex(RuntimeError, 'response id mismatch'):
         await adapter.synthesize('primeira', voice_id='leonidas', language='pt')
       pcm = await adapter.synthesize(
           'segunda', voice_id='leonidas', language='pt'
@@ -115,6 +155,37 @@ for line in sys.stdin:
           timeout=0.05,
       )
       with self.assertRaises(TimeoutError):
+        await adapter.transcribe(b'first')
+      transcript = await adapter.transcribe(b'second')
+      await adapter.close()
+    self.assertEqual(transcript, 'fala recuperada')
+
+  async def test_parakeet_protocol_mismatch_restarts_worker(self):
+    worker_source = """
+import json
+from pathlib import Path
+import sys
+marker = Path('protocol-attempt.txt')
+for line in sys.stdin:
+  request = json.loads(line)
+  count = int(marker.read_text() if marker.exists() else '0') + 1
+  marker.write_text(str(count))
+  response_id = 'wrong-id' if count == 1 else request['id']
+  print(json.dumps({'id': response_id, 'text': 'fala recuperada'}), flush=True)
+"""
+    with tempfile.TemporaryDirectory() as temp_dir:
+      root = Path(temp_dir)
+      (root / 'protocol_parakeet.py').write_text(
+          worker_source, encoding='utf-8'
+      )
+      adapter = parakeet_process.ParakeetWorkerTranscriber(
+          device='cpu',
+          python=Path(sys.executable),
+          worker_module='protocol_parakeet',
+          worker_cwd=root,
+          timeout=1,
+      )
+      with self.assertRaisesRegex(RuntimeError, 'response id mismatch'):
         await adapter.transcribe(b'first')
       transcript = await adapter.transcribe(b'second')
       await adapter.close()
