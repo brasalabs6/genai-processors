@@ -36,16 +36,16 @@ class BoundedConversationHistory:
     self._messages: list[Message] = []
 
   @staticmethod
-  def _cost(
-      objective: str, prompt: str, messages: Sequence[Message]
-  ) -> int:
+  def _cost(objective: str, prompt: str, messages: Sequence[Message]) -> int:
     return (
         estimate_tokens(objective)
         + estimate_tokens(prompt)
         + sum(estimate_tokens(text) + 2 for _role, text in messages)
     )
 
-  def for_prompt(self, *, objective: str, prompt: str) -> tuple[list[Message], int]:
+  def for_prompt(
+      self, *, objective: str, prompt: str
+  ) -> tuple[list[Message], int]:
     """Returns history for inference and evicts oldest complete pairs if needed."""
     removed_turns = 0
     if self._cost(objective, prompt, self._messages) > self._trigger_tokens:
