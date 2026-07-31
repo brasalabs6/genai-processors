@@ -47,7 +47,13 @@ class ParakeetTranscriber:
     if model_id != capabilities.PARAKEET_V3_MODEL:
       raise ValueError(f'Unsupported Parakeet model: {model_id!r}')
     self.model_id = model_id
-    self.device = device_selection.resolve_device(device)
+    # Production loaders must validate the requested hardware. Injected loaders
+    # are an explicit test seam and may emulate CUDA tensors on CPU runners.
+    self.device = (
+        device_selection.resolve_device(device)
+        if loader is _default_loader
+        else device
+    )
     if loader is _default_loader:
       try:
         from transformers import AutoModelForTDT  # pylint: disable=g-import-not-at-top
