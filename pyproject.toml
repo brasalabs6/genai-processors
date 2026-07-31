@@ -43,7 +43,10 @@ dependencies = [
     "shortuuid>=1.0.0",
     "xxhash>=3.0.0",
     "mcp>=1.26.0",
-    "webrtcvad>=2.0.10",
+    # Maintained drop-in distribution that still imports as `webrtcvad` and
+    # publishes CPython 3.11-3.13 wheels. The original 2.0.10 distribution
+    # imports removed `pkg_resources` APIs under modern setuptools.
+    "webrtcvad-wheels==2.0.14",
 ]
 
 # `version` is automatically set by flit to use `genai_processors.__version__`
@@ -81,6 +84,7 @@ dev = [
     "pylint>=2.6.0",
     "pytest",
     "pytest-xdist",
+    "SQLAlchemy>=2.0",
     "torch",
     "transformers",
     "typing_extensions",
