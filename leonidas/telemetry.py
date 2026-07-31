@@ -10,16 +10,21 @@ from typing import Callable
 
 
 class MetricsStore:
-  """Keeps bounded metric samples and counters in memory."""
+  """Keeps bounded metric samples, series and counters in memory."""
 
-  def __init__(self, max_samples: int = 100):
+  def __init__(self, max_samples: int = 100, max_series: int = 64):
+    if max_samples <= 0 or max_series <= 0:
+      raise ValueError('Metric bounds must be positive')
     self._max_samples = max_samples
+    self._max_series = max_series
     self._samples: dict[str, collections.deque[float]] = {}
     self._counters: collections.Counter[str] = collections.Counter()
     self._lock = threading.Lock()
 
   def observe(self, name: str, value: float) -> None:
     with self._lock:
+      if name not in self._samples and len(self._samples) >= self._max_series:
+        raise ValueError('Metric series limit reached')
       self._samples.setdefault(
           name, collections.deque(maxlen=self._max_samples)
       ).append(float(value))
@@ -55,7 +60,7 @@ class MetricsStore:
 
 
 class LatencyTracker:
-  """Measures the first output audio after the latest input activity."""
+  """Measures first output audio from a completed input-turn boundary."""
 
   def __init__(
       self,
@@ -65,13 +70,20 @@ class LatencyTracker:
   ):
     self._metrics = metrics
     self._clock = clock
-    self._input_at: float | None = None
+    self._turn_boundary_at: float | None = None
+
+  def mark_turn_boundary(self) -> None:
+    """Starts TTFA after text submit, endpointed speech, or mic shutdown."""
+    self._turn_boundary_at = self._clock()
 
   def mark_input(self) -> None:
-    self._input_at = self._clock()
+    """Compatibility alias for callers that already represent a boundary."""
+    self.mark_turn_boundary()
 
   def mark_output_audio(self) -> None:
-    if self._input_at is None:
+    if self._turn_boundary_at is None:
       return
-    self._metrics.observe('ttfa_ms', (self._clock() - self._input_at) * 1000)
-    self._input_at = None
+    self._metrics.observe(
+        'ttfa_ms', (self._clock() - self._turn_boundary_at) * 1000
+    )
+    self._turn_boundary_at = None
