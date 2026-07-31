@@ -15,7 +15,6 @@
 
 """Tests for live_server."""
 
-import asyncio
 import base64
 import json
 from typing import Any, AsyncIterable
@@ -25,7 +24,6 @@ from absl.testing import absltest
 from absl.testing import parameterized
 from genai_processors import content_api
 from genai_processors import processor
-from genai_processors import streams
 from genai_processors.dev import live_server
 from websockets.exceptions import ConnectionClosed
 
