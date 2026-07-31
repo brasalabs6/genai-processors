@@ -27,11 +27,15 @@ class CascadeResources:
       synthesizer_factory: Callable[..., Any] = (
           xtts_process.XttsWorkerSynthesizer
       ),
+      listener_timeout: float = 1.0,
   ):
+    if listener_timeout <= 0:
+      raise ValueError('listener_timeout must be positive')
     self._voices = dict(voices)
     self._device_resolver = device_resolver
     self._transcriber_factory = transcriber_factory
     self._synthesizer_factory = synthesizer_factory
+    self._listener_timeout = listener_timeout
     self._transcribers: dict[tuple[str, str], Any] = {}
     self._synthesizers: dict[tuple[str, str], Any] = {}
     self._listeners: set[Callable[[dict[str, Any]], Any]] = set()
@@ -90,16 +94,21 @@ class CascadeResources:
 
   async def _notify(self) -> None:
     snapshot = self.snapshot()
-    for listener in tuple(self._listeners):
+
+    async def publish(listener: Callable[[dict[str, Any]], Any]) -> None:
       try:
-        result = listener(snapshot)
+        result = listener(copy.deepcopy(snapshot))
         if inspect.isawaitable(result):
-          await result
+          await asyncio.wait_for(result, timeout=self._listener_timeout)
       except Exception as exc:
         self._listeners.discard(listener)
         logging.warning(
             'Resource listener removed error_type=%s', type(exc).__name__
         )
+
+    listeners = tuple(self._listeners)
+    if listeners:
+      await asyncio.gather(*(publish(listener) for listener in listeners))
 
   async def _update(self, component_id: str, **values: Any) -> None:
     self._status[component_id].update(values)
