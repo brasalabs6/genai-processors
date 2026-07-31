@@ -35,6 +35,7 @@ OutputSender = Callable[[content_api.ProcessorPart], Any]
 PipelineFactory = Callable[[config.AgentConfig], processor.Processor]
 PipelinePreparer = Callable[[config.AgentConfig], Awaitable[Any]]
 PreparationSelector = Callable[[config.AgentConfig], bool]
+StateListener = Callable[[dict[str, Any]], Any]
 
 
 class SessionManager:
@@ -68,7 +69,7 @@ class SessionManager:
     self._startup_generation = 0
     self._last_error: str | None = None
     self._lock = asyncio.Lock()
-    self._state_listeners: set[Callable[[dict[str, Any]], Any]] = set()
+    self._state_listeners: set[StateListener] = set()
 
   async def attach_media(self, sender: OutputSender) -> None:
     async with self._lock:
@@ -81,14 +82,10 @@ class SessionManager:
     async with self._lock:
       self._sender = None
 
-  def add_state_listener(
-      self, listener: Callable[[dict[str, Any]], Any]
-  ) -> None:
+  def add_state_listener(self, listener: StateListener) -> None:
     self._state_listeners.add(listener)
 
-  def remove_state_listener(
-      self, listener: Callable[[dict[str, Any]], Any]
-  ) -> None:
+  def remove_state_listener(self, listener: StateListener) -> None:
     self._state_listeners.discard(listener)
 
   async def _call(self, callback: Callable[..., Any], *args: Any) -> None:
@@ -96,10 +93,17 @@ class SessionManager:
     if inspect.isawaitable(result):
       await result
 
-  async def _notify_state(self) -> None:
-    snapshot = self.snapshot()
+  async def _notify_state(self, snapshot: dict[str, Any]) -> None:
+    """Publishes a stable snapshot without holding the session lifecycle lock."""
     for listener in tuple(self._state_listeners):
-      await self._call(listener, snapshot)
+      try:
+        await self._call(listener, dict(snapshot))
+      except Exception as exc:  # A broken socket must not poison the runtime.
+        self._state_listeners.discard(listener)
+        logging.warning(
+            'Leonidas state listener removed error_type=%s',
+            type(exc).__name__,
+        )
 
   def snapshot(self) -> dict[str, Any]:
     return {
@@ -136,7 +140,6 @@ class SessionManager:
         raise MediaNotConnectedError('Connect the media WebSocket before Start')
       self._state = SessionState.STARTING
       self._last_error = None
-      await self._notify_state()
       agent_config = self._config_store.snapshot().active
       if self._pipeline_preparer is not None and self._requires_preparation(
           agent_config
@@ -147,43 +150,46 @@ class SessionManager:
             self._prepare_and_start(agent_config, generation),
             name=f'leonidas-session-prepare-{generation}',
         )
-        return self.snapshot()
-      await self._activate(agent_config)
-      await self._notify_state()
-      return self.snapshot()
+      else:
+        try:
+          self._activate(agent_config)
+        except Exception as exc:
+          self._state = SessionState.ERROR
+          self._last_error = type(exc).__name__
+          snapshot = self.snapshot()
+          # Publish the error before preserving the original exception.
+          asyncio.create_task(self._notify_state(snapshot))
+          raise
+      snapshot = self.snapshot()
+    await self._notify_state(snapshot)
+    return snapshot
 
-  async def _activate(self, agent_config: config.AgentConfig) -> None:
+  def _activate(self, agent_config: config.AgentConfig) -> None:
     started = time.perf_counter()
-    try:
-      live_processor = self._pipeline_factory(agent_config)
-      queue: asyncio.Queue[content_api.ProcessorPart | None] = asyncio.Queue(
-          maxsize=256
-      )
-      self._input_queue = queue
-      self._session_id = uuid.uuid4().hex
-      self._started_at = time.time()
-      if self._sender is None:
-        raise MediaNotConnectedError('Media disconnected during Start')
-      self._task = asyncio.create_task(
-          self._run(live_processor, queue, self._sender),
-          name=f'leonidas-session-{self._session_id}',
-      )
-      self._task.add_done_callback(self._task_done)
-      self._state = SessionState.RUNNING
-      self._metrics.observe(
-          'pipeline_startup_ms', (time.perf_counter() - started) * 1000
-      )
-    except Exception as exc:
-      self._state = SessionState.ERROR
-      self._last_error = type(exc).__name__
-      self._input_queue = None
-      self._task = None
-      raise
+    live_processor = self._pipeline_factory(agent_config)
+    queue: asyncio.Queue[content_api.ProcessorPart | None] = asyncio.Queue(
+        maxsize=256
+    )
+    if self._sender is None:
+      raise MediaNotConnectedError('Media disconnected during Start')
+    self._input_queue = queue
+    self._session_id = uuid.uuid4().hex
+    self._started_at = time.time()
+    self._task = asyncio.create_task(
+        self._run(live_processor, queue, self._sender),
+        name=f'leonidas-session-{self._session_id}',
+    )
+    self._task.add_done_callback(self._task_done)
+    self._state = SessionState.RUNNING
+    self._metrics.observe(
+        'pipeline_startup_ms', (time.perf_counter() - started) * 1000
+    )
 
   async def _prepare_and_start(
       self, agent_config: config.AgentConfig, generation: int
   ) -> None:
     started = time.perf_counter()
+    error: Exception | None = None
     try:
       if self._pipeline_preparer is None:
         return
@@ -193,88 +199,98 @@ class SessionManager:
       )
     except asyncio.CancelledError:
       return
-    except Exception as exc:
-      async with self._lock:
-        if (
-            generation == self._startup_generation
-            and self._state == SessionState.STARTING
-        ):
-          self._state = SessionState.ERROR
-          self._last_error = type(exc).__name__
-          self._startup_task = None
-          await self._notify_state()
-      return
+    except Exception as exc:  # Stored and published after taking the lock.
+      error = exc
+
     async with self._lock:
       if (
           generation != self._startup_generation
           or self._state != SessionState.STARTING
       ):
         return
-      try:
-        await self._activate(agent_config)
-      except Exception as exc:
+      if error is not None:
         self._state = SessionState.ERROR
-        self._last_error = type(exc).__name__
+        self._last_error = type(error).__name__
+      else:
+        try:
+          self._activate(agent_config)
+        except Exception as exc:
+          self._state = SessionState.ERROR
+          self._last_error = type(exc).__name__
       self._startup_task = None
-      await self._notify_state()
+      snapshot = self.snapshot()
+    await self._notify_state(snapshot)
 
   def _task_done(self, task: asyncio.Task[None]) -> None:
+    asyncio.create_task(self._handle_task_done(task))
+
+  async def _handle_task_done(self, task: asyncio.Task[None]) -> None:
     if task.cancelled():
       return
     try:
       exception = task.exception()
     except asyncio.CancelledError:
       return
-    if exception is not None and self._state not in (
-        SessionState.STOPPING,
-        SessionState.STOPPED,
-    ):
+    if exception is None:
+      return
+    async with self._lock:
+      if task is not self._task or self._state in (
+          SessionState.STOPPING,
+          SessionState.STOPPED,
+      ):
+        return
       self._state = SessionState.ERROR
       self._last_error = type(exception).__name__
-      logging.error(
-          'Leonidas pipeline failed error_type=%s', type(exception).__name__
-      )
-      asyncio.create_task(self._notify_state())
+      snapshot = self.snapshot()
+    logging.error(
+        'Leonidas pipeline failed error_type=%s', type(exception).__name__
+    )
+    await self._notify_state(snapshot)
 
   async def stop(self) -> dict[str, Any]:
     async with self._lock:
       if self._state == SessionState.STOPPED:
         return self.snapshot()
       self._state = SessionState.STOPPING
-      await self._notify_state()
       self._startup_generation += 1
       startup_task = self._startup_task
-      self._startup_task = None
-      if startup_task is not None and not startup_task.done():
-        startup_task.cancel()
-        await asyncio.gather(startup_task, return_exceptions=True)
       task = self._task
-      if self._input_queue is not None:
-        try:
-          self._input_queue.put_nowait(None)
-        except asyncio.QueueFull:
-          pass
-      if task is not None:
-        try:
-          await asyncio.wait_for(task, timeout=self._stop_timeout)
-        except asyncio.TimeoutError:
-          task.cancel()
-          try:
-            await task
-          except asyncio.CancelledError:
-            pass
-        except asyncio.CancelledError:
-          pass
-        except Exception:
-          # The failed task is being torn down; Start creates a fresh one.
-          pass
-      self._task = None
-      self._input_queue = None
+      queue = self._input_queue
+      self._startup_task = None
+      stopping_snapshot = self.snapshot()
+    await self._notify_state(stopping_snapshot)
+
+    if startup_task is not None and not startup_task.done():
+      startup_task.cancel()
+      await asyncio.gather(startup_task, return_exceptions=True)
+    if queue is not None:
+      try:
+        queue.put_nowait(None)
+      except asyncio.QueueFull:
+        pass
+    if task is not None:
+      try:
+        await asyncio.wait_for(asyncio.shield(task), timeout=self._stop_timeout)
+      except asyncio.TimeoutError:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+      except asyncio.CancelledError:
+        pass
+      except Exception:
+        # The failed task is being torn down; Start creates a fresh one.
+        pass
+
+    async with self._lock:
+      if self._task is task:
+        self._task = None
+      if self._input_queue is queue:
+        self._input_queue = None
       self._session_id = None
       self._started_at = None
       self._state = SessionState.STOPPED
-      await self._notify_state()
-      return self.snapshot()
+      stopped_snapshot = self.snapshot()
+    await self._notify_state(stopped_snapshot)
+    return stopped_snapshot
 
   async def send(self, part: content_api.ProcessorPart) -> None:
     queue = self._input_queue
@@ -286,7 +302,26 @@ class SessionManager:
     elif content_api.is_image(part.mimetype):
       self._metrics.increment('frames_received')
 
+  async def _wait_until_started(self) -> None:
+    """Waits for background preparation and turns startup errors into failure."""
+    while True:
+      async with self._lock:
+        task = self._startup_task
+        state = self._state
+        error = self._last_error
+      if task is None:
+        if state == SessionState.RUNNING:
+          return
+        raise RuntimeError(f'Leonidas startup failed: {error or state.value}')
+      await asyncio.shield(task)
+
   async def apply_config(self) -> dict[str, Any]:
+    """Applies a draft atomically from the caller's point of view.
+
+    A prepared local pipeline settles before success is returned. Any async
+    preparation or activation failure restores the previous active config and
+    restarts the previous session before the original failure is re-raised.
+    """
     was_running = self._state in (
         SessionState.STARTING,
         SessionState.RUNNING,
@@ -294,11 +329,21 @@ class SessionManager:
     previous, _ = self._config_store.promote_draft()
     if not was_running:
       return self._config_store.snapshot().to_dict()
+
     await self.stop()
     try:
       await self.start()
+      await self._wait_until_started()
     except Exception:
       self._config_store.restore_active(previous)
-      await self.start()
+      await self.stop()
+      try:
+        await self.start()
+        await self._wait_until_started()
+      except Exception as rollback_error:
+        logging.error(
+            'Leonidas config rollback failed error_type=%s',
+            type(rollback_error).__name__,
+        )
       raise
     return self._config_store.snapshot().to_dict()
