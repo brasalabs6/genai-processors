@@ -2,6 +2,7 @@ import type {
   Capabilities,
   ConfigSnapshot,
   MetricsSnapshot,
+  ResourceSnapshot,
   SessionSnapshot,
 } from './types';
 
@@ -55,6 +56,7 @@ export const controlApi = {
   config: () => request<ConfigSnapshot>('/api/v1/config'),
   session: () => request<SessionSnapshot>('/api/v1/session'),
   metrics: () => request<MetricsSnapshot>('/api/v1/metrics'),
+  resources: () => request<ResourceSnapshot>('/api/v1/resources'),
   updateDraft: (revision: number, updates: Record<string, unknown>) =>
     request<ConfigSnapshot>('/api/v1/config/draft', {
       method: 'PUT',

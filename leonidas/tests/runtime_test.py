@@ -72,6 +72,84 @@ class RuntimeTest(unittest.IsolatedAsyncioTestCase):
     await self.manager.stop()
     self.assertEqual(self.manager.snapshot()['state'], 'stopped')
 
+  async def test_local_start_prepares_in_background_before_running(self):
+    prepare = asyncio.Event()
+    calls = []
+
+    async def preparer(_config):
+      calls.append('prepare')
+      await prepare.wait()
+
+    manager = runtime.SessionManager(
+        self.store,
+        lambda _config: EchoProcessor(),
+        pipeline_preparer=preparer,
+        requires_preparation=lambda _config: True,
+        stop_timeout=0.2,
+    )
+    await manager.attach_media(self.outputs.append)
+
+    snapshot = await manager.start()
+    self.assertEqual(snapshot['state'], 'starting')
+    self.assertEqual(calls, [])
+    await asyncio.sleep(0)
+    self.assertEqual(calls, ['prepare'])
+
+    prepare.set()
+    for _ in range(10):
+      if manager.snapshot()['state'] == 'running':
+        break
+      await asyncio.sleep(0)
+    self.assertEqual(manager.snapshot()['state'], 'running')
+    await manager.stop()
+    await manager.detach_media()
+
+  async def test_stop_during_preparation_never_starts_stale_session(self):
+    prepare = asyncio.Event()
+
+    async def preparer(_config):
+      await prepare.wait()
+
+    manager = runtime.SessionManager(
+        self.store,
+        lambda _config: EchoProcessor(),
+        pipeline_preparer=preparer,
+        requires_preparation=lambda _config: True,
+        stop_timeout=0.2,
+    )
+    await manager.attach_media(self.outputs.append)
+    await manager.start()
+    await asyncio.sleep(0)
+    await manager.stop()
+    prepare.set()
+    await asyncio.sleep(0)
+
+    self.assertEqual(manager.snapshot()['state'], 'stopped')
+    self.assertEqual(manager.snapshot()['session_id'], None)
+    await manager.detach_media()
+
+  async def test_gemini_style_start_remains_synchronous(self):
+    prepared = False
+
+    async def preparer(_config):
+      nonlocal prepared
+      prepared = True
+
+    manager = runtime.SessionManager(
+        self.store,
+        lambda _config: EchoProcessor(),
+        pipeline_preparer=preparer,
+        requires_preparation=lambda _config: False,
+    )
+    await manager.attach_media(self.outputs.append)
+
+    snapshot = await manager.start()
+
+    self.assertEqual(snapshot['state'], 'running')
+    self.assertFalse(prepared)
+    await manager.stop()
+    await manager.detach_media()
+
   async def test_background_failure_notifies_state_listeners(self):
     class FailingProcessor(processor.Processor):
 

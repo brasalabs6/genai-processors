@@ -60,6 +60,14 @@ def install(
   # These libraries can emit raw WebSocket frames at DEBUG level.
   logging.getLogger('websockets').setLevel(logging.INFO)
   logging.getLogger('google.genai.live').setLevel(logging.INFO)
+  for logger_name in (
+      'httpcore',
+      'httpx',
+      'huggingface_hub',
+      'filelock',
+      'torio',
+  ):
+    logging.getLogger(logger_name).setLevel(logging.WARNING)
   logging.captureWarnings(True)
   return (
       path,

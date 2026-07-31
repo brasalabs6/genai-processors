@@ -2,7 +2,7 @@
 
 import json
 import time
-from typing import Any
+from typing import Any, Callable, Protocol
 
 from genai_processors import content_api
 from genai_processors.dev.live_server import clean_encoder
@@ -12,6 +12,18 @@ from websockets.exceptions import ConnectionClosed
 
 from leonidas import runtime
 from leonidas import telemetry
+
+
+class ResourceStateSource(Protocol):
+
+  def snapshot(self) -> dict[str, Any]:
+    ...
+
+  def add_listener(self, listener: Callable[[dict[str, Any]], Any]) -> None:
+    ...
+
+  def remove_listener(self, listener: Callable[[dict[str, Any]], Any]) -> None:
+    ...
 
 
 def local_origins(web_port: int) -> tuple[str | None, ...]:
@@ -41,6 +53,16 @@ def _state_part(
   )
 
 
+def _resource_part(
+    state: dict[str, Any], sequence: int
+) -> content_api.ProcessorPart:
+  metadata = dict(state)
+  metadata.update({'sequence': sequence, 'timestamp': time.time()})
+  return content_api.ProcessorPart(
+      '', mimetype='application/x-resource-state', metadata=metadata
+  )
+
+
 def _decode(message: str | bytes) -> content_api.ProcessorPart:
   if isinstance(message, bytes):
     message = message.decode('utf-8')
@@ -64,6 +86,7 @@ async def run(
     host: str = '127.0.0.1',
     port: int = 8765,
     allowed_origins: tuple[str | None, ...] | None = None,
+    resources: ResourceStateSource | None = None,
 ) -> None:
   """Serves the single-owner media channel until cancelled."""
   if host != '127.0.0.1':
@@ -95,13 +118,22 @@ async def run(
       sequence += 1
       await send_part(_state_part(state, sequence))
 
+    async def send_resources(state: dict[str, Any]) -> None:
+      nonlocal sequence
+      sequence += 1
+      await send_part(_resource_part(state, sequence))
+
     try:
       await manager.attach_media(send_part)
     except runtime.MediaAlreadyConnectedError:
       await websocket.close(1008, 'Another media client owns the session')
       return
     manager.add_state_listener(send_state)
+    if resources is not None:
+      resources.add_listener(send_resources)
     await send_state(manager.snapshot())
+    if resources is not None:
+      await send_resources(resources.snapshot())
     try:
       async for message in websocket:
         try:
@@ -133,6 +165,8 @@ async def run(
       pass
     finally:
       manager.remove_state_listener(send_state)
+      if resources is not None:
+        resources.remove_listener(send_resources)
       await manager.detach_media()
 
   async with serve(

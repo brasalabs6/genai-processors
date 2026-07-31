@@ -2,10 +2,13 @@
 
 import asyncio
 import base64
+import collections
 import json
 import logging
 import os
 from pathlib import Path
+from collections.abc import Awaitable, Callable
+from typing import Any
 import uuid
 
 from leonidas import capabilities
@@ -13,6 +16,7 @@ from leonidas.cascade import device as device_selection
 
 
 WORKER_RESPONSE_LIMIT = 64 * 1024 * 1024
+ProgressCallback = Callable[[str], Awaitable[None]]
 
 
 class XttsWorkerSynthesizer:
@@ -51,6 +55,7 @@ class XttsWorkerSynthesizer:
     self._stderr_task: asyncio.Task[None] | None = None
     self._drain_task: asyncio.Task[None] | None = None
     self._timeout = timeout
+    self._diagnostics: collections.deque[str] = collections.deque(maxlen=40)
 
   async def _start(self) -> asyncio.subprocess.Process:
     if self._process is not None and self._process.returncode is None:
@@ -96,12 +101,10 @@ class XttsWorkerSynthesizer:
   async def _consume_stderr(self, process: asyncio.subprocess.Process) -> None:
     if process.stderr is None:
       return
-    line_count = 0
     while line := await process.stderr.readline():
-      del line
-      line_count += 1
-    if line_count:
-      logging.debug('XTTS worker emitted diagnostic_lines=%d', line_count)
+      value = line.decode('utf-8', errors='replace').strip()
+      if value:
+        self._diagnostics.append(value[-2000:])
 
   async def synthesize(
       self, text: str, *, voice_id: str, language: str
@@ -111,6 +114,52 @@ class XttsWorkerSynthesizer:
       raise ValueError(f'Unknown or unavailable voice_id: {voice_id!r}')
     if language != 'pt':
       raise ValueError('XTTS language must be pt')
+    response = await self._request(
+        {
+            'op': 'synthesize',
+            'model_id': self.model_id,
+            'device': self.device,
+            'text': text.strip()[:12000],
+            'speaker_wav': str(voice.resolve()),
+            'language': language,
+        }
+    )
+    return base64.b64decode(response['audio'], validate=True)
+
+  async def load(
+      self, progress: ProgressCallback | None = None
+  ) -> dict[str, Any]:
+    """Loads and warms the persistent worker before a session starts."""
+    self.validate_runtime()
+    if not self._voices:
+      raise RuntimeError('XTTS requires at least one configured voice')
+    voice = next(iter(self._voices.values()))
+    response = await self._request(
+        {
+            'op': 'load',
+            'model_id': self.model_id,
+            'device': self.device,
+            'speaker_wav': str(voice.resolve()),
+            'language': 'pt',
+        },
+        progress=progress,
+    )
+    return {
+        name: response.get(name)
+        for name in (
+            'device',
+            'gpu_name',
+            'memory_allocated_mib',
+            'memory_reserved_mib',
+        )
+    }
+
+  async def _request(
+      self,
+      payload: dict[str, Any],
+      *,
+      progress: ProgressCallback | None = None,
+  ) -> dict[str, Any]:
     await self._lock.acquire()
     release_lock = True
     try:
@@ -118,21 +167,16 @@ class XttsWorkerSynthesizer:
       if process.stdin is None or process.stdout is None:
         raise RuntimeError('XTTS worker pipes are unavailable')
       request_id = uuid.uuid4().hex
-      payload = {
-          'id': request_id,
-          'model_id': self.model_id,
-          'device': self.device,
-          'text': text.strip()[:12000],
-          'speaker_wav': str(voice.resolve()),
-          'language': language,
-      }
+      request = {'id': request_id, **payload}
       process.stdin.write(
-          (json.dumps(payload, ensure_ascii=False) + '\n').encode()
+          (json.dumps(request, ensure_ascii=False) + '\n').encode()
       )
       await process.stdin.drain()
-      response_task = asyncio.create_task(process.stdout.readline())
+      response_task = asyncio.create_task(
+          self._read_response(process, request_id, progress)
+      )
       try:
-        line = await asyncio.wait_for(
+        return await asyncio.wait_for(
             asyncio.shield(response_task), timeout=self._timeout
         )
       except (asyncio.CancelledError, TimeoutError):
@@ -141,6 +185,20 @@ class XttsWorkerSynthesizer:
             self._drain_cancelled_response(response_task)
         )
         raise
+    finally:
+      if release_lock:
+        self._lock.release()
+
+  async def _read_response(
+      self,
+      process: asyncio.subprocess.Process,
+      request_id: str,
+      progress: ProgressCallback | None,
+  ) -> dict[str, Any]:
+    if process.stdout is None:
+      raise RuntimeError('XTTS worker stdout is unavailable')
+    while True:
+      line = await process.stdout.readline()
       if not line:
         raise RuntimeError(
             f'XTTS worker exited unexpectedly with {process.returncode}'
@@ -148,18 +206,24 @@ class XttsWorkerSynthesizer:
       response = json.loads(line)
       if response.get('id') != request_id:
         raise RuntimeError('XTTS worker response id mismatch')
+      if response.get('type') == 'event':
+        if progress is not None:
+          await progress(str(response.get('phase', 'loading')))
+        continue
       if response.get('error'):
+        logging.error(
+            'XTTS worker error=%s diagnostics_tail=%r',
+            response['error'],
+            list(self._diagnostics)[-10:],
+        )
         raise RuntimeError(
             f'XTTS worker failed: {response["error"]}: '
             f'{response.get("message", "")}'
         )
-      return base64.b64decode(response['audio'], validate=True)
-    finally:
-      if release_lock:
-        self._lock.release()
+      return response
 
   async def _drain_cancelled_response(
-      self, response_task: asyncio.Task[bytes]
+      self, response_task: asyncio.Task[dict[str, Any]]
   ) -> None:
     try:
       await response_task

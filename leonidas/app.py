@@ -66,8 +66,15 @@ async def run(
       groq_api_key,
       voices=voices,
       cascade_resources=cascade_resources,
+      metrics=metrics,
   )
-  manager = runtime.SessionManager(store, pipelines.create, metrics=metrics)
+  manager = runtime.SessionManager(
+      store,
+      pipelines.create,
+      metrics=metrics,
+      pipeline_preparer=pipelines.prepare,
+      requires_preparation=pipelines.requires_preparation,
+  )
   preview = voice_preview.VoicePreviewRouter(
       google_api_key=google_api_key,
       voices=voices,
@@ -79,6 +86,7 @@ async def run(
       metrics=metrics,
       logs=logs,
       voice_preview=preview,
+      resources=cascade_resources.snapshot,
   )
   httpd = http_server.create_server(
       host='127.0.0.1',
@@ -106,6 +114,7 @@ async def run(
         host='127.0.0.1',
         port=args.websocket_port,
         allowed_origins=websocket_server.local_origins(args.web_port),
+        resources=cascade_resources,
     )
   finally:
     await manager.stop()

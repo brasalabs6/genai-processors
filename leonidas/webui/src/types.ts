@@ -116,3 +116,35 @@ export interface MetricsSnapshot {
   metrics: Record<string, MetricSummary>;
   counters: Record<string, number>;
 }
+
+export type ResourceState =
+  | 'unloaded'
+  | 'validating'
+  | 'loading'
+  | 'warming'
+  | 'ready'
+  | 'error';
+
+export interface ResourceComponent {
+  id: 'stt' | 'tts';
+  model_id: string | null;
+  state: ResourceState;
+  phase: string;
+  device: string | null;
+  gpu_name: string | null;
+  load_ms: number | null;
+  memory_allocated_mib: number | null;
+  memory_reserved_mib: number | null;
+  error: {
+    stage: string;
+    code: string;
+    message: string;
+    recovery: string;
+  } | null;
+}
+
+export interface ResourceSnapshot {
+  schema_version: 1;
+  overall_state: 'unloaded' | 'loading' | 'ready' | 'error';
+  components: ResourceComponent[];
+}

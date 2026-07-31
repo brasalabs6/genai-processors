@@ -3,6 +3,7 @@ import {describe, expect, it} from 'vitest';
 import {
   audioMessage,
   clientMetricMessage,
+  connectionClosePolicy,
   imageMessage,
   micOffMessage,
   resolveWebSocketUrl,
@@ -25,6 +26,19 @@ describe('Leonidas ProcessorPart protocol', () => {
     expect(() =>
       resolveWebSocketUrl(location, '?ws=https%3A%2F%2Fexample.com'),
     ).toThrow(/ws:\/\//);
+  });
+
+  it('does not reconnect when another tab owns the media session', () => {
+    expect(
+      connectionClosePolicy(1008, 'Another media client owns the session'),
+    ).toEqual({
+      retry: true,
+      label: 'Sessão em uso em outra aba',
+    });
+    expect(connectionClosePolicy(1006, '')).toEqual({
+      retry: true,
+      label: 'WebSocket offline',
+    });
   });
 
   it('builds multimodal ProcessorPart messages', () => {

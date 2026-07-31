@@ -33,6 +33,19 @@ export function resolveWebSocketUrl(
   return `${scheme}://${location.hostname || '127.0.0.1'}:${port}/api/v1/live`;
 }
 
+export function connectionClosePolicy(
+  code: number,
+  reason: string,
+): {retry: boolean; label: string} {
+  if (code === 1008 && reason.includes('Another media client')) {
+    return {retry: true, label: 'Sessão em uso em outra aba'};
+  }
+  if (code === 1008) {
+    return {retry: false, label: reason || 'Conexão recusada'};
+  }
+  return {retry: true, label: 'WebSocket offline'};
+}
+
 export function textMessage(text: string): ProcessorMessage {
   return {part: {text}, role: 'user'};
 }

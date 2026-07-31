@@ -52,11 +52,14 @@ class ParakeetTranscriber:
     self._lock = asyncio.Lock()
     self._drain_task: asyncio.Task[str] | None = None
 
+  def _load(self) -> None:
+    if self._processor is None or self._model is None:
+      self._processor, self._model = self._loader(self.model_id, self.device)
+
   def _transcribe(self, pcm16: bytes) -> str:
     if len(pcm16) % 2:
       raise ValueError('PCM16 input byte length must be even')
-    if self._processor is None or self._model is None:
-      self._processor, self._model = self._loader(self.model_id, self.device)
+    self._load()
     audio = np.frombuffer(pcm16, dtype='<i2').astype(np.float32) / 32768.0
     inputs = self._processor(
         audio, sampling_rate=16000, return_tensors='pt'

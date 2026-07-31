@@ -87,6 +87,22 @@ browser PCM 16 kHz -> WebRTC VAD/endpointing -> Parakeet TDT 0.6B v3
   nesta conta não oferece modelo visual. A UI desabilita câmera/tela e explica
   a limitação; visão nunca é descartada silenciosamente.
 
+### Lifecycle e readiness dos modelos locais
+
+- Parakeet e XTTS rodam em subprocessos persistentes separados. Parakeet usa
+  a `.venv` principal/Transformers 5; XTTS usa `.venv-xtts`/Transformers 4.
+- Estados por componente: `unloaded`, `validating`, `loading`, `warming`,
+  `ready` e `error`. O estado inclui fase, modelo, device solicitado/resolvido,
+  GPU, tempos, memória PyTorch alocada/reservada e erro seguro.
+- Start da cascata retorna `starting` sem aguardar inferência bloqueante. A
+  carga ocorre sequencialmente Parakeet → XTTS para limitar pico de VRAM.
+- Warm-up executa inferência local real e só então marca `ready`. Pesos já
+  instalados usam cache local sem sondagens repetidas ao Hugging Face.
+- A sessão entra em `running` somente com os dois componentes `ready`. Stop
+  invalida o start pendente; readiness concluída depois não inicia sessão.
+- Modelos prontos são reutilizados entre sessões e fechados somente no shutdown.
+- Gemini Live não cria, carrega ou consulta os workers locais.
+
 ## 5. Modelos e capabilities
 
 Perfis iniciais:
@@ -216,9 +232,22 @@ Endpoints:
 - `POST /api/v1/session/stop`
 - `POST /api/v1/voices/preview` → `audio/wav`
 - `GET /api/v1/metrics`
+- `GET /api/v1/resources`
 - `GET /api/v1/logs`
 - `GET /api/v1/logs/{id}?cursor=&limit=`
 - `GET /api/v1/logs/stream?level=&logger=` → SSE
+
+`GET /api/v1/resources` retorna `schema_version`, `overall_state` e componentes
+com `id`, `model_id`, `state`, `phase`, `device`, `gpu_name`, `load_ms`,
+`memory_allocated_mib`, `memory_reserved_mib` e `error`. Campos de GPU/memória
+são `null` em CPU. Erros possuem `stage`, `code`, `message` e `recovery`,
+nunca traceback, prompt ou credencial. Os identificadores de componente são
+sempre `stt` e `tts`; campos privados do worker, como request `id` e `type`,
+nunca entram nesse contrato.
+
+`POST /api/v1/session/start` preserva `200/running` para Gemini. Para cascata
+fria retorna `202/starting`; readiness e transições posteriores chegam pelo
+WebSocket.
 
 O preview usa uma sessão efêmera, tem timeout de 15 segundos, áudio máximo de
 10 segundos e concorrência máxima de um. Gemini usa uma sessão efêmera; XTTS
@@ -234,6 +263,11 @@ Estados e métricas saem como partes `application/x-state` e
 `application/x-metric`. Seus metadados incluem `session_id`, `sequence` e
 `timestamp`. `interrupted` e `stopped` obrigam o cliente a zerar o playback.
 
+Readiness usa `application/x-resource-state`, com o mesmo snapshot de
+`GET /api/v1/resources`. Estados de turno da cascata usam `agent_state`:
+`listening`, `transcribing`, `thinking`, `synthesizing`, `speaking`,
+`interrupted` ou `error`.
+
 ## 10. Métricas
 
 Por sessão:
@@ -244,6 +278,8 @@ Por sessão:
 - interrupção até flush confirmado pelo cliente;
 - frames enviados, descartados e bytes;
 - chunks de áudio enviados/recebidos.
+- carga local, STT, Groq e TTS (`local_model_load_ms`, `local_stt_ms`,
+  `groq_reasoning_ms`, `local_tts_ms`).
 
 O backend mantém no máximo 100 amostras por métrica e calcula valor atual,
 média, p50 e p95. Métricas são memória-volátil e não incluem conteúdo.

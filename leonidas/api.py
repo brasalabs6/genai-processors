@@ -4,7 +4,7 @@ import dataclasses
 import json
 from pathlib import PurePosixPath
 import uuid
-from typing import Any, Mapping, Protocol
+from typing import Any, Callable, Mapping, Protocol
 from urllib import parse
 
 from leonidas import capabilities
@@ -72,12 +72,20 @@ class ControlApi:
       metrics: telemetry.MetricsStore,
       logs: log_store.LogStore,
       voice_preview: VoicePreview,
+      resources: Callable[[], dict[str, Any]] | None = None,
   ):
     self._config = config_store
     self._session = session
     self._metrics = metrics
     self._logs = logs
     self._voice_preview = voice_preview
+    self._resources = resources or (
+        lambda: {
+            'schema_version': 1,
+            'overall_state': 'unloaded',
+            'components': [],
+        }
+    )
 
   async def dispatch(
       self,
@@ -104,11 +112,16 @@ class ControlApi:
       if method == 'GET' and path == '/api/v1/session':
         return _json_response(self._session.snapshot())
       if method == 'POST' and path == '/api/v1/session/start':
-        return _json_response(await self._session.start())
+        snapshot = await self._session.start()
+        return _json_response(
+            snapshot, status=202 if snapshot.get('state') == 'starting' else 200
+        )
       if method == 'POST' and path == '/api/v1/session/stop':
         return _json_response(await self._session.stop())
       if method == 'GET' and path == '/api/v1/metrics':
         return _json_response(self._metrics.snapshot())
+      if method == 'GET' and path == '/api/v1/resources':
+        return _json_response(self._resources())
       if method == 'GET' and path == '/api/v1/logs':
         return _json_response({'files': self._logs.list_files()})
       if method == 'GET' and path.startswith('/api/v1/logs/'):

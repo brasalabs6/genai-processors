@@ -77,6 +77,20 @@
           </div>
           <div id="cascade-settings" class="cascade-settings" hidden>
             <p class="hint">Pipeline sem visão: áudio local pelo Parakeet v3, reasoning no Groq e fala local pelo XTTS v2.</p>
+            <div class="resource-heading">
+              <strong>Modelos locais</strong>
+              <span id="resources-overall" class="status neutral">Não carregados</span>
+            </div>
+            <div id="resource-cards" class="resource-cards" aria-live="polite">
+              <article class="resource-card" data-resource="stt">
+                <div><span>STT · Parakeet</span><b class="resource-state">Não carregado</b></div>
+                <small class="resource-detail">Será carregado ao iniciar.</small>
+              </article>
+              <article class="resource-card" data-resource="tts">
+                <div><span>TTS · XTTS</span><b class="resource-state">Não carregado</b></div>
+                <small class="resource-detail">Será carregado após o STT.</small>
+              </article>
+            </div>
             <div class="form-grid">
               <label>Reasoning<select id="reasoning-effort"><option value="low">Baixo</option><option value="medium">Médio</option><option value="high">Alto</option></select></label>
               <label>Device<select id="cascade-device"><option value="auto">Automático</option><option value="cuda">CUDA</option><option value="cpu">CPU</option></select></label>

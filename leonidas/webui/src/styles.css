@@ -70,6 +70,19 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .capture-controls button[aria-pressed="true"] { border-color: #4b9568; background: #133420; }
 .hint { margin: 12px 0 0; }
 .cascade-settings { margin-top: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: rgba(8, 18, 15, 0.55); }
+.resource-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0 10px; }
+.resource-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.resource-card { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #0d1210; }
+.resource-card > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.resource-card span { color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+.resource-card b { color: var(--muted); font-size: 12px; }
+.resource-card small { display: block; overflow: hidden; margin-top: 8px; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.resource-card[data-state="ready"] { border-color: #356c49; }
+.resource-card[data-state="ready"] b { color: var(--green); }
+.resource-card[data-state="loading"], .resource-card[data-state="warming"], .resource-card[data-state="validating"] { border-color: #6e5735; }
+.resource-card[data-state="loading"] b, .resource-card[data-state="warming"] b, .resource-card[data-state="validating"] b { color: var(--amber); }
+.resource-card[data-state="error"] { border-color: #733b36; }
+.resource-card[data-state="error"] b { color: var(--red); }
 
 .conversation-panel { display: flex; flex-direction: column; }
 .conversation { flex: 1; overflow-y: auto; min-height: 370px; max-height: 470px; padding: 12px; border: 1px solid var(--line); border-radius: 13px; background: #0a0e0c; }
@@ -118,7 +131,7 @@ label output { float: right; color: var(--green); }
   .panel { padding: 15px; }
   .capture-panel, .conversation-panel { min-height: auto; }
   .preview-stage { min-height: 250px; }
-  .capture-controls, .form-grid, .message-form, .log-toolbar { grid-template-columns: 1fr; display: grid; }
+  .capture-controls, .form-grid, .message-form, .log-toolbar, .resource-cards { grid-template-columns: 1fr; display: grid; }
   .capture-controls button { width: 100%; }
 }
 

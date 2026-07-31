@@ -3,7 +3,7 @@
 ## Goal Metadata
 
 - Goal type: `implementation-program`
-- Version: `20260730-0038`
+- Version: `20260730-0041`
 - Owner/repo: `local/genai-processors`
 - Local path: `/home/guilherme/genai-processors`
 - Primary branch: `main`
@@ -33,6 +33,49 @@ de licença XTTS continua independente e pendente.
 O usuário confirmou que o reboot foi concluído. A ordem obrigatória agora é
 diagnóstico pós-boot, preflight e somente então smoke CUDA do Parakeet, sem
 declarar recuperação antes da evidência desses comandos.
+
+Input pós-suspensão reconciliado em 2026-07-30: após retirar o notebook da
+tomada e suspender o sistema, verificar novamente a saúde CUDA com uma operação
+PyTorch real e correlacionar o journal com suspend/resume e `NVRM Xid`.
+Inspecionar parâmetros do módulo NVIDIA, backing store e estado dos serviços
+`nvidia-suspend`, `nvidia-resume` e `nvidia-hibernate`. Separar evidência de
+causalidade entre alimentação AC e suspensão. Esta é uma etapa diagnóstica:
+não alterar configuração privilegiada, initramfs, serviços ou resetar a GPU
+antes de identificar a causa e obter autorização explícita para a correção.
+
+Resultado do diagnóstico pós-suspensão: a GPU ainda aparece no `nvidia-smi`,
+mas a primeira operação CUDA real falha e produz `NVRM Xid 31`/MMU Fault. O
+journal mostra o mesmo padrão em dois boots: suspend/resume e falha posterior
+ao primeiro uso CUDA. Os hooks systemd NVIDIA estão habilitados e executam, mas
+`PreserveVideoMemoryAllocations=0`; portanto falta a configuração exigida pela
+documentação NVIDIA para preservação integral de VRAM e UVM/CUDA. O backing
+store recomendado para 6 GiB é ao menos 6.452 MiB, enquanto os datasets do pool
+do sistema têm somente 3,02 GiB disponíveis. `/tmp` e `/var/tmp` suportam
+arquivo temporário sem nome; o outro pool tem espaço, mas está degradado e não
+deve virar dependência de suspend.
+
+Próxima correção segura: reboot recupera o estado imediato. Para prevenir nova
+falha, primeiro prover espaço confiável, então configurar
+`NVreg_PreserveVideoMemoryAllocations=1` e um `NVreg_TemporaryFilePath`
+dimensionado, reconstruir initramfs, reiniciar e validar uma operação CUDA
+antes/depois de suspend. Essa alteração privilegiada não foi aplicada e requer
+autorização explícita.
+
+Input da WebUI na porta 8081 reconciliado em 2026-07-30: o erro `Origin not
+allowed` foi reproduzido e atribuído à allowlist fixa do `http_server`, que só
+aceitava 8000/5173. Corrigir para calcular a origem local com a porta efetiva
+do servidor, mantendo rejeição de origens externas. Adicionar testes de
+regressão para origem same-origin em porta não padrão e origem proibida; não
+abrir CORS global nem alterar o bind localhost.
+
+Execução de observabilidade local reconciliada em 2026-07-30: Gemini 2.5/3.1
+estão funcionais e são regressão obrigatória. A cascata deve passar a carregar
+Parakeet e XTTS ao pressionar Start, retornar `starting` sem bloquear a UI,
+publicar readiness/estágio/device/VRAM/erro por componente e somente entrar em
+`running` após warm-up real. O usuário escolheu manter os modelos residentes
+até encerrar o Leonidas, sem preload ou unload manual. Parakeet passa a worker
+persistente na `.venv` principal; XTTS mantém `.venv-xtts`. Corrigir o feedback
+de logs/polling que trava a UI e validar áudio real ponta a ponta.
 
 A tentativa inicial de diagnóstico foi interrompida e não constitui evidência.
 Após o comando de continuação do usuário, repetir diagnóstico e preflight por
@@ -266,3 +309,13 @@ Após cada novo input do usuário, voltar ao passo 1 antes de executar a mudanç
 - Residual risks: modelos preview, browser/device, VRAM/CUDA, compatibilidade
   Python dos engines, download/cache de pesos e disponibilidade Groq.
 - Completion or blocked verdict: explícito, sem tratar teste fake como live.
+
+## Evidência da revisão 0041
+
+- Readiness/UI concluídos em 2026-07-30: workers persistentes Parakeet/XTTS,
+  start local assíncrono, snapshots REST/WS, cartões GPU/VRAM, estágios de
+  turno, logs em lote e backoff de segunda aba.
+- E2E CUDA canônico passou com transcript de 89 caracteres, 3,15 s de áudio e
+  cleanup limpo. Gemini 2.5 e 3.1 passaram novamente no cenário live real.
+- O bug em que o `id` privado do worker XTTS substituía o componente canônico
+  `tts` foi coberto por regressão e corrigido antes do checkpoint.

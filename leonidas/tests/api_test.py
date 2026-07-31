@@ -50,6 +50,11 @@ class ControlApiTest(unittest.IsolatedAsyncioTestCase):
         metrics=self.metrics,
         logs=self.log_store,
         voice_preview=FakePreview(),
+        resources=lambda: {
+            'schema_version': 1,
+            'overall_state': 'unloaded',
+            'components': [],
+        },
     )
 
   async def asyncTearDown(self):
@@ -87,6 +92,22 @@ class ControlApiTest(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(
         json.loads(response.body)['error']['code'], 'media_not_connected'
     )
+
+  async def test_starting_session_returns_accepted(self):
+    self.control._session.start = unittest.mock.AsyncMock(
+        return_value={'state': 'starting'}
+    )
+
+    response = await self.control.dispatch('POST', '/api/v1/session/start', {})
+
+    self.assertEqual(response.status, 202)
+
+  async def test_resources_returns_local_model_readiness(self):
+    response = await self.control.dispatch('GET', '/api/v1/resources')
+    payload = json.loads(response.body)
+
+    self.assertEqual(response.status, 200)
+    self.assertEqual(payload['data']['overall_state'], 'unloaded')
 
   async def test_voice_preview_returns_wav_not_json(self):
     response = await self.control.dispatch(

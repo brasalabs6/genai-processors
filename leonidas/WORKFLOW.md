@@ -153,6 +153,44 @@ sequenceDiagram
   Parent-->>Browser: generation_complete
 ```
 
+### Preparação local
+
+```mermaid
+stateDiagram-v2
+  [*] --> unloaded
+  unloaded --> validating: Start cascata
+  validating --> loading: runtime/cache válidos
+  loading --> warming: pesos no device
+  warming --> ready: inferência real aprovada
+  validating --> error: dependência/config inválida
+  loading --> error: cache/CUDA/OOM/worker
+  warming --> error: inferência inválida
+  ready --> ready: novo Start reutiliza worker
+  ready --> [*]: shutdown do Leonidas
+```
+
+```mermaid
+sequenceDiagram
+  participant UI
+  participant Session
+  participant Resources
+  participant Parakeet
+  participant XTTS
+  UI->>Session: POST start cascata
+  Session-->>UI: 202 starting
+  Session->>Resources: ensure_ready(generation)
+  Resources->>Parakeet: load + warm-up
+  Parakeet-->>UI: resource-state phases
+  Resources->>XTTS: load + warm-up
+  XTTS-->>UI: resource-state phases
+  Resources-->>Session: ready
+  Session-->>UI: running
+```
+
+Stop durante preparação invalida a geração do Start e retorna sessão parada.
+Workers podem terminar o warm-up e ficar prontos, mas nunca iniciam uma sessão
+cancelada.
+
 ## Start e Stop
 
 ```mermaid

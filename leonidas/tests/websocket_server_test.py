@@ -36,6 +36,20 @@ class WebSocketProtocolTest(unittest.TestCase):
     self.assertEqual(part.metadata['session_id'], 'session')
     self.assertIn('timestamp', part.metadata)
 
+  def test_resource_envelope_preserves_component_status(self):
+    part = websocket_server._resource_part(
+        {
+            'schema_version': 1,
+            'overall_state': 'loading',
+            'components': [{'id': 'stt', 'state': 'warming'}],
+        },
+        7,
+    )
+
+    self.assertEqual(part.mimetype, 'application/x-resource-state')
+    self.assertEqual(part.metadata['sequence'], 7)
+    self.assertEqual(part.metadata['components'][0]['state'], 'warming')
+
   def test_local_origins_follow_configured_web_port(self):
     origins = websocket_server.local_origins(18000)
     self.assertIn('http://127.0.0.1:18000', origins)

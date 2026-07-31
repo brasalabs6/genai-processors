@@ -1,6 +1,6 @@
 # Plano de execução — Leonidas
 
-Versão: 20260730-0038
+Versão: 20260730-0041
 
 Repositório: `/home/guilherme/genai-processors`
 
@@ -38,6 +38,91 @@ trabalho seguro permanece: auditar contratos e dirty state, investigar o estado
 CUDA sem ações privilegiadas/destrutivas e manter preparado o smoke XTTS/E2E.
 O aceite de licença XTTS continua sendo decisão humana; não será inferido nem
 automatizado.
+
+## Reconciliação do diagnóstico pós-suspensão 2026-07-30
+
+O usuário informou que retirou o notebook da tomada e suspendeu o sistema antes
+de um possível novo problema com a GPU. Este input acrescenta uma investigação
+read-only do ciclo suspend/resume: validar `nvidia-smi` e uma operação CUDA
+PyTorch real, correlacionar o journal do boot com eventos de suspensão,
+retomada e `NVRM Xid`, e inspecionar os parâmetros e serviços oficiais de power
+management do driver NVIDIA. Distinguir a retirada da alimentação AC da
+suspensão como gatilho; não atribuir causalidade sem timestamps e evidência.
+
+Se a GPU estiver enumerada mas CUDA estiver indisponível, registrar separadamente
+a recuperação imediata e a prevenção para suspensões futuras. Antes de recomendar
+qualquer configuração, confirmar se `NVreg_PreserveVideoMemoryAllocations`, o
+backing store e os serviços `nvidia-suspend`, `nvidia-resume` e
+`nvidia-hibernate` já estão configurados. Não alterar `/etc`, initramfs, kernel,
+serviços ou estado da GPU nesta etapa; mudanças privilegiadas dependem do
+diagnóstico e de autorização explícita.
+
+Evidência coletada:
+
+- `nvidia-smi` enumera a RTX 2060/6 GiB, mas uma operação PyTorch CUDA real
+  falha com `CUDA-capable device(s) is/are busy or unavailable`;
+- o boot suspendeu em modo `deep` às 07:19 e retomou às 08:53; a primeira
+  operação CUDA testada após a retomada gerou `NVRM Xid 31`/MMU Fault às
+  10:15. O boot anterior contém o mesmo padrão suspend/resume seguido de Xid
+  31, enquanto não há evidência que isole a retirada da alimentação AC;
+- os três serviços NVIDIA de suspend/resume estão instalados, habilitados e
+  foram executados, mas `PreserveVideoMemoryAllocations` está em `0`. Essa
+  combinação não satisfaz o contrato documentado pela NVIDIA para preservar
+  toda a VRAM e suportar UVM/CUDA no mecanismo `/proc/driver/nvidia/suspend`;
+- `/tmp` e `/var/tmp` em ZFS suportam arquivos temporários sem nome, mas o pool
+  do sistema oferece somente 3,02 GiB aos datasets. Para 6.144 MiB de VRAM, a
+  margem oficial de 5% exige ao menos 6.452 MiB de backing store. O pool
+  `internal` tem espaço, porém está degradado por um disco offline e não é um
+  destino preventivo robusto enquanto não for reparado.
+
+Recuperação imediata: reiniciar o sistema antes de executar novamente as
+pipelines CUDA. Prevenção proposta, ainda não aplicada: primeiro disponibilizar
+espaço confiável suficiente; depois configurar `nvidia.ko` com
+`NVreg_PreserveVideoMemoryAllocations=1` e
+`NVreg_TemporaryFilePath=<diretório ZFS confiável>`, manter habilitados os hooks
+systemd existentes, reconstruir o initramfs, reiniciar e provar o ciclo
+suspend/resume com uma operação CUDA antes e depois. Não usar o pool degradado
+nem ativar a opção com backing store subdimensionado.
+
+## Reconciliação do erro de origem na porta 8081 2026-07-30
+
+O usuário iniciou o Leonidas com a WebUI na porta 8081 e recebeu `Sessão não
+iniciada / Origin not allowed`. A causa foi localizada no adaptador HTTP: a
+allowlist estava fixa nas portas 8000 e 5173, enquanto o WebSocket já calculava
+corretamente a origem a partir de `--web-port`. O controle HTTP, portanto,
+rejeitava os `fetch` same-origin da própria WebUI em 8081.
+
+O contrato permanece local e seguro: a origem HTTP é calculada a partir da
+porta efetiva do servidor, aceita `localhost`/`127.0.0.1` nessa porta e as
+origens de desenvolvimento Vite 5173, e continua rejeitando origens externas.
+Foi adicionada regressão para porta não padrão e para origem não allowlisted.
+
+## Reconciliação da observabilidade dos modelos locais 2026-07-30
+
+O usuário confirmou que Gemini Live 2.5 e 3.1 funcionam, mas a cascata local
+não concluiu conversas, produziu muitos diagnósticos ruidosos e deixou a UI
+lenta. A execução deve preservar o caminho Gemini e tornar o runtime local
+explícito: Start local responde rapidamente em `starting`, carrega e aquece
+Parakeet e XTTS, publica estados por componente e só entra em `running` quando
+ambos estiverem comprovadamente prontos. Por decisão do usuário, não haverá
+botão separado de preload/unload; modelos prontos permanecem residentes até o
+Leonidas encerrar.
+
+Evidência do runtime atual: Parakeet e XTTS chegaram a residir na GPU usando
+aproximadamente 1.356 MiB e 2.048 MiB por processo, mesmo com sessão parada,
+mas não existe contrato de readiness. Parakeet carrega no primeiro áudio,
+XTTS carrega na primeira resposta, erros de worker perdem o estágio e a UI
+re-renderiza até 2.000 linhas a cada evento SSE. O polling de métricas também
+gera access logs, criando feedback de renderização.
+
+Nova ordem de execução:
+
+1. atualizar SPECS/WORKFLOW/UI_SPECS e contratos de resource state;
+2. criar supervisor observável e workers persistentes para Parakeet/XTTS;
+3. integrar Start assíncrono somente à cascata, sem alterar Gemini;
+4. publicar readiness/estágios via REST e ProcessorPart WebSocket;
+5. adicionar painel local e batching/adaptive polling na UI;
+6. validar E2E local real e repetir os dois smokes Gemini.
 
 ## Reconciliação do input sobre reinicialização CUDA 2026-07-30
 
@@ -240,9 +325,11 @@ O preflight empírico confirmou um conflito de dependências impossível de
 resolver corretamente no mesmo processo: Parakeet v3 expõe `AutoModelForTDT`
 na linha Transformers 5, enquanto Coqui TTS 0.27.5/XTTS v2 ainda depende de
 uma API removida no Transformers 5. XTTS portanto roda em `.venv-xtts` e em
-subprocesso persistente, com protocolo local privado, enquanto o processo
-principal mantém Transformers 5 para Parakeet. Não usar monkey patch nem
-rebaixar o Parakeet. O worker XTTS é encerrado com a aplicação e cache/pesos
+subprocesso persistente, com protocolo local privado. A revisão 0041 passa
+também o Parakeet para um subprocesso persistente usando a `.venv` principal:
+isso preserva Transformers 5, isola carga/GIL/CUDA do servidor e permite
+readiness e health checks simétricos. Não usar monkey patch nem rebaixar o
+Parakeet. Ambos os workers são encerrados com a aplicação e cache/pesos
 continuam fora do Git.
 10. **Auditoria final ampliada — concluído**
     - validar Gemini e cascata, CPU/device errors, CUDA, downloads, cancelamento,
@@ -250,6 +337,22 @@ continuam fora do Git.
     - validações offline/live, memória simultânea e cleanup: aprovados;
     - stage revisado exclui artefatos privados e arquivos não relacionados;
       checkpoint final será o commit e a tag anotada `leonidas-v0.2.0`.
+11. **Readiness local e desempenho da UI — concluído em 2026-07-30**
+    - Parakeet e XTTS usam workers persistentes com preparação sequencial,
+      warm-up real e estado `unloaded→loading→warming→ready/error`;
+    - o start da cascata retorna `202 starting`; Gemini preserva o caminho
+      síncrono e não executa preparação local;
+    - REST/WS expõem modelo, device, GPU, VRAM e tempo por componente;
+    - a UI renderiza cartões, agrupa logs, limita 2.000 linhas e usa polling
+      adaptativo sem requests concorrentes;
+    - contenção de segunda aba usa backoff que só reinicia após estado válido;
+    - inspeção real mostrou STT `ready` em 14,1 s/1.246 MiB reservados enquanto
+      XTTS carregava; o vazamento do `id` privado XTTS foi reproduzido, coberto
+      por regressão e removido;
+    - E2E Parakeet/Groq/XTTS CUDA: PASS, transcript 89 caracteres, resposta 23
+      caracteres, 3,15 s de áudio, 6,82 s após readiness e cleanup limpo;
+    - Gemini real: 2.5 PASS (5,88 s, TTFA 9,47 s) e 3.1 PASS (6,04 s, TTFA
+      6,92 s).
 
 ## Contrato dos cenários E2E
 

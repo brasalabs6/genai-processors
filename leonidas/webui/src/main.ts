@@ -3,8 +3,10 @@ import './styles.css';
 import {controlApi} from './api';
 import {effectiveConfig, modelsForPipeline, visionForPipeline} from './capabilities';
 import {PcmPlayer} from './audio';
+import {LogBuffer} from './log-buffer';
 import {MediaController} from './media';
 import {
+  connectionClosePolicy,
   parseServerMessage,
   resolveWebSocketUrl,
   textMessage,
@@ -15,6 +17,8 @@ import type {
   Capabilities,
   ConfigSnapshot,
   MetricsSnapshot,
+  ResourceComponent,
+  ResourceSnapshot,
   SessionSnapshot,
 } from './types';
 
@@ -41,10 +45,18 @@ class LeonidasApp {
   private intentionalClose = false;
   private readonly player = new PcmPlayer();
   private readonly media: MediaController;
-  private logLines: string[] = [];
+  private readonly logBuffer = new LogBuffer(2000);
   private logsPaused = false;
+  private logRenderPending = false;
   private eventSource: EventSource | null = null;
   private durationTimer: number | null = null;
+  private metricsTimer: number | null = null;
+  private metricsRequestPending = false;
+  private resources: ResourceSnapshot = {
+    schema_version: 1,
+    overall_state: 'unloaded',
+    components: [],
+  };
 
   private readonly model = element<HTMLSelectElement>('#model');
   private readonly pipeline = element<HTMLSelectElement>('#pipeline');
@@ -70,18 +82,20 @@ class LeonidasApp {
 
   async init(): Promise<void> {
     try {
-      [this.capabilities, this.config, this.session] = await Promise.all([
+      [this.capabilities, this.config, this.session, this.resources] = await Promise.all([
         controlApi.capabilities(), controlApi.config(), controlApi.session(),
+        controlApi.resources(),
       ]);
       this.setStatus('#rest-status', 'API online', 'ok');
       this.renderCapabilities();
       this.renderConfig();
       this.renderSession();
+      this.renderResources();
       this.connectWebSocket();
       this.connectLogs();
       await this.refreshLogFiles();
       await this.refreshMetrics();
-      window.setInterval(() => void this.refreshMetrics(), 2000);
+      this.scheduleMetrics();
     } catch (error) {
       this.setStatus('#rest-status', 'API offline', 'error');
       this.showError('Falha ao iniciar', this.errorText(error));
@@ -148,7 +162,10 @@ class LeonidasApp {
       this.logsPaused = !this.logsPaused;
       element('#pause-logs').textContent = this.logsPaused ? 'Retomar' : 'Pausar';
     });
-    element('#clear-logs').addEventListener('click', () => {this.logLines = []; this.renderLogs();});
+    element('#clear-logs').addEventListener('click', () => {
+      this.logBuffer.clear();
+      this.renderLogs();
+    });
     element('#log-level').addEventListener('change', () => this.renderLogs());
     element('#log-search').addEventListener('input', () => this.renderLogs());
     element('#log-file').addEventListener('change', () => void this.loadSelectedLog());
@@ -158,6 +175,11 @@ class LeonidasApp {
       this.eventSource?.close();
       void this.media.close();
       void this.player.close();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (this.metricsTimer !== null) window.clearTimeout(this.metricsTimer);
+      this.metricsTimer = null;
+      this.scheduleMetrics();
     });
   }
 
@@ -258,25 +280,35 @@ class LeonidasApp {
     const socket = new WebSocket(resolveWebSocketUrl(window.location, window.location.search));
     this.socket = socket;
     socket.addEventListener('open', () => {
-      this.reconnectAttempt = 0;
       this.setStatus('#ws-status', 'WebSocket online', 'ok');
       this.renderSession();
     });
     socket.addEventListener('message', (event) => this.handleMessage(String(event.data)));
     socket.addEventListener('error', () => this.setStatus('#ws-status', 'Erro WebSocket', 'error'));
-    socket.addEventListener('close', () => {
-      this.setStatus('#ws-status', 'WebSocket offline', 'error');
+    socket.addEventListener('close', (event) => {
+      const policy = connectionClosePolicy(event.code, event.reason);
+      this.setStatus('#ws-status', policy.label, 'error');
       this.player.flush();
-      if (!this.intentionalClose) this.scheduleReconnect();
+      this.renderSession();
+      if (!this.intentionalClose && policy.retry) {
+        this.scheduleReconnect(
+          policy.label === 'WebSocket offline' ? null : policy.label,
+        );
+      }
     });
   }
 
-  private scheduleReconnect(): void {
+  private scheduleReconnect(context: string | null = null): void {
     if (this.reconnectTimer !== null) return;
     const delays = [1000, 2000, 4000, 8000, 15000];
     const base = delays[Math.min(this.reconnectAttempt, delays.length - 1)] ?? 15000;
     this.reconnectAttempt += 1;
-    this.setStatus('#ws-status', `Reconectando em ${Math.round(base / 1000)}s`, 'warn');
+    const seconds = Math.round(base / 1000);
+    this.setStatus(
+      '#ws-status',
+      context ? `${context} · nova tentativa em ${seconds}s` : `Reconectando em ${seconds}s`,
+      'warn',
+    );
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = null;
       this.connectWebSocket();
@@ -288,16 +320,38 @@ class LeonidasApp {
       const message = parseServerMessage(raw);
       const metadata = message.metadata ?? {};
       if (message.mimetype === 'application/x-state') {
+        this.reconnectAttempt = 0;
         const state = metadata.state;
         if (typeof state === 'string') {
           this.session = {...this.session, ...metadata, state} as SessionSnapshot;
           this.renderSession();
+        }
+        const agentState = metadata.agent_state;
+        if (typeof agentState === 'string' && state === undefined) {
+          const labels: Record<string, string> = {
+            transcribing: 'Transcrevendo',
+            thinking: 'Pensando',
+            speaking: 'Falando',
+            listening: 'Ouvindo',
+            interrupted: 'Interrompido',
+          };
+          const tone = agentState === 'interrupted' ? 'warn' : 'ok';
+          this.setStatus(
+            '#session-status',
+            labels[agentState] ?? agentState,
+            tone,
+          );
         }
         if (metadata.agent_state === 'interrupted' || state === 'stopped') {
           const started = performance.now();
           this.player.flush();
           this.send({mimetype: 'application/x-client-metric', metadata: {name: 'playback_flush_ms', value: performance.now() - started}});
         }
+        return;
+      }
+      if (message.mimetype === 'application/x-resource-state') {
+        this.resources = metadata as unknown as ResourceSnapshot;
+        this.renderResources();
         return;
       }
       const inline = message.part?.inline_data;
@@ -364,7 +418,9 @@ class LeonidasApp {
     element<HTMLInputElement>('#cascade-tts').value = draft.cascade.tts_model_id;
     this.renderCaptureCapabilities();
     const dirty = this.config.dirty_fields.length;
-    element('#draft-status').textContent = dirty ? `Rascunho · ${dirty} alteração${dirty > 1 ? 'ões' : ''}` : 'Ativa';
+    element('#draft-status').textContent = dirty
+      ? `Rascunho · ${dirty} ${dirty === 1 ? 'alteração' : 'alterações'}`
+      : 'Ativa';
     element<HTMLButtonElement>('#apply-config').disabled = dirty === 0;
   }
 
@@ -426,7 +482,24 @@ class LeonidasApp {
   }
 
   private async refreshMetrics(): Promise<void> {
+    if (this.metricsRequestPending) return;
+    this.metricsRequestPending = true;
     try { this.renderMetrics(await controlApi.metrics()); } catch { /* status API covers it */ }
+    finally { this.metricsRequestPending = false; }
+  }
+
+  private scheduleMetrics(): void {
+    if (this.metricsTimer !== null) return;
+    const interval = document.hidden
+      ? 15000
+      : this.session.state === 'running' || this.session.state === 'starting'
+        ? 2000
+        : 5000;
+    this.metricsTimer = window.setTimeout(async () => {
+      this.metricsTimer = null;
+      await this.refreshMetrics();
+      this.scheduleMetrics();
+    }, interval);
   }
 
   private renderMetrics(snapshot: MetricsSnapshot): void {
@@ -449,10 +522,19 @@ class LeonidasApp {
     source.onmessage = (event) => {
       if (this.logsPaused) return;
       const value = JSON.parse(event.data) as {line: string};
-      this.logLines.push(value.line);
-      if (this.logLines.length > 2000) this.logLines.splice(0, this.logLines.length - 2000);
-      this.renderLogs(true);
+      this.logBuffer.enqueue(value.line);
+      this.scheduleLogRender();
     };
+  }
+
+  private scheduleLogRender(): void {
+    if (this.logRenderPending) return;
+    this.logRenderPending = true;
+    window.setTimeout(() => {
+      this.logRenderPending = false;
+      this.logBuffer.flush();
+      this.renderLogs(true);
+    }, 100);
   }
 
   private async refreshLogFiles(): Promise<void> {
@@ -463,9 +545,13 @@ class LeonidasApp {
 
   private async loadSelectedLog(): Promise<void> {
     const id = element<HTMLSelectElement>('#log-file').value;
-    if (!id) {this.logLines = []; this.renderLogs(); return;}
+    if (!id) {
+      this.logBuffer.clear();
+      this.renderLogs();
+      return;
+    }
     try {
-      this.logLines = (await controlApi.logFile(id)).lines;
+      this.logBuffer.replace((await controlApi.logFile(id)).lines);
       this.renderLogs();
     } catch (error) { this.showError('Log não carregado', this.errorText(error)); }
   }
@@ -473,10 +559,70 @@ class LeonidasApp {
   private renderLogs(autoScroll = false): void {
     const level = element<HTMLSelectElement>('#log-level').value;
     const search = element<HTMLInputElement>('#log-search').value.toLocaleLowerCase();
-    const lines = this.logLines.filter((line) => (!level || line.includes(level)) && (!search || line.toLocaleLowerCase().includes(search)));
+    const lines = this.logBuffer.lines.filter((line) => (!level || line.includes(level)) && (!search || line.toLocaleLowerCase().includes(search)));
     const output = element<HTMLPreElement>('#logs');
     output.textContent = lines.join('\n');
     if (autoScroll) output.scrollTop = output.scrollHeight;
+  }
+
+  private renderResources(): void {
+    const overallLabels = {
+      unloaded: 'Não carregados',
+      loading: 'Carregando',
+      ready: 'Prontos',
+      error: 'Erro',
+    };
+    const overallTone = this.resources.overall_state === 'ready'
+      ? 'ok'
+      : this.resources.overall_state === 'error'
+        ? 'error'
+        : this.resources.overall_state === 'loading'
+          ? 'warn'
+          : 'neutral';
+    this.setStatus(
+      '#resources-overall',
+      overallLabels[this.resources.overall_state],
+      overallTone,
+    );
+    for (const id of ['stt', 'tts'] as const) {
+      const component = this.resources.components.find((item) => item.id === id);
+      this.renderResource(id, component);
+    }
+  }
+
+  private renderResource(
+    id: 'stt' | 'tts',
+    component: ResourceComponent | undefined,
+  ): void {
+    const card = element<HTMLElement>(`[data-resource="${id}"]`);
+    const state = component?.state ?? 'unloaded';
+    const labels = {
+      unloaded: 'Não carregado',
+      validating: 'Validando',
+      loading: 'Carregando',
+      warming: 'Aquecendo',
+      ready: 'Pronto',
+      error: 'Erro',
+    };
+    card.dataset.state = state;
+    card.querySelector<HTMLElement>('.resource-state')!.textContent = labels[state];
+    const memory = component?.memory_reserved_mib
+      ? `${component.memory_reserved_mib} MiB reservados`
+      : null;
+    const elapsed = component?.load_ms
+      ? `${(component.load_ms / 1000).toFixed(1)} s`
+      : null;
+    const detail = component?.error
+      ? `${component.error.message} ${component.error.recovery}`
+      : [
+          component?.model_id,
+          component?.device,
+          component?.gpu_name,
+          memory,
+          elapsed,
+        ].filter(Boolean).join(' · ') || 'Será carregado ao iniciar.';
+    card.querySelector<HTMLElement>('.resource-detail')!.textContent = detail;
+    card.title = detail;
   }
 
   private addMessage(role: 'user' | 'model', text: string): void {

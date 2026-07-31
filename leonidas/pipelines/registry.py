@@ -12,6 +12,7 @@ from leonidas.cascade import groq_reasoning
 from leonidas.cascade import pipeline as cascade_pipeline
 from leonidas.cascade import resources
 from leonidas.pipelines import gemini_live
+from leonidas import telemetry
 
 
 class PipelineRegistry:
@@ -23,6 +24,7 @@ class PipelineRegistry:
       groq_api_key: str | None = None,
       voices: Mapping[str, Path] | None = None,
       cascade_resources: resources.CascadeResources | None = None,
+      metrics: telemetry.MetricsStore | None = None,
   ):
     self._google_api_key = google_api_key
     self._groq_api_key = groq_api_key
@@ -30,6 +32,7 @@ class PipelineRegistry:
     self._resources = cascade_resources or resources.CascadeResources(
         voices=dict(voices or {})
     )
+    self._metrics = metrics
 
   def create(self, agent_config: config.AgentConfig) -> processor.Processor:
     agent_config.validate()
@@ -61,11 +64,33 @@ class PipelineRegistry:
             reasoning_effort=cascade.reasoning_effort,
             voice_id=cascade.voice_id,
             language=cascade.language,
+            metrics=self._metrics,
         )
         return cascade_processor + rate_limit_audio.RateLimitAudio(24000)
       except RuntimeError as exc:
         raise ValueError(str(exc)) from exc
     raise ValueError(f'Unsupported pipeline: {agent_config.pipeline_id!r}')
+
+  def requires_preparation(self, agent_config: config.AgentConfig) -> bool:
+    return agent_config.pipeline_id == capabilities.PIPELINE_CASCADE
+
+  async def prepare(self, agent_config: config.AgentConfig) -> None:
+    """Loads local resources without affecting native Gemini pipelines."""
+    agent_config.validate()
+    if not self.requires_preparation(agent_config):
+      return
+    if not self._groq_api_key:
+      raise ValueError('GROQ_API_KEY is required for cascade_local')
+    cascade = agent_config.cascade
+    await self._resources.ensure_ready(
+        cascade.stt_model_id,
+        cascade.tts_model_id,
+        cascade.device,
+    )
+
+  @property
+  def resources(self) -> resources.CascadeResources:
+    return self._resources
 
   async def close(self) -> None:
     if self._owns_resources:

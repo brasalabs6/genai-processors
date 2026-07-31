@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 
 from leonidas import capabilities
@@ -70,6 +71,45 @@ class GeminiLiveConfigurationTest(unittest.TestCase):
 
 
 class PipelineRegistryTest(unittest.TestCase):
+
+  def test_prepare_only_loads_local_cascade_resources(self):
+    from leonidas.pipelines import registry
+
+    class Resources:
+
+      def __init__(self):
+        self.arguments = None
+
+      async def ensure_ready(self, stt_model, tts_model, device):
+        self.arguments = (stt_model, tts_model, device)
+
+    resources = Resources()
+    factory = registry.PipelineRegistry(
+        google_api_key='google-test',
+        groq_api_key='groq-test',
+        cascade_resources=resources,
+    )
+    gemini = config.AgentConfig.default()
+    cascade = gemini.with_updates(
+        {
+            'pipeline_id': capabilities.PIPELINE_CASCADE,
+            'model_id': capabilities.GROQ_GPT_OSS_20B,
+        }
+    )
+
+    self.assertFalse(factory.requires_preparation(gemini))
+    self.assertTrue(factory.requires_preparation(cascade))
+    asyncio.run(factory.prepare(gemini))
+    self.assertIsNone(resources.arguments)
+    asyncio.run(factory.prepare(cascade))
+    self.assertEqual(
+        resources.arguments,
+        (
+            cascade.cascade.stt_model_id,
+            cascade.cascade.tts_model_id,
+            cascade.cascade.device,
+        ),
+    )
 
   def test_constructs_cascade_from_capabilities_and_local_voice(self):
     from pathlib import Path

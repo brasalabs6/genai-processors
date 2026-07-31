@@ -10,9 +10,8 @@ from genai_processors import content_api
 
 from leonidas import capabilities
 from leonidas.cascade import groq_reasoning
-from leonidas.cascade import parakeet
 from leonidas.cascade import pipeline
-from leonidas.cascade import xtts_process
+from leonidas.cascade import resources
 from leonidas.e2e import assets
 
 
@@ -33,11 +32,19 @@ async def run(audio_path: Path, voice_path: Path, device: str) -> None:
   if not api_key:
     raise RuntimeError('GROQ_API_KEY is not set')
   pcm = assets.audio_as_pcm16_16khz(audio_path)
-  transcriber = parakeet.ParakeetTranscriber(device=device)
-  reasoner = groq_reasoning.GroqReasoner(api_key=api_key)
-  synthesizer = xtts_process.XttsWorkerSynthesizer(
-      voices={'leonidas': voice_path}, device=device
+  pool = resources.CascadeResources(voices={'leonidas': voice_path})
+  resource_state = await pool.ensure_ready(
+      capabilities.PARAKEET_V3_MODEL,
+      capabilities.XTTS_V2_MODEL,
+      device,
   )
+  if resource_state['overall_state'] != 'ready' or [
+      item['id'] for item in resource_state['components']
+  ] != ['stt', 'tts']:
+    raise RuntimeError('Cascade resources did not reach canonical ready state')
+  transcriber = pool.transcriber(capabilities.PARAKEET_V3_MODEL, device)
+  reasoner = groq_reasoning.GroqReasoner(api_key=api_key)
+  synthesizer = pool.synthesizer(capabilities.XTTS_V2_MODEL, device)
   cascade = pipeline.CascadeProcessor(
       transcriber=transcriber,
       reasoner=reasoner,
@@ -70,7 +77,7 @@ async def run(audio_path: Path, voice_path: Path, device: str) -> None:
         audio.extend(part.bytes)
       completed = completed or bool(part.get_metadata('generation_complete'))
   finally:
-    await synthesizer.close()
+    await pool.close()
   duration = len(audio) / (24000 * 2)
   if not transcript or not response or duration < 0.25 or not completed:
     raise RuntimeError(

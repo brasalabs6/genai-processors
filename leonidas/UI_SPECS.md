@@ -93,6 +93,17 @@ com a mensagem “Visão ainda não suportada nesta pipeline”; microfone e tex
 continuam disponíveis. Falhas de CUDA, download, Groq ou voz mostram o estágio
 exato e a ação de recuperação.
 
+Quando a cascata estiver selecionada, mostrar `LocalResources` com cards
+Parakeet e XTTS. Cada card exibe estado/fase, modelo, device, GPU, duração de
+carga, memória alocada/reservada e erro recuperável. O topo apresenta um badge
+compacto `Locais: não carregados/carregando/prontos/erro`. Não há botões
+separados de preparar ou descarregar: Start dispara a carga e os modelos ficam
+residentes até o shutdown.
+
+Durante carga, o estado de sessão é `starting`, Start fica desabilitado e Stop
+permanece habilitado. A UI não promete percentual quando o backend só conhece
+fases discretas.
+
 O erro de runtime XTTS deve distinguir ambiente ausente, referência de voz
 ausente e termos CPML ainda não aceitos. A UI nunca oferece um botão que aceite
 licença automaticamente; ela mostra o comando de preparação documentado.
@@ -128,6 +139,11 @@ junto ao campo e no resumo acessível.
 - seleção de arquivo e paginação por cursor;
 - timestamps locais e opção de copiar somente linhas selecionadas;
 - sem excluir, editar ou escolher caminhos locais.
+- eventos SSE entram em buffer e são renderizados em lote, nunca uma
+  reconstrução de 2.000 linhas por evento;
+- polling de métricas/recursos não aparece no tail INFO e não pode criar
+  requisições sobrepostas;
+- aba oculta reduz polling; busca é debounceada e Pausar não acumula linhas.
 
 ### VoicePreview
 
@@ -149,7 +165,9 @@ junto ao campo e no resumo acessível.
 
 O cliente REST possui timeout, abort e parsing de erro comum. O WebSocket usa
 backoff 1, 2, 4, 8 e 15 segundos com jitter; após conexão, não inicia sessão
-automaticamente.
+automaticamente. O backoff só volta a 1 segundo depois de receber um snapshot
+de estado válido. Um handshake encerrado porque outra aba possui a mídia não
+cria reconnect loop: a UI informa a contenção e mantém tentativas limitadas.
 
 O cliente valida forma e tamanho antes de enviar, mas o backend permanece a
 autoridade. Mensagens desconhecidas são ignoradas com evento de diagnóstico,
@@ -173,3 +191,7 @@ nunca lançadas na raiz do app.
 - Configuração incompatível nunca é apresentada como aplicada.
 - Tail pausado não cresce indefinidamente.
 - O build Vite não contém chave, token ou prompt protegido.
+- Um fluxo de 100 linhas/s não trava controles nem excede 2.000 linhas.
+- A cascata mostra cada componente local antes de declarar sessão running.
+- Selecionar/iniciar Gemini não carrega recursos locais nem altera seus
+  controles ou lifecycle.
