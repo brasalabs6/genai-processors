@@ -53,7 +53,7 @@ jobs:
       - name: Install project and CPU-only test tools
         run: |
           python -m pip install -e .
-          python -m pip install aiosqlite av flake8 pyink pytest pytest-xdist 'SQLAlchemy>=2.0'
+          python -m pip install aiosqlite av flake8 pyink pytest pytest-xdist 'SQLAlchemy>=2.0' 'webrtcvad-wheels==2.0.14'
       - name: Verify dependency graph
         run: |
           python -m pip check
@@ -109,12 +109,12 @@ jobs:
       - run: python -m pip install build twine
       - run: python -m build
       - run: python -m twine check dist/*
-      - name: Install the built wheel with declared dependencies
+      - name: Install the built wheel with declared base dependencies
         run: python -m pip install dist/*.whl
       - name: Verify installed imports and dependency consistency
         run: |
           python -m pip check
-          python -c "import genai_processors; import leonidas.app; import webrtcvad"
+          python -c "import genai_processors; import leonidas.app"
 
   protocol-stress:
     name: Worker protocol and cancellation stress
@@ -129,13 +129,14 @@ jobs:
       - name: Install CPU-only test environment
         run: |
           python -m pip install -e .
-          python -m pip install aiosqlite av pytest 'SQLAlchemy>=2.0'
+          python -m pip install aiosqlite av pytest 'SQLAlchemy>=2.0' 'webrtcvad-wheels==2.0.14'
       - name: Repeat cancellation and lifecycle regressions
         run: |
           for attempt in 1 2 3 4 5; do
             echo "stress attempt ${attempt}"
             python -m unittest -v \
               leonidas.tests.hardening_test.WorkerRecoveryTest \
+              leonidas.tests.resource_lifecycle_test.ResourceLifecycleTest \
               leonidas.tests.cascade_test.XttsAdapterTest \
               leonidas.tests.cascade_test.ParakeetWorkerTest \
               leonidas.tests.cascade_test.CascadeProcessorTest \
