@@ -652,3 +652,8 @@ mas suas dependências opcionais não estão instaladas e os pesos do modelo
 `pyannote/speaker-diarization-community-1` ainda exigem acesso Hugging Face.
 O suporte permanece opt-in até existir um ambiente isolado validado para esse
 adapter.
+
+O smoke real do Codex textual foi ampliado para dois turnos no mesmo thread:
+`codex_text_smoke_ok=true turns=2`, resposta não vazia e latência total de
+13,22 s. Isso confirma persistência de conversa no app-server com o login
+ChatGPT local, além do contrato offline de lifecycle.

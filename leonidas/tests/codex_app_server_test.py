@@ -51,6 +51,18 @@ class JsonRpcClientTest(unittest.IsolatedAsyncioTestCase):
     )
     await server.notify('turn/completed', {'turn': {'id': 'turn-text'}})
     self.assertEqual(await response, 'Tudo certo.')
+
+    second_response = asyncio.create_task(client.respond('E agora?'))
+    request = await server.next_request()
+    self.assertEqual(request['method'], 'turn/start')
+    self.assertEqual(request['params']['threadId'], 'thread-text')
+    await server.respond(request, {'turn': {'id': 'turn-text-2'}})
+    await server.notify(
+        'item/agentMessage/delta',
+        {'turnId': 'turn-text-2', 'delta': 'Continuo '},
+    )
+    await server.notify('turn/completed', {'turn': {'id': 'turn-text-2'}})
+    self.assertEqual(await second_response, 'Continuo ')
     await client.close()
 
   async def test_handshake_and_realtime_lifecycle_use_confirmed_methods(self):
