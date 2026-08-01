@@ -143,6 +143,12 @@ componente opcional `diarization` como `unavailable` ou `unloaded`, sem alterar
 o cálculo de prontidão obrigatório de STT/TTS. A suíte completa Leonidas/E2E
 passou com 139 testes, 2 skips e 9 subtests.
 
+Auditoria ampla posterior: a suíte completa do repositório passou com 709
+testes, 2 skips e 27 subtests; flake8 restrito passou excluindo ambientes e
+artefatos gerados; os 21 arquivos Python alterados nesta onda passaram no
+Pyink. O check global de Pyink continua apontando 37 arquivos históricos fora
+do escopo, que não foram reformatted para evitar uma mudança não relacionada.
+
 ## Reconciliação da troca de executor 2026-07-31
 
 O usuário pediu continuidade sob o executor Luna e determinou que o estado

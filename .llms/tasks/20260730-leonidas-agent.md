@@ -113,6 +113,11 @@ O recurso opcional de diarização também aparece no snapshot/API/UI como
 `unavailable` ou `unloaded`, sem degradar a prontidão STT/TTS. A suíte completa
 Leonidas/E2E passou com 139 testes, 2 skips e 9 subtests.
 
+Auditoria ampla: a suíte completa passou com 709 testes, 2 skips e 27
+subtests; flake8 restrito passou sem `.venv`/artefatos; os 21 arquivos Python
+alterados passaram no Pyink. O Pyink global ainda reporta 37 arquivos antigos
+fora desta mudança e eles não foram reformatted.
+
 ## Reconciliação da troca de executor 2026-07-31
 
 O usuário solicitou a continuidade pelo executor Luna e exigiu um commit do
