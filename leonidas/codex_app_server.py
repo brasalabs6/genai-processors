@@ -259,6 +259,75 @@ class CodexRealtimeClient:
     await self._rpc.close()
 
 
+class CodexTurnClient:
+  """Text-turn app-server client usable with either Codex login mode."""
+
+  def __init__(self, rpc: JsonlRpcClient):
+    self._rpc = rpc
+    self._thread_id: str | None = None
+
+  async def initialize(self, *, client_name: str, client_version: str) -> Any:
+    result = await self._rpc.request(
+        'initialize',
+        {
+            'clientInfo': {
+                'name': client_name,
+                'title': 'Leonidas',
+                'version': client_version,
+            },
+            'capabilities': {'experimentalApi': True},
+        },
+    )
+    await self._rpc.notify('initialized')
+    return result
+
+  async def start_thread(self, objective: str) -> None:
+    result = await self._rpc.request(
+        'thread/start',
+        {
+            'ephemeral': True,
+            'approvalPolicy': 'never',
+            'sandbox': 'read-only',
+            'baseInstructions': objective,
+        },
+    )
+    try:
+      self._thread_id = str(result['thread']['id'])
+    except (KeyError, TypeError) as exc:
+      raise CodexProtocolError('thread/start returned no thread id') from exc
+
+  async def respond(self, text: str, *, model: str | None = None) -> str:
+    if not self._thread_id:
+      raise CodexProtocolError('Codex text thread is not started')
+    params: dict[str, Any] = {
+        'threadId': self._thread_id,
+        'input': [{'type': 'text', 'text': text}],
+    }
+    if model:
+      params['model'] = model
+    result = await self._rpc.request('turn/start', params)
+    try:
+      turn_id = str(result['turn']['id'])
+    except (KeyError, TypeError) as exc:
+      raise CodexProtocolError('turn/start returned no turn id') from exc
+    chunks: list[str] = []
+    while True:
+      notification = await self._rpc.next_notification()
+      params = notification.get('params') or {}
+      notification_turn_id = params.get('turnId') or (
+          params.get('turn') or {}
+      ).get('id')
+      if notification_turn_id != turn_id:
+        continue
+      if notification.get('method') == 'item/agentMessage/delta':
+        chunks.append(str(params.get('delta', '')))
+      elif notification.get('method') == 'turn/completed':
+        return ''.join(chunks)
+
+  async def close(self) -> None:
+    await self._rpc.close()
+
+
 def notification_parts(
     message: dict[str, Any], *, audio_mimetype: str = 'audio/pcm;rate=24000'
 ) -> list[content_api.ProcessorPart]:
@@ -419,7 +488,7 @@ class _TestingServer:
     )
 
 
-def testing_pair() -> tuple[CodexRealtimeClient, list[str], _TestingServer]:
+def testing_rpc_pair() -> tuple[JsonlRpcClient, list[str], _TestingServer]:
   incoming: asyncio.Queue[str] = asyncio.Queue()
   outgoing: asyncio.Queue[str] = asyncio.Queue()
   sent: list[str] = []
@@ -432,8 +501,13 @@ def testing_pair() -> tuple[CodexRealtimeClient, list[str], _TestingServer]:
     return await outgoing.get()
 
   rpc = JsonlRpcClient(send, receive)
+  return rpc, sent, _TestingServer(incoming, outgoing)
+
+
+def testing_pair() -> tuple[CodexRealtimeClient, list[str], _TestingServer]:
+  rpc, sent, server = testing_rpc_pair()
   return (
       CodexRealtimeClient(rpc, audio_mimetype='audio/pcm;rate=24000'),
       sent,
-      _TestingServer(incoming, outgoing),
+      server,
   )

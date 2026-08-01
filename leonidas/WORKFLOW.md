@@ -117,6 +117,11 @@ Tokens de login ChatGPT não satisfazem o requisito de API key do realtime
 observado no app-server atual; o smoke real deve permanecer bloqueado e
 explícito até uma credencial compatível existir.
 
+Para instalações com esse login, a UI pode selecionar explicitamente
+`codex_text`. Essa composição mantém um thread efêmero e executa turnos
+`turn/start`, agregando deltas de `item/agentMessage/delta` até
+`turn/completed`. Ela não habilita a feature realtime nem promete áudio.
+
 ## Aplicar configuração
 
 ```mermaid

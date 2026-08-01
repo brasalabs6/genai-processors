@@ -8,6 +8,51 @@ from leonidas import codex_app_server
 
 class JsonRpcClientTest(unittest.IsolatedAsyncioTestCase):
 
+  async def test_text_turn_lifecycle_collects_only_matching_turn_deltas(self):
+    rpc, _sent, server = codex_app_server.testing_rpc_pair()
+    client = codex_app_server.CodexTurnClient(rpc)
+
+    initialize = asyncio.create_task(
+        client.initialize(client_name='leonidas', client_version='test')
+    )
+    request = await server.next_request()
+    self.assertEqual(request['method'], 'initialize')
+    await server.respond(request, {'userAgent': 'codex-test'})
+    await initialize
+
+    start = asyncio.create_task(client.start_thread('Ajude o usuário.'))
+    request = await server.next_request()
+    self.assertEqual(request['method'], 'thread/start')
+    await server.respond(request, {'thread': {'id': 'thread-text'}})
+    await start
+
+    response = asyncio.create_task(
+        client.respond('Qual é o status?', model='gpt-realtime-1.5')
+    )
+    request = await server.next_request()
+    self.assertEqual(request['method'], 'turn/start')
+    self.assertEqual(request['params']['threadId'], 'thread-text')
+    self.assertEqual(
+        request['params']['input'],
+        [{'type': 'text', 'text': 'Qual é o status?'}],
+    )
+    await server.respond(request, {'turn': {'id': 'turn-text'}})
+    await server.notify(
+        'item/agentMessage/delta',
+        {'turnId': 'other-turn', 'delta': 'ignorar'},
+    )
+    await server.notify(
+        'item/agentMessage/delta',
+        {'turnId': 'turn-text', 'delta': 'Tudo '},
+    )
+    await server.notify(
+        'item/agentMessage/delta',
+        {'turnId': 'turn-text', 'delta': 'certo.'},
+    )
+    await server.notify('turn/completed', {'turn': {'id': 'turn-text'}})
+    self.assertEqual(await response, 'Tudo certo.')
+    await client.close()
+
   async def test_handshake_and_realtime_lifecycle_use_confirmed_methods(self):
     client, sent, server = codex_app_server.testing_pair()
 

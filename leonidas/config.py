@@ -180,6 +180,7 @@ class AgentConfig:
         capabilities.PIPELINE_GEMINI,
         capabilities.PIPELINE_CASCADE,
         capabilities.PIPELINE_CODEX,
+        capabilities.PIPELINE_CODEX_TEXT,
     ):
       raise ConfigValidationError('pipeline_id is unsupported')
     profile = None
@@ -202,13 +203,18 @@ class AgentConfig:
       if self.voice_name is not None:
         raise ConfigValidationError('voice_name is only supported by Gemini')
       self._validate_cascade()
-    else:
+    elif self.pipeline_id == capabilities.PIPELINE_CODEX:
       if self.model_id != capabilities.CODEX_REALTIME_MODEL:
         raise ConfigValidationError(
             'model_id is unsupported for Codex realtime'
         )
       if self.voice_name not in capabilities.CODEX_VOICES:
         raise ConfigValidationError('voice_name is required for Codex realtime')
+    else:
+      if self.model_id != capabilities.CODEX_TEXT_MODEL:
+        raise ConfigValidationError('model_id is unsupported for Codex text')
+      if self.voice_name is not None:
+        raise ConfigValidationError('voice_name is unsupported for Codex text')
     if not 1 <= len(self.objective.strip()) <= 12000:
       raise ConfigValidationError(
           'objective must contain 1 to 12000 characters'

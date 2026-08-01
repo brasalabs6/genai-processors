@@ -291,6 +291,16 @@ subprocesso local, sem alterar Gemini ou a cascata. O áudio vira
 `ProcessorPart` no substream `realtime`; como o schema RPC não declara codec, o
 MIME de playback deve ser configurado explicitamente pelo runtime.
 
+### Codex Text fallback
+
+`pipeline_id=codex_text` é uma capacidade separada para instalações cujo
+`auth.json` contém login ChatGPT, mas não `OPENAI_API_KEY`. Ela usa somente
+`initialize`, `thread/start` e `turn/start` do app-server, coleta
+`item/agentMessage/delta` até `turn/completed` e retorna texto no contrato
+`ProcessorPart`. Não aceita áudio, voz ou visão e não tenta iniciar
+`thread/realtime/start`. Assim, a ausência de API key produz erro acionável no
+realtime e não uma degradação implícita para texto.
+
 `POST /api/v1/session/start` preserva `200/running` para Gemini. Para cascata
 fria retorna `202/starting`; readiness e transições posteriores chegam pelo
 WebSocket.

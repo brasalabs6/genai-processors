@@ -58,15 +58,21 @@ def validate_auth_file(
 
 
 def subprocess_environment(
-    path: Path | None = None, *, codex_home: Path | None = None
+    path: Path | None = None,
+    *,
+    codex_home: Path | None = None,
+    require_api_key: bool = True,
 ) -> dict[str, str]:
   """Returns a redaction-safe environment pointing Codex at auth.json."""
   target = path.expanduser() if path is not None else auth_path()
-  validate_auth_file(target, require_api_key=True)
+  validate_auth_file(target, require_api_key=require_api_key)
   document = json.loads(target.read_text(encoding='utf-8'))
   environment = os.environ.copy()
   # Keep the configured home path rather than resolving symlinks. This allows
   # tests and managed installations to expose auth.json without duplicating it.
   environment['CODEX_HOME'] = str((codex_home or target.parent).resolve())
-  environment['OPENAI_API_KEY'] = str(document['OPENAI_API_KEY'])
+  if isinstance(document.get('OPENAI_API_KEY'), str):
+    environment['OPENAI_API_KEY'] = document['OPENAI_API_KEY']
+  elif not require_api_key:
+    environment.pop('OPENAI_API_KEY', None)
   return environment

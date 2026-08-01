@@ -30,6 +30,18 @@ class CodexAuthTest(unittest.TestCase):
     with self.assertRaisesRegex(codex_auth.CodexAuthError, 'missing'):
       codex_auth.validate_auth_file(Path('/tmp/does-not-exist-leonidas-auth'))
 
+  def test_chatgpt_login_can_build_text_environment_without_api_key(self):
+    with tempfile.TemporaryDirectory() as temp_dir:
+      path = Path(temp_dir) / 'auth.json'
+      path.write_text(
+          json.dumps({'auth_mode': 'chatgpt', 'tokens': {'access_token': 'x'}}),
+          encoding='utf-8',
+      )
+      environment = codex_auth.subprocess_environment(
+          path, require_api_key=False
+      )
+      self.assertNotIn('OPENAI_API_KEY', environment)
+
 
 if __name__ == '__main__':
   unittest.main()

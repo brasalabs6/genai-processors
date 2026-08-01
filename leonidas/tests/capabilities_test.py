@@ -50,6 +50,18 @@ class CapabilitiesTest(unittest.TestCase):
         codex['models'][0]['id'], capabilities.CODEX_REALTIME_MODEL
     )
 
+  def test_codex_text_is_an_explicit_non_realtime_fallback(self):
+    public = capabilities.public_capabilities()
+    codex_text = next(
+        item
+        for item in public['pipelines']
+        if item['id'] == capabilities.PIPELINE_CODEX_TEXT
+    )
+    self.assertTrue(codex_text['implemented'])
+    self.assertFalse(codex_text['native_audio'])
+    self.assertEqual(codex_text['input_modalities'], ['text'])
+    self.assertEqual(codex_text['voices'], [])
+
 
 if __name__ == '__main__':
   unittest.main()

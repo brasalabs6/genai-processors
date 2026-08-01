@@ -40,7 +40,7 @@ export interface CascadeConfig {
 
 export interface AgentConfig {
   schema_version: 1;
-  pipeline_id: 'gemini_live' | 'cascade_local' | 'codex_realtime';
+  pipeline_id: 'gemini_live' | 'cascade_local' | 'codex_realtime' | 'codex_text';
   model_id: string;
   voice_name: string | null;
   objective: string;
@@ -102,9 +102,22 @@ export interface CodexPipelineCapability {
   requires_local_codex: boolean;
 }
 
+export interface CodexTextPipelineCapability {
+  id: 'codex_text';
+  label: string;
+  implemented: boolean;
+  vision: false;
+  input_modalities: string[];
+  output_modalities: string[];
+  native_audio: false;
+  voices: [];
+  models: ModelCapability[];
+  requires_local_codex: boolean;
+}
+
 export interface Capabilities {
   schema_version: number;
-  pipelines: Array<GeminiPipelineCapability | CascadePipelineCapability | CodexPipelineCapability>;
+  pipelines: Array<GeminiPipelineCapability | CascadePipelineCapability | CodexPipelineCapability | CodexTextPipelineCapability>;
   voices: string[];
   presets: string[];
   diarization?: {

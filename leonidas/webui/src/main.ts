@@ -394,7 +394,7 @@ class LeonidasApp {
     this.model.innerHTML = models.map((item) => `<option value="${item.id}">${item.label}</option>`).join('');
     this.model.value = draft.model_id;
     const pipeline = this.capabilities.pipelines.find((item) => item.id === draft.pipeline_id);
-    const voices = pipeline?.id === 'cascade_local' || pipeline?.id === 'codex_realtime'
+    const voices = pipeline?.id === 'cascade_local' || pipeline?.id === 'codex_realtime' || pipeline?.id === 'codex_text'
       ? pipeline.voices : this.capabilities.voices;
     this.voice.innerHTML = (pipeline?.id === 'gemini_live' ? '<option value="">Automática</option>' : '') + voices.map((voice) => `<option>${voice}</option>`).join('');
     this.voice.value = draft.pipeline_id === 'cascade_local' ? draft.cascade.voice_id : draft.voice_name ?? '';

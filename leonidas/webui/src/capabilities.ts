@@ -19,7 +19,7 @@ export function modelsForPipeline(
 ): ModelCapability[] {
   const pipeline = capabilities.pipelines.find((item) => item.id === pipelineId);
   if (!pipeline) return [];
-  if (pipeline.id === 'gemini_live' || pipeline.id === 'codex_realtime') return pipeline.models;
+  if (pipeline.id === 'gemini_live' || pipeline.id === 'codex_realtime' || pipeline.id === 'codex_text') return pipeline.models;
   return pipeline.llm_models.map((id) => ({id, label: id}));
 }
 

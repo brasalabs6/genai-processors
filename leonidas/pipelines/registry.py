@@ -14,6 +14,7 @@ from leonidas.cascade import pipeline as cascade_pipeline
 from leonidas.cascade import resources
 from leonidas.pipelines import gemini_live
 from leonidas.pipelines import codex_realtime
+from leonidas.pipelines import codex_text
 from leonidas import telemetry
 
 
@@ -86,6 +87,8 @@ class PipelineRegistry:
         raise ValueError(str(exc)) from exc
     if agent_config.pipeline_id == capabilities.PIPELINE_CODEX:
       return codex_realtime.create(agent_config)
+    if agent_config.pipeline_id == capabilities.PIPELINE_CODEX_TEXT:
+      return codex_text.create(agent_config)
     raise ValueError(f'Unsupported pipeline: {agent_config.pipeline_id!r}')
 
   def requires_preparation(self, agent_config: config.AgentConfig) -> bool:

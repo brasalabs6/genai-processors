@@ -12,7 +12,9 @@ DEFAULT_MODEL = MODEL_LIVE_2_5
 PIPELINE_GEMINI = 'gemini_live'
 PIPELINE_CASCADE = 'cascade_local'
 PIPELINE_CODEX = 'codex_realtime'
+PIPELINE_CODEX_TEXT = 'codex_text'
 CODEX_REALTIME_MODEL = 'gpt-realtime-1.5'
+CODEX_TEXT_MODEL = 'default'
 PARAKEET_V3_MODEL = 'nvidia/parakeet-tdt-0.6b-v3'
 GROQ_GPT_OSS_20B = 'openai/gpt-oss-20b'
 GROQ_GPT_OSS_120B = 'openai/gpt-oss-120b'
@@ -173,6 +175,24 @@ def public_capabilities() -> dict[str, Any]:
                   }
               ],
               'realtime_versions': ['v3', 'v2'],
+              'requires_local_codex': True,
+          },
+          {
+              'id': PIPELINE_CODEX_TEXT,
+              'label': 'Codex Text (local app-server)',
+              'implemented': True,
+              'vision': False,
+              'input_modalities': ['text'],
+              'output_modalities': ['text', 'transcription'],
+              'native_audio': False,
+              'voices': [],
+              'models': [
+                  {
+                      'id': CODEX_TEXT_MODEL,
+                      'label': 'Codex default model via app-server',
+                      'experimental': False,
+                  }
+              ],
               'requires_local_codex': True,
           },
       ],

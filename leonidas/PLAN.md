@@ -121,9 +121,9 @@ JSONL multiplexado, handshake `experimentalApi`, lifecycle de thread/realtime,
 texto, áudio e tradução de notificações para `ProcessorPart`. O adapter usa
 v3 por padrão quando o runtime mais novo estiver disponível e aceita v2
 explicitamente para o binário instalado; nenhum campo v3 é enviado no teste v2.
-O contrato offline passou 4 testes. A implementação ainda não está conectada
-à composição/capability pública até concluir a revisão de campos do checkout
-`~/github/codex` e os testes de integração do pipeline.
+O contrato offline passou 4 testes. A implementação foi posteriormente
+conectada à composição/capability pública como `codex_realtime` e
+`codex_text`; este trecho registra o estado anterior ao checkpoint.
 
 O loader de autenticação agora lê `auth.json` apenas no servidor e exige
 `OPENAI_API_KEY` para o realtime; tokens de login `chatgpt` são reconhecidos,
@@ -137,6 +137,14 @@ Para não depender do `~/.codex/config.toml` inválido observado nesta máquina,
 o subprocesso agora usa `CODEX_HOME` temporário com link para o `auth.json`
 original e configuração limpa; a execução real é bloqueada antes do spawn
 quando a API key não existe.
+
+O mesmo `auth.json` foi validado em um smoke real de texto do app-server:
+handshake, thread efêmero, turn textual, deltas e conclusão retornaram com
+sucesso. A implementação deve expor isso como `pipeline_id=codex_text`, sem
+transformar falha de `codex_realtime` em fallback implícito e sem prometer
+áudio/voz nessa capacidade. O smoke textual deve ser repetível sem imprimir o
+conteúdo da resposta ou qualquer credencial; o smoke atual passou com resposta
+não vazia.
 
 Readiness adicional: o snapshot `/api/v1/resources` e a WebUI agora exibem o
 componente opcional `diarization` como `unavailable` ou `unloaded`, sem alterar

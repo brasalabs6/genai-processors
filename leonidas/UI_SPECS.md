@@ -123,6 +123,12 @@ vozes anunciadas pelo capability document. Erros de `auth.json`, API key
 ausente, feature desabilitada ou versão não suportada são acionáveis. A UI
 nunca mostra o conteúdo de `auth.json` nem oferece campo de credencial.
 
+Quando `codex_text` estiver selecionado, a UI mostra “Codex Text”, não oferece
+voz nem controles de áudio e deixa explícito que é o fallback textual do
+app-server. A UI nunca troca automaticamente entre `codex_realtime` e
+`codex_text`; a escolha é do usuário e o erro de autenticação do realtime deve
+ser acionável.
+
 O erro de runtime XTTS deve distinguir ambiente ausente, referência de voz
 ausente e termos CPML ainda não aceitos. A UI nunca oferece um botão que aceite
 licença automaticamente; ela mostra o comando de preparação documentado.

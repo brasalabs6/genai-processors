@@ -75,6 +75,21 @@ class AgentConfigTest(unittest.TestCase):
     )
     self.assertEqual(value.pipeline_id, capabilities.PIPELINE_CODEX)
 
+  def test_codex_text_configuration_has_no_voice_or_audio_assumption(self):
+    value = config.AgentConfig.from_dict(
+        {
+            'pipeline_id': capabilities.PIPELINE_CODEX_TEXT,
+            'model_id': capabilities.CODEX_TEXT_MODEL,
+            'voice_name': None,
+        }
+    )
+    self.assertEqual(value.pipeline_id, capabilities.PIPELINE_CODEX_TEXT)
+
+    invalid = value.to_dict()
+    invalid['voice_name'] = capabilities.CODEX_VOICES[0]
+    with self.assertRaisesRegex(config.ConfigValidationError, 'voice_name'):
+      config.AgentConfig.from_dict(invalid)
+
 
 class ConfigStoreTest(unittest.TestCase):
 

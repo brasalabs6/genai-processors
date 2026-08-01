@@ -96,7 +96,9 @@ tradução de notificações para `ProcessorPart`. O checkout `~/github/codex`
 confirma v3 e campos adicionais ausentes no binário instalado; por isso v3 é o
 default do adapter e v2 permanece uma opção explícita de compatibilidade. Os
 4 testes offline do contrato passaram. A integração pública ainda aguarda
-essa revisão final e os testes da composição.
+essa revisão final e os testes da composição. A integração pública foi
+posteriormente conectada como `codex_realtime` e `codex_text`; este trecho
+registra o estado anterior ao checkpoint.
 
 O loader server-side passou a validar e encaminhar somente a
 `OPENAI_API_KEY` de `auth.json` para o processo Codex; tokens ChatGPT não são
@@ -108,6 +110,14 @@ falhou sem vazar segredo: o arquivo está em `auth_mode=chatgpt`, sem
 O subprocesso não depende mais do `~/.codex/config.toml` global: usa um
 `CODEX_HOME` temporário com link para o auth original. O smoke atual falha
 antes do spawn, de forma segura, quando a API key compatível não está presente.
+
+O mesmo `auth.json` foi validado em um smoke real de texto do app-server:
+handshake, thread efêmero, turn textual, deltas e conclusão retornaram com
+sucesso. A implementação deve expor isso como `pipeline_id=codex_text`, sem
+transformar falha de `codex_realtime` em fallback implícito e sem prometer
+áudio/voz nessa capacidade. O smoke textual deve ser repetível sem imprimir o
+conteúdo da resposta ou qualquer credencial; o smoke atual passou com resposta
+não vazia.
 
 O recurso opcional de diarização também aparece no snapshot/API/UI como
 `unavailable` ou `unloaded`, sem degradar a prontidão STT/TTS. A suíte completa
