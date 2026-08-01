@@ -3,6 +3,7 @@ import unittest
 from unittest import mock
 
 from leonidas.cascade import diarization
+from leonidas.cascade import diarization_worker
 
 
 class DiarizationTest(unittest.IsolatedAsyncioTestCase):
@@ -34,6 +35,12 @@ class DiarizationTest(unittest.IsolatedAsyncioTestCase):
             'confidence': 0.92,
         },
     )
+
+  def test_worker_rejects_missing_pipeline_with_actionable_error(self):
+    with self.assertRaisesRegex(
+        RuntimeError, 'unavailable or access is not authorized'
+    ):
+      diarization_worker._require_pipeline(None)
 
 
 if __name__ == '__main__':

@@ -580,3 +580,32 @@ token Hugging Face no cache local. Foi criado o instalador
 expõem o caminho e o comando de setup sem expor credenciais. A instalação e o
 smoke Pyannote real continuam um gate externo até o usuário configurar acesso
 ao modelo; não substituir esse smoke por um fake.
+
+### Requisito futuro: reescrita completa da WebUI e mobile — 2026-08-01
+
+Depois de finalizar os gates do backend atual, implementar uma nova WebUI
+completa tomando `resources/ui_002/` como inspiração visual e de fluxo. A
+frente não pode presumir uma API nova: deve primeiro auditar a referência,
+mapear as telas para os contratos REST/WS atuais e atualizar
+`leonidas/UI_SPECS.md`. A UI continuará em Vite + TypeScript e deverá manter
+Gemini 2.5/3.1, cascata Parakeet/Groq/XTTS, Codex text/realtime explícitos,
+configuração, lifecycle, logs, métricas, readiness e diarização opcional.
+
+O suporte mobile é requisito de aceite, não apenas um breakpoint: testar
+viewport estreito, touch, teclado virtual, orientação, permissões de mídia,
+preview, reprodução PCM, reconexão e ausência de overflow horizontal. A
+reescrita deve incluir testes Vitest/contrato, typecheck, build e inspeção
+visual desktop/mobile. Não versionar assets privados, logs, capturas ou
+credenciais de `resources/ui_002`.
+
+O runtime isolado foi instalado e validado com Torch `2.6.0+cu124`, Pyannote
+`3.4.0`, `huggingface_hub==0.36.2` e CUDA disponível. O smoke real chegou ao
+modelo e confirmou a dependência externa de acesso/autorização Hugging Face;
+quando `Pipeline.from_pretrained` retorna `None`, o worker agora publica erro
+redigido e acionável, sem `AttributeError` enganoso.
+
+Durante a instalação da diarização, o primeiro smoke encontrou uma
+incompatibilidade concreta: `pyannote.audio==3.4.0` usa `use_auth_token`,
+removido em `huggingface_hub==1.26.0`. O instalador deve fixar
+`huggingface_hub<1.0` e repetir o smoke; somente depois desse ajuste o erro de
+acesso/peso do modelo pode ser classificado como bloqueio externo.

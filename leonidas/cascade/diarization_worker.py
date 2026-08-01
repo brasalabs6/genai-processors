@@ -12,6 +12,14 @@ def _write(value: dict[str, Any]) -> None:
   print(json.dumps(value, ensure_ascii=True), flush=True)
 
 
+def _require_pipeline(pipeline: Any) -> Any:
+  if pipeline is None:
+    raise RuntimeError(
+        'diarization model is unavailable or access is not authorized'
+    )
+  return pipeline
+
+
 def main() -> int:
   pipeline = None
   for line in sys.stdin:
@@ -23,7 +31,9 @@ def main() -> int:
         import torch
 
         _write({'id': request_id, 'type': 'event', 'phase': 'loading_weights'})
-        pipeline = Pipeline.from_pretrained(request['model_id'])
+        pipeline = _require_pipeline(
+            Pipeline.from_pretrained(request['model_id'])
+        )
         device = request.get('device', 'auto')
         if device == 'auto':
           device = 'cuda' if torch.cuda.is_available() else 'cpu'

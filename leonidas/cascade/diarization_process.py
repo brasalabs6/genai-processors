@@ -105,8 +105,10 @@ class PyannoteWorkerDiarizer:
               await progress(str(response.get('phase', 'loading')))
             continue
           if response.get('error'):
+            error_type = str(response['error'])
             raise DiarizationWorkerError(
-                f'Diarization worker failed: {response["error"]}'
+                'Diarization model is unavailable or access is not authorized '
+                f'(worker_error={error_type})'
             )
           return response
       except asyncio.CancelledError:

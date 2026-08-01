@@ -718,3 +718,40 @@ comando de instalação e o fato de que acesso ao modelo Hugging Face é exigido
 O smoke real continua pendente até esse runtime e o acesso ao modelo serem
 configurados; a cascata sem diarização e os dois perfis Gemini não dependem
 dessa instalação.
+
+### Próxima frente: reescrita da WebUI inspirada em `resources/ui_002` — 2026-08-01
+
+Após fechar e validar os gates atuais de backend, workers, diarização e Codex,
+a WebUI do Leonidas deverá ser reescrita integralmente usando
+`resources/ui_002/` como referência visual e de interação. A implementação
+deve continuar sendo Vite + TypeScript direta, sem trocar o contrato atual da
+API REST, do envelope `ProcessorPart` ou do WebSocket. Antes de editar a UI,
+auditar os assets e padrões de `resources/ui_002`, mapear cada tela/estado para
+os endpoints existentes e atualizar `UI_SPECS.md` com os contratos derivados.
+
+Requisitos obrigatórios dessa frente:
+
+- preservar Gemini 2.5/3.1, cascata local, Codex text/realtime explícito,
+  configuração, lifecycle, logs, métricas, readiness e diarização opcional;
+- suporte mobile real, incluindo layout responsivo, controles touch,
+  captura/preview adaptados, teclado virtual, orientação estreita e estados
+  de permissão/erro sem overflow horizontal;
+- manter testes Vitest, typecheck, build e testes de contrato WebSocket/API;
+- validar visualmente desktop e mobile antes de substituir a UI atual;
+- não incluir assets privados, credenciais, logs ou resultados de runtime no
+  commit.
+
+Essa frente permanece pendente até a conclusão da validação atual e deve ter
+checkpoint próprio, revisão de diff e tag somente se todos os gates aplicáveis
+estiverem verdes.
+
+O runtime foi instalado com Torch `2.6.0+cu124`, Pyannote `3.4.0` e
+`huggingface_hub==0.36.2`; `pip check` e CUDA passaram. O smoke então chegou
+ao carregamento real e confirmou o bloqueio externo: o pipeline Hugging Face
+retorna `None` sem acesso/autorização ao modelo. O worker agora converte esse
+caso em erro acionável e redigido, em vez de expor um `AttributeError` interno.
+
+O primeiro smoke após a instalação encontrou incompatibilidade entre
+`pyannote.audio==3.4.0` e `huggingface_hub==1.26.0` (`use_auth_token` removido).
+O instalador foi corrigido para fixar `huggingface_hub<1.0`; o smoke deve ser
+repetido para separar essa falha de compatibilidade do acesso Hugging Face.

@@ -37,7 +37,8 @@ fi
 "${runtime}/bin/python" -m pip install \
   'torch==2.6.0' 'torchaudio==2.6.0' \
   --index-url "${torch_index}"
-"${runtime}/bin/python" -m pip install 'pyannote.audio==3.4.0'
+"${runtime}/bin/python" -m pip install \
+  'pyannote.audio==3.4.0' 'huggingface_hub<1.0'
 "${runtime}/bin/python" -m pip check
 "${runtime}/bin/python" -c \
   'from pyannote.audio import Pipeline; import torch; print("Diarization runtime OK, CUDA:", torch.cuda.is_available())'

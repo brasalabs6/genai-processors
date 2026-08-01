@@ -79,9 +79,10 @@ validado do Parakeet. Instale-o somente quando essa capacidade for necessária:
 ./leonidas/cascade/install_diarization.sh auto
 ```
 
-O script usa `torch==2.6.0`, `torchaudio==2.6.0` e
-`pyannote.audio==3.4.0` em `.venv-diarization`; `cpu` e `cuda` também podem
-ser passados explicitamente. O modelo
+O script usa `torch==2.6.0`, `torchaudio==2.6.0`, `pyannote.audio==3.4.0` e
+`huggingface_hub<1.0` (necessário pelo contrato `use_auth_token` do Pyannote)
+em `.venv-diarization`; `cpu` e `cuda` também podem ser passados
+explicitamente. O modelo
 `pyannote/speaker-diarization-community-1` requer acesso Hugging Face e seus
 termos próprios. Configure o login no ambiente do usuário, sem colocar token
 no repositório, e valide sem substituir o resultado do STT:
