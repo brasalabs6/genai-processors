@@ -65,6 +65,7 @@ class LeonidasApp {
   private readonly preset = element<HTMLSelectElement>('#preset');
   private readonly objective = element<HTMLTextAreaElement>('#objective');
   private readonly chattiness = element<HTMLInputElement>('#chattiness');
+  private readonly diarization = element<HTMLInputElement>('#cascade-diarization');
   private readonly preview = element<HTMLVideoElement>('#preview');
 
   constructor() {
@@ -157,6 +158,7 @@ class LeonidasApp {
     element('#preview-voice').addEventListener('click', () => void this.previewVoice());
     element('#reasoning-effort').addEventListener('change', () => void this.updateDraft({cascade: {reasoning_effort: element<HTMLSelectElement>('#reasoning-effort').value}}));
     element('#cascade-device').addEventListener('change', () => void this.updateDraft({cascade: {device: element<HTMLSelectElement>('#cascade-device').value}}));
+    this.diarization.addEventListener('change', () => void this.updateDraft({cascade: {diarization_enabled: this.diarization.checked}}));
 
     this.bindAdvanced();
     element('#pause-logs').addEventListener('click', () => {
@@ -427,6 +429,12 @@ class LeonidasApp {
     element<HTMLSelectElement>('#cascade-device').value = draft.cascade.device;
     element<HTMLInputElement>('#cascade-stt').value = draft.cascade.stt_model_id;
     element<HTMLInputElement>('#cascade-tts').value = draft.cascade.tts_model_id;
+    this.diarization.checked = draft.cascade.diarization_enabled;
+    const diarizationAvailable = this.capabilities.diarization?.state === 'available';
+    this.diarization.disabled = !diarizationAvailable;
+    this.diarization.title = diarizationAvailable
+      ? 'Executa Pyannote fora do event loop e não bloqueia o áudio.'
+      : 'Pyannote não está instalado; a diarização permanece indisponível.';
     this.renderCaptureCapabilities();
     const dirty = this.config.dirty_fields.length;
     element('#draft-status').textContent = dirty

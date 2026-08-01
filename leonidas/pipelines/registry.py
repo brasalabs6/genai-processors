@@ -63,7 +63,7 @@ class PipelineRegistry:
             cascade.tts_model_id, cascade.device
         )
         diarizer = (
-            diarization.PyannoteDiarizer(device=cascade.device)
+            self._resources.diarizer(cascade.device)
             if cascade.diarization_enabled
             else diarization.NullDiarizer()
         )
@@ -106,6 +106,7 @@ class PipelineRegistry:
         cascade.stt_model_id,
         cascade.tts_model_id,
         cascade.device,
+        diarization_enabled=cascade.diarization_enabled,
     )
 
   @property

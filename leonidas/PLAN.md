@@ -633,3 +633,13 @@ validados empiricamente, com o milestone Gemini commitado/tagueado, ou quando
 todo trabalho restante depender da mesma credencial/capacidade externa
 indisponível. Nesse caso, manter a suíte e comandos prontos, registrar a
 evidência offline e declarar exatamente o que falta para o smoke real.
+
+## Próxima onda de continuidade — diarização configurável e smoke real
+
+Auditoria identificou que `CascadeConfig.diarization_enabled` já existe no
+backend, mas ainda não tem controle correspondente na WebUI. O próximo
+checkpoint deve adicionar esse controle, um teste de contrato com áudio PCM
+sintético de dois falantes e um runner opt-in para o adapter Pyannote. O runner
+deve falhar explicitamente quando dependência, pesos ou credencial Hugging
+Face estiverem ausentes; nunca deve substituir o resultado por um fake e nunca
+deve bloquear Gemini ou a cascata com diarização desativada.

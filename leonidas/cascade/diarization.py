@@ -56,6 +56,19 @@ class PyannoteDiarizer:
     self._pipeline: Any | None = None
     self._load_lock = asyncio.Lock()
 
+  @property
+  def device(self) -> str:
+    return self._device
+
+  async def load(self, progress=None) -> dict[str, Any]:
+    """Loads weights outside the event loop for resource readiness."""
+    if progress is not None:
+      await progress('loading_weights')
+    await self._load()
+    if progress is not None:
+      await progress('warming')
+    return {'device': self._device, 'model_id': self._model_id}
+
   async def _load(self) -> Any:
     async with self._load_lock:
       if self._pipeline is not None:
