@@ -44,7 +44,7 @@ describe('pipeline capabilities', () => {
       media: {frame_interval_ms: 1000, max_width: 1280, max_height: 720, jpeg_quality: 0.75, model_resolution: 'medium'},
       vad: {start_sensitivity: null, end_sensitivity: null, prefix_padding_ms: null, silence_duration_ms: null},
       generation: {temperature: null, thinking_level: null, thinking_budget: null, context_trigger_tokens: null, context_target_tokens: null},
-      cascade: {stt_model_id: 'stt', llm_model_id: 'llm', tts_model_id: 'tts', reasoning_effort: 'medium', language: 'pt', device: 'auto', voice_id: 'leonidas'},
+      cascade: {stt_model_id: 'stt', llm_model_id: 'llm', tts_model_id: 'tts', reasoning_effort: 'medium', language: 'pt', device: 'auto', voice_id: 'leonidas', diarization_enabled: false},
     } satisfies Omit<AgentConfig, 'pipeline_id'>;
     const snapshot = {
       active: {...base, pipeline_id: 'cascade_local'},

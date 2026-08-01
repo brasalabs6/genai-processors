@@ -35,6 +35,7 @@ export interface CascadeConfig {
   language: 'pt';
   device: 'auto' | 'cuda' | 'cpu';
   voice_id: string;
+  diarization_enabled: boolean;
 }
 
 export interface AgentConfig {
@@ -106,6 +107,14 @@ export interface Capabilities {
   pipelines: Array<GeminiPipelineCapability | CascadePipelineCapability | CodexPipelineCapability>;
   voices: string[];
   presets: string[];
+  diarization?: {
+    id: string;
+    state: string;
+    model_id: string;
+    device: string | null;
+    weights_loaded: boolean;
+    optional_dependency: string;
+  };
 }
 
 export interface SessionSnapshot {
@@ -134,6 +143,7 @@ export interface MetricsSnapshot {
 
 export type ResourceState =
   | 'unloaded'
+  | 'unavailable'
   | 'validating'
   | 'loading'
   | 'warming'
@@ -141,7 +151,7 @@ export type ResourceState =
   | 'error';
 
 export interface ResourceComponent {
-  id: 'stt' | 'tts';
+  id: 'stt' | 'tts' | 'diarization';
   model_id: string | null;
   state: ResourceState;
   phase: string;

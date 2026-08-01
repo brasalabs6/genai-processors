@@ -9,6 +9,7 @@ import time
 from typing import Any, Callable
 
 from leonidas.cascade import device as device_selection
+from leonidas.cascade import diarization
 from leonidas.cascade import parakeet_process
 from leonidas.cascade import xtts_process
 
@@ -42,6 +43,7 @@ class CascadeResources:
     self._status = {
         'stt': self._empty_status('stt'),
         'tts': self._empty_status('tts'),
+        'diarization': self._diarization_status(),
     }
     self._ready_status: dict[str, dict[str, Any]] | None = None
     self._last_error: dict[str, Any] | None = None
@@ -67,6 +69,16 @@ class CascadeResources:
         'error': None,
     }
 
+  @staticmethod
+  def _diarization_status() -> dict[str, Any]:
+    available = diarization.availability()['state'] == 'available'
+    return {
+        **CascadeResources._empty_status('diarization'),
+        'state': 'unloaded' if available else 'unavailable',
+        'phase': 'optional_not_loaded' if available else 'optional_unavailable',
+        'model_id': 'pyannote/speaker-diarization-community-1',
+    }
+
   def add_listener(self, listener: Callable[[dict[str, Any]], Any]) -> None:
     self._listeners.add(listener)
 
@@ -74,8 +86,11 @@ class CascadeResources:
     self._listeners.discard(listener)
 
   def snapshot(self) -> dict[str, Any]:
-    components = [copy.deepcopy(self._status[name]) for name in ('stt', 'tts')]
-    states = {item['state'] for item in components}
+    components = [
+        copy.deepcopy(self._status[name])
+        for name in ('stt', 'tts', 'diarization')
+    ]
+    states = {self._status[name]['state'] for name in ('stt', 'tts')}
     if states == {'ready'}:
       overall = 'ready'
     elif 'error' in states:
@@ -344,5 +359,6 @@ class CascadeResources:
     self._status = {
         'stt': self._empty_status('stt'),
         'tts': self._empty_status('tts'),
+        'diarization': self._diarization_status(),
     }
     self._last_error = None

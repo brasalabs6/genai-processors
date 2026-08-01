@@ -605,20 +605,21 @@ class LeonidasApp {
       overallLabels[this.resources.overall_state],
       overallTone,
     );
-    for (const id of ['stt', 'tts'] as const) {
+    for (const id of ['stt', 'tts', 'diarization'] as const) {
       const component = this.resources.components.find((item) => item.id === id);
       this.renderResource(id, component);
     }
   }
 
   private renderResource(
-    id: 'stt' | 'tts',
+    id: 'stt' | 'tts' | 'diarization',
     component: ResourceComponent | undefined,
   ): void {
     const card = element<HTMLElement>(`[data-resource="${id}"]`);
     const state = component?.state ?? 'unloaded';
     const labels = {
       unloaded: 'Não carregado',
+      unavailable: 'Indisponível',
       validating: 'Validando',
       loading: 'Carregando',
       warming: 'Aquecendo',
@@ -633,6 +634,8 @@ class LeonidasApp {
       ready: 'Pronto',
       error: 'Falha no carregamento',
       unloaded: 'Aguardando Start',
+      optional_unavailable: 'Dependência opcional ausente',
+      optional_not_loaded: 'Disponível, não carregada',
     };
     card.dataset.state = state;
     card.querySelector<HTMLElement>('.resource-state')!.textContent = labels[state];
