@@ -69,3 +69,29 @@ GOOGLE_API_KEY='...' GROQ_API_KEY='...' .venv/bin/python -m leonidas
 
 O primeiro smoke baixa o Parakeet para o cache Hugging Face. A referência de
 voz, pesos, mídia e resultados permanecem fora do Git.
+
+### Diarização opcional
+
+A diarização roda em um terceiro runtime isolado para não substituir o Torch
+validado do Parakeet. Instale-o somente quando essa capacidade for necessária:
+
+```bash
+./leonidas/cascade/install_diarization.sh auto
+```
+
+O script usa `torch==2.6.0`, `torchaudio==2.6.0` e
+`pyannote.audio==3.4.0` em `.venv-diarization`; `cpu` e `cuda` também podem
+ser passados explicitamente. O modelo
+`pyannote/speaker-diarization-community-1` requer acesso Hugging Face e seus
+termos próprios. Configure o login no ambiente do usuário, sem colocar token
+no repositório, e valide sem substituir o resultado do STT:
+
+```bash
+LEONIDAS_RUN_DIARIZATION_E2E=1 \
+  .venv/bin/python -m leonidas.e2e.diarization_smoke
+```
+
+Sem runtime, pesos ou acesso ao modelo, a API expõe `diarization` como
+`unavailable` e a cascata Parakeet → Groq → XTTS continua funcionando com a
+diarização desativada. A UI exibe o comando de instalação e não habilita o
+checkbox automaticamente.

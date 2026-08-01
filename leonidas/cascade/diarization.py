@@ -138,4 +138,6 @@ def availability() -> dict[str, Any]:
       'weights_loaded': False,
       'optional_dependency': 'pyannote.audio (isolated runtime)',
       'runtime_configured': installed,
+      'setup_command': './leonidas/cascade/install_diarization.sh auto',
+      'model_access_required': True,
   }

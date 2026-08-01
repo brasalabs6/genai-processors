@@ -569,3 +569,14 @@ O loader Codex agora rejeita de forma redigida arquivos cujos JWTs conhecidos
 estão todos expirados, sem validar ou expor assinaturas/claims. A regressão
 sintética passou e o `codex_text` smoke real com o `auth.json` atual passou
 novamente em um turno (`response_chars=8`, 9,16 s).
+
+### Continuação: diarização instalável e bloqueio explícito — 2026-08-01
+
+O host foi reavaliado antes de qualquer instalação: CUDA enumera a RTX 2060,
+há cerca de 4 GiB de RAM disponível, não existe `.venv-diarization` e não há
+token Hugging Face no cache local. Foi criado o instalador
+`leonidas/cascade/install_diarization.sh`, isolando Torch 2.6/cu124 e
+`pyannote.audio==3.4.0` do ambiente Parakeet. A capability/API/UI agora
+expõem o caminho e o comando de setup sem expor credenciais. A instalação e o
+smoke Pyannote real continuam um gate externo até o usuário configurar acesso
+ao modelo; não substituir esse smoke por um fake.

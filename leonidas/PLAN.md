@@ -705,3 +705,16 @@ O loader Codex agora rejeita de forma redigida arquivos cujos JWTs conhecidos
 estão todos expirados, sem validar ou expor assinaturas/claims. A regressão
 sintética passou e o `codex_text` smoke real com o `auth.json` atual passou
 novamente em um turno (`response_chars=8`, 9,16 s).
+
+### Continuação: instalação acionável da diarização — 2026-08-01
+
+O preflight confirmou que este host ainda não possui `.venv-diarization` nem
+token Hugging Face. Para tornar o bloqueio acionável sem contaminar o runtime
+Parakeet/Transformers 5, foi adicionado `install_diarization.sh`, que cria o
+runtime isolado com Torch 2.6/cu124 (ou CPU) e `pyannote.audio==3.4.0`.
+`.venv-diarization` entrou no `.gitignore`; pesos e tokens continuam fora do
+repositório. A capability agora informa somente metadados seguros de runtime,
+comando de instalação e o fato de que acesso ao modelo Hugging Face é exigido.
+O smoke real continua pendente até esse runtime e o acesso ao modelo serem
+configurados; a cascata sem diarização e os dois perfis Gemini não dependem
+dessa instalação.

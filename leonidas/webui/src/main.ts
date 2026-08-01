@@ -434,7 +434,7 @@ class LeonidasApp {
     this.diarization.disabled = !diarizationAvailable;
     this.diarization.title = diarizationAvailable
       ? 'Executa Pyannote fora do event loop e não bloqueia o áudio.'
-      : 'Pyannote não está instalado; a diarização permanece indisponível.';
+      : `Pyannote indisponível. Instale com: ${this.capabilities.diarization?.setup_command ?? './leonidas/cascade/install_diarization.sh auto'}`;
     this.renderCaptureCapabilities();
     const dirty = this.config.dirty_fields.length;
     element('#draft-status').textContent = dirty
@@ -653,6 +653,9 @@ class LeonidasApp {
     const elapsed = component?.load_ms
       ? `${(component.load_ms / 1000).toFixed(1)} s`
       : null;
+    const diarizationSetup = id === 'diarization' && state === 'unavailable'
+      ? this.capabilities?.diarization?.setup_command
+      : null;
     const detail = component?.error
       ? `${component.error.message} ${component.error.recovery}`
       : [
@@ -662,6 +665,7 @@ class LeonidasApp {
           component?.gpu_name,
           memory,
           elapsed,
+          diarizationSetup ? `Instalação: ${diarizationSetup}` : null,
         ].filter(Boolean).join(' · ') || 'Será carregado ao iniciar.';
     card.querySelector<HTMLElement>('.resource-detail')!.textContent = detail;
     card.title = detail;

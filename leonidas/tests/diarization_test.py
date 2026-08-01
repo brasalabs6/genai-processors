@@ -1,10 +1,21 @@
 import asyncio
 import unittest
+from unittest import mock
 
 from leonidas.cascade import diarization
 
 
 class DiarizationTest(unittest.IsolatedAsyncioTestCase):
+
+  def test_availability_exposes_safe_setup_metadata(self):
+    with mock.patch.dict(
+        'os.environ', {'LEONIDAS_DIARIZATION_PYTHON': '/missing/python'}
+    ):
+      status = diarization.availability()
+
+    self.assertEqual(status['state'], 'unavailable')
+    self.assertIn('install_diarization.sh', status['setup_command'])
+    self.assertTrue(status['model_access_required'])
 
   async def test_null_diarizer_does_not_block_cascade(self):
     result = await diarization.NullDiarizer().diarize(

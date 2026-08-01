@@ -127,6 +127,9 @@ export interface Capabilities {
     device: string | null;
     weights_loaded: boolean;
     optional_dependency: string;
+    runtime_path?: string;
+    setup_command?: string;
+    model_access_required?: boolean;
   };
 }
 
