@@ -229,3 +229,27 @@ nunca lançadas na raiz do app.
 - A cascata mostra cada componente local antes de declarar sessão running.
 - Selecionar/iniciar Gemini não carrega recursos locais nem altera seus
   controles ou lifecycle.
+
+## 9. Navegação adaptativa v2 (`resources/ui_002`)
+
+A WebUI implementada deve expor somente três espaços reais, sem criar
+funcionalidades fictícias:
+
+- **Operação**: percepção, controles de captura, conversa, composer e métricas
+  resumidas; é o espaço inicial em desktop e mobile.
+- **Configuração**: pipeline, modelo, voz, objetivo, recursos locais,
+  diarização e parâmetros avançados; o rascunho continua separado da
+  configuração aplicada e só muda com `Apply`.
+- **Diagnóstico**: estado REST/WebSocket/sessão, readiness dos componentes,
+  métricas detalhadas e logs Live/Arquivos.
+
+Cada espaço é uma região semântica alternável por teclado, touch e leitor de
+tela. A troca de espaço não encerra sessão, não reinicia captura e não altera
+configuração. Em telas menores que 760 px, a navegação vira uma barra fixa
+inferior com áreas de toque de pelo menos 44 px; o preview pode ser reduzido
+ou sobreposto, mas conversa e controles de sessão permanecem acessíveis.
+
+O redesenho preserva os IDs DOM dos controles existentes para manter o
+contrato de `main.ts`, mas reorganiza sua apresentação. Não são introduzidos
+Capacitor, autenticação móvel ou conexão remota nesta fase: o backend continua
+local-only e o suporte mobile entregue é Web responsive testável.

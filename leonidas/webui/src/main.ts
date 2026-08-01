@@ -113,6 +113,7 @@ class LeonidasApp {
   }
 
   private bind(): void {
+    this.bindWorkspaceNavigation();
     element('#dismiss-error').addEventListener('click', () => {
       element('#error-banner').hidden = true;
     });
@@ -195,6 +196,41 @@ class LeonidasApp {
       this.metricsTimer = null;
       this.scheduleMetrics();
     });
+  }
+
+  private bindWorkspaceNavigation(): void {
+    const tabs = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.workspace-tab'),
+    );
+    const spaces = Array.from(
+      document.querySelectorAll<HTMLElement>('.workspace-space'),
+    );
+    const activate = (target: string): void => {
+      for (const tab of tabs) {
+        const selected = tab.dataset.spaceTarget === target;
+        tab.classList.toggle('active', selected);
+        tab.setAttribute('aria-selected', String(selected));
+      }
+      for (const space of spaces) {
+        const selected = space.dataset.space === target;
+        space.hidden = !selected;
+        space.classList.toggle('active', selected);
+      }
+    };
+    tabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => activate(tab.dataset.spaceTarget ?? 'operation'));
+      tab.addEventListener('keydown', (event) => {
+        if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+        event.preventDefault();
+        const offset = event.key === 'ArrowRight' ? 1 : -1;
+        const nextIndex = (index + offset + tabs.length) % tabs.length;
+        const next = tabs[nextIndex];
+        if (!next) return;
+        next.focus();
+        activate(next.dataset.spaceTarget ?? 'operation');
+      });
+    });
+    activate('operation');
   }
 
   private bindAdvanced(): void {

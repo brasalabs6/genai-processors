@@ -696,3 +696,10 @@ em `v1` e `v3`, mas rejeita `v2` nesse transporte. O adapter aceita `v3` por
 opt-in via `LEONIDAS_CODEX_REALTIME_VERSION=v3`; sem esse opt-in, a oferta
 WebRTC usa `v1`, compatível com o `codex-cli 0.144.0` instalado. O caminho
 WebSocket continua usando `v2` por padrão.
+
+Checkpoint UI v2 iniciado: após auditar `resources/ui_002`, a WebUI foi
+reorganizada em Operação, Configuração e Diagnóstico sem alterar os IDs dos
+controles existentes nem os contratos do backend. A navegação suporta teclado,
+touch e layout mobile; a inspeção Chromium passou em 1440×1000 e 390×844.
+Typecheck, 24 testes Vitest e build Vite passaram. O backend ainda precisa
+seguir a regressão Python antes do checkpoint ser considerado completo.

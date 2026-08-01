@@ -845,6 +845,13 @@ Essa frente permanece pendente até a conclusão da validação atual e deve ter
 checkpoint próprio, revisão de diff e tag somente se todos os gates aplicáveis
 estiverem verdes.
 
+Início da implementação v2 — 2026-08-01: a auditoria confirmou que os
+contratos funcionais já existentes podem ser preservados por IDs DOM enquanto
+a apresentação é reorganizada em Operação, Configuração e Diagnóstico. A
+primeira onda da UI v2 não altera REST, WebSocket, ProcessorPart ou lifecycle;
+ela adiciona navegação semântica, layout cockpit desktop e navegação touch
+mobile. O mapeamento foi registrado em `UI_SPECS.md` antes da edição.
+
 O runtime foi instalado com Torch `2.6.0+cu124`, Pyannote `3.4.0` e
 `huggingface_hub==0.36.2`; `pip check` e CUDA passaram. O smoke então chegou
 ao carregamento real e confirmou o bloqueio externo: o pipeline Hugging Face
@@ -863,3 +870,11 @@ worker agora reporta isso de forma redigida. A suíte completa do Leonidas
 passou com 151 testes, 2 skips e 9 subtests; o smoke cascata real CUDA passou
 em três turnos (50,63 s), e o smoke Gemini Live passou novamente nos dois
 perfis (35,90 s). Nenhum desses testes habilita diarização implicitamente.
+
+Validação UI v2 — 2026-08-01: a estrutura foi reorganizada em Operação,
+Configuração e Diagnóstico preservando os IDs DOM e os contratos REST,
+WebSocket e ProcessorPart. A navegação possui suporte a foco e setas de
+teclado; em viewport de 390×844 torna-se uma barra inferior touch. Chromium
+foi usado para inspeção em 1440×1000 e 390×844; typecheck, 24 testes Vitest e
+build Vite passaram. A tela também exibiu corretamente erro de API offline,
+sem impedir o carregamento do shell.

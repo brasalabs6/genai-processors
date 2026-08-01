@@ -32,7 +32,20 @@
         <button id="dismiss-error" aria-label="Fechar erro">×</button>
       </div>
 
+      <nav class="workspace-nav" aria-label="Espaços do Leonidas">
+        <button id="space-tab-operation" class="workspace-tab active" type="button" data-space-target="operation" aria-selected="true">
+          <span>01</span> Operação
+        </button>
+        <button id="space-tab-config" class="workspace-tab" type="button" data-space-target="config" aria-selected="false">
+          <span>02</span> Configuração
+        </button>
+        <button id="space-tab-diagnostic" class="workspace-tab" type="button" data-space-target="diagnostic" aria-selected="false">
+          <span>03</span> Diagnóstico
+        </button>
+      </nav>
+
       <main class="dashboard">
+        <section id="space-operation" class="workspace-space active" data-space="operation" aria-labelledby="space-tab-operation">
         <section class="panel capture-panel">
           <div class="panel-heading"><div><span class="eyebrow">Contexto</span><h1>Visão e voz</h1></div><span id="capture-state" class="quiet">Sem captura</span></div>
           <div class="preview-stage">
@@ -75,7 +88,9 @@
             <span>TTS cancelados <b id="tts-cancelled-count">0</b></span>
           </div>
         </section>
+        </section>
 
+        <section id="space-config" class="workspace-space" data-space="config" hidden>
         <section class="panel config-panel">
           <div class="panel-heading"><div><span class="eyebrow">Controle</span><h2>Configuração</h2></div><span id="draft-status" class="quiet">Ativa</span></div>
           <div class="form-grid">
@@ -132,11 +147,14 @@
             </div>
           </details>
         </section>
+        </section>
 
+        <section id="space-diagnostic" class="workspace-space" data-space="diagnostic" hidden>
         <section class="panel logs-panel">
           <div class="panel-heading"><div><span class="eyebrow">Diagnóstico</span><h2>Logs</h2></div><div class="log-actions"><button id="pause-logs">Pausar</button><button id="clear-logs" class="ghost">Limpar tela</button></div></div>
           <div class="log-toolbar"><select id="log-file"><option value="">Tail ao vivo</option></select><select id="log-level"><option value="">Todos os níveis</option><option>ERROR</option><option>WARNING</option><option>INFO</option><option>DEBUG</option></select><input id="log-search" type="search" placeholder="Filtrar logs" /></div>
           <pre id="logs" tabindex="0" aria-label="Logs do Leonidas"></pre>
+        </section>
         </section>
       </main>
     </div>
