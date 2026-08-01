@@ -878,3 +878,12 @@ teclado; em viewport de 390×844 torna-se uma barra inferior touch. Chromium
 foi usado para inspeção em 1440×1000 e 390×844; typecheck, 24 testes Vitest e
 build Vite passaram. A tela também exibiu corretamente erro de API offline,
 sem impedir o carregamento do shell.
+
+Verificação do binário Codex — 2026-08-01: tentou-se compilar
+`codex-cli` diretamente do checkout `~/github/codex` (`Cargo.toml` versão
+0.146.0) para validar v3 contra o executável mais recente. A compilação não
+chegou ao link final porque o filesystem `/tmp` atingiu 100% durante o build;
+o target gerado consumiu 33,9 GiB. Foram removidos somente os artefatos
+ignorados desse target com `cargo clean`; código, auth e binário instalado não
+foram alterados. O contrato permanece coberto por fonte do checkout e testes
+offline do adapter, mas o smoke com o executável v3 continua pendente.

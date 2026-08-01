@@ -697,6 +697,14 @@ opt-in via `LEONIDAS_CODEX_REALTIME_VERSION=v3`; sem esse opt-in, a oferta
 WebRTC usa `v1`, compatível com o `codex-cli 0.144.0` instalado. O caminho
 WebSocket continua usando `v2` por padrão.
 
+Tentativa de validação do executável mais novo: `cargo build --release
+-p codex-cli` no checkout `~/github/codex` (versão de workspace 0.146.0)
+falhou antes do link por falta de espaço em `/tmp`; o target gerado chegou a
+33,9 GiB. `cargo clean` removeu somente esse target ignorado, sem alterar o
+checkout, o código Leonidas, o `auth.json` ou o binário instalado. A fonte do
+checkout e os testes offline continuam confirmando o contrato v3; o smoke
+real com o executável compilado permanece não verificado.
+
 Checkpoint UI v2 iniciado: após auditar `resources/ui_002`, a WebUI foi
 reorganizada em Operação, Configuração e Diagnóstico sem alterar os IDs dos
 controles existentes nem os contratos do backend. A navegação suporta teclado,
