@@ -558,3 +558,9 @@ com `LEONIDAS_DIARIZATION_PYTHON` configurável, progresso de load, segmentos
 validados e shutdown. A suíte Leonidas/E2E passou com 148 testes, 2 skips e 9
 subtests. O smoke real continua bloqueado somente pela ausência do runtime
 opcional/pesos Hugging Face.
+
+Após a implementação do worker, a auditoria completa passou com 718 testes,
+2 skips e 27 subtests em 143,6 s; WebUI passou com 22 testes, typecheck e
+build; Pyink dos 11 arquivos alterados, Flake8 restrito e `git diff --check`
+passaram. O smoke real Pyannote ainda retorna `DiarizationWorkerError` antes
+do load porque o runtime isolado não existe neste host.
