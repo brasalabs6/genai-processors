@@ -1,0 +1,104 @@
+"""Contract tests for the server-side Codex app-server adapter."""
+
+import asyncio
+import unittest
+
+from leonidas import codex_app_server
+
+
+class JsonRpcClientTest(unittest.IsolatedAsyncioTestCase):
+
+  async def test_handshake_and_realtime_lifecycle_use_confirmed_methods(self):
+    client, sent, server = codex_app_server.testing_pair()
+
+    initialize = asyncio.create_task(
+        client.initialize(client_name='leonidas', client_version='test')
+    )
+    request = await server.next_request()
+    self.assertEqual(request['method'], 'initialize')
+    self.assertEqual(request['params']['capabilities']['experimentalApi'], True)
+    await server.respond(request, {'userAgent': 'codex-test'})
+    await initialize
+
+    thread = asyncio.create_task(
+        client.start_realtime(
+            objective='Ajude o usuário.', model='gpt-realtime-1.5', version='v2'
+        )
+    )
+    request = await server.next_request()
+    self.assertEqual(request['method'], 'thread/start')
+    await server.respond(request, {'thread': {'id': 'thread-1'}})
+    request = await server.next_request()
+    self.assertEqual(request['method'], 'thread/realtime/start')
+    self.assertEqual(request['params']['threadId'], 'thread-1')
+    self.assertEqual(request['params']['outputModality'], 'audio')
+    await server.respond(request, {})
+    await server.notify(
+        'thread/realtime/started',
+        {'threadId': 'thread-1', 'version': 'v2'},
+    )
+    await thread
+
+    append = asyncio.create_task(client.append_text('olá'))
+    request = await server.next_request()
+    self.assertEqual(request['method'], 'thread/realtime/appendText')
+    self.assertEqual(request['params'], {'threadId': 'thread-1', 'text': 'olá'})
+    await server.respond(request, {})
+    await append
+
+    stop = asyncio.create_task(client.stop_realtime())
+    request = await server.next_request()
+    self.assertEqual(request['method'], 'thread/realtime/stop')
+    await server.respond(request, {})
+    await stop
+    await client.close()
+    self.assertTrue(sent)
+
+  async def test_server_request_is_rejected_without_deadlocking_pending_call(
+      self,
+  ):
+    client, _sent, server = codex_app_server.testing_pair()
+    pending = asyncio.create_task(client.request('thread/start', {}))
+    request = await server.next_request()
+    await server.request_from_server(
+        'item/commandExecution/requestApproval', {'command': 'unsafe'}
+    )
+    with self.assertRaises(codex_app_server.CodexProtocolError):
+      await pending
+
+
+class CodexEventMappingTest(unittest.TestCase):
+
+  def test_notifications_become_processor_parts(self):
+    parts = list(
+        codex_app_server.notification_parts(
+            {
+                'method': 'thread/realtime/outputAudio/delta',
+                'params': {
+                    'threadId': 'thread-1',
+                    'audio': {
+                        'data': 'AQI=',
+                        'sampleRate': 24000,
+                        'numChannels': 1,
+                    },
+                },
+            }
+        )
+    )
+    self.assertEqual(len(parts), 1)
+    self.assertEqual(parts[0].bytes, b'\x01\x02')
+    self.assertEqual(parts[0].substream_name, 'realtime')
+    self.assertEqual(parts[0].get_metadata('sample_rate'), 24000)
+    self.assertEqual(parts[0].get_metadata('num_channels'), 1)
+
+  def test_unknown_notifications_are_not_silently_treated_as_audio(self):
+    parts = list(
+        codex_app_server.notification_parts(
+            {'method': 'thread/realtime/itemAdded', 'params': {'item': {}}}
+        )
+    )
+    self.assertEqual(parts, [])
+
+
+if __name__ == '__main__':
+  unittest.main()

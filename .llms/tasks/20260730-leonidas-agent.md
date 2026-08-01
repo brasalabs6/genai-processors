@@ -51,6 +51,12 @@ capability, mantendo `ProcessorPart` e sem tocar nas pipelines Gemini/Groq.
 Criar testes de tradução e lifecycle antes de smoke real. Não inventar campos
 ou endpoints que o documento não confirme e não enviar tokens para a UI.
 
+Atualização de fonte de verdade — 2026-08-01: o binário `codex` instalado pode
+estar desatualizado. Antes de finalizar o adapter, comparar também o código e
+os schemas em `~/github/codex`; preferir a versão mais recente existente no
+workspace, registrar divergências com o documento/binário e não declarar
+suporte a uma versão que não tenha teste de contrato.
+
 ## Governança adicional: checkpoints e versões estáveis — 2026-08-01
 
 Commitar cada checkpoint funcional com escopo explícito antes de iniciar a
@@ -76,6 +82,14 @@ reportou 10.685 MiB disponíveis; cinco sínteses XTTS consecutivas passaram e
 Groq e áudios PCM válidos em 37,51 s. A continuidade do worker local está
 empiricamente validada; ainda falta a revisão do documento de API realtime do
 Codex e a implementação/teste do adapter correspondente.
+
+Checkpoint Codex: o adapter server-side inicial foi criado com JSONL
+multiplexado, handshake experimental, lifecycle realtime, texto, áudio e
+tradução de notificações para `ProcessorPart`. O checkout `~/github/codex`
+confirma v3 e campos adicionais ausentes no binário instalado; por isso v3 é o
+default do adapter e v2 permanece uma opção explícita de compatibilidade. Os
+4 testes offline do contrato passaram. A integração pública ainda aguarda
+essa revisão final e os testes da composição.
 
 ## Reconciliação da troca de executor 2026-07-31
 

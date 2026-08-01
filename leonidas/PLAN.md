@@ -67,7 +67,14 @@ deve:
 - documentar autenticação, limites, reconexão, streaming, áudio e lifecycle;
 - ter contrato/testes offline antes de qualquer smoke opt-in real;
 - ser implementado somente onde o documento e o código local confirmarem um
-protocolo estável; lacunas da engenharia reversa devem permanecer explícitas.
+  protocolo estável; lacunas da engenharia reversa devem permanecer explícitas.
+
+Atualização de fonte de verdade — 2026-08-01: o usuário informou que o
+binário instalado pode estar desatualizado. Antes de congelar o adapter, também
+devemos comparar o protocolo e os schemas em `~/github/codex` com o binário
+local. A versão mais recente disponível no workspace passa a ser a referência
+preferencial; diferenças entre ela, o binário e o documento devem ser
+registradas e cobertas por testes, sem presumir suporte a versões futuras.
 
 ## Governança de checkpoints e versões estáveis — 2026-08-01
 
@@ -100,6 +107,15 @@ reservados na GPU, cinco sínteses consecutivas no mesmo worker e
 `cascade_smoke --device cuda --turns 3` concluído em 37,51 s. Os três turnos
 produziram transcrição, resposta Groq e PCM válido; não houve worker órfão.
 Esta é a primeira evidência multi-turno real do caminho local.
+
+Checkpoint Codex — contrato offline: `codex_app_server.py` agora encapsula
+JSONL multiplexado, handshake `experimentalApi`, lifecycle de thread/realtime,
+texto, áudio e tradução de notificações para `ProcessorPart`. O adapter usa
+v3 por padrão quando o runtime mais novo estiver disponível e aceita v2
+explicitamente para o binário instalado; nenhum campo v3 é enviado no teste v2.
+O contrato offline passou 4 testes. A implementação ainda não está conectada
+à composição/capability pública até concluir a revisão de campos do checkout
+`~/github/codex` e os testes de integração do pipeline.
 
 ## Reconciliação da troca de executor 2026-07-31
 
