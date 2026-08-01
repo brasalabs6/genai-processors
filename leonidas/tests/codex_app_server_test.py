@@ -123,6 +123,36 @@ class JsonRpcClientTest(unittest.IsolatedAsyncioTestCase):
     with self.assertRaises(codex_app_server.CodexProtocolError):
       await pending
 
+  async def test_realtime_webrtc_returns_remote_sdp_notification(self):
+    client, _sent, server = codex_app_server.testing_pair()
+    start = asyncio.create_task(
+        client.start_realtime(
+            objective='Ajude o usuário.',
+            version='v1',
+            sdp_offer='v=0\\r\\n',
+        )
+    )
+    request = await server.next_request()
+    self.assertEqual(request['method'], 'thread/start')
+    await server.respond(request, {'thread': {'id': 'thread-webrtc'}})
+    request = await server.next_request()
+    self.assertEqual(request['method'], 'thread/realtime/start')
+    self.assertEqual(
+        request['params']['transport'],
+        {'type': 'webrtc', 'sdp': 'v=0\\r\\n'},
+    )
+    await server.respond(request, {})
+    await server.notify(
+        'thread/realtime/sdp',
+        {'threadId': 'thread-webrtc', 'sdp': 'v=0\\r\\nanswer'},
+    )
+    await server.notify(
+        'thread/realtime/started',
+        {'threadId': 'thread-webrtc', 'version': 'v1'},
+    )
+    self.assertEqual(await start, 'v=0\\r\\nanswer')
+    await client.close()
+
 
 class CodexEventMappingTest(unittest.TestCase):
 

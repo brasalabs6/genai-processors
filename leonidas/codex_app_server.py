@@ -185,7 +185,13 @@ class CodexRealtimeClient:
       model: str | None = None,
       voice: str | None = None,
       version: str = 'v3',
-  ) -> None:
+      sdp_offer: str | None = None,
+  ) -> str | None:
+    if sdp_offer is not None:
+      if not sdp_offer.strip():
+        raise ValueError('sdp_offer must not be empty')
+      if version != 'v1':
+        raise ValueError('Codex WebRTC realtime currently requires version v1')
     result = await self._rpc.request(
         'thread/start',
         {
@@ -202,21 +208,30 @@ class CodexRealtimeClient:
     params: dict[str, Any] = {
         'threadId': self._thread_id,
         'outputModality': 'audio',
-        'transport': {'type': 'websocket'},
         'prompt': objective,
         'version': version,
         'includeStartupContext': True,
     }
+    if sdp_offer is None:
+      params['transport'] = {'type': 'websocket'}
+    else:
+      params['transport'] = {'type': 'webrtc', 'sdp': sdp_offer}
     if model:
       params['model'] = model
     if voice:
       params['voice'] = voice
     await self._rpc.request('thread/realtime/start', params)
+    remote_sdp: str | None = None
     while True:
       notification = await self._rpc.next_notification()
+      if notification.get('method') == 'thread/realtime/sdp':
+        candidate = notification.get('params', {}).get('sdp')
+        if isinstance(candidate, str):
+          remote_sdp = candidate
+        continue
       if notification.get('method') == 'thread/realtime/started':
         self._started = True
-        return
+        return remote_sdp
       if notification.get('method') == 'thread/realtime/error':
         raise CodexProtocolError(
             str(notification.get('params', {}).get('message', 'realtime error'))

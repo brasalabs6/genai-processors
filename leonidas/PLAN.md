@@ -117,17 +117,24 @@ Conclusão operacional: o Leonidas deve sempre carregar o `auth.json` no
 servidor via `CODEX_HOME`, e pode usar um `OPENAI_API_KEY` presente nele. Um
 `auth.json` somente com login ChatGPT autentica o app-server e o pipeline
 `codex_text`, mas não torna o WebSocket realtime funcional no Codex atual.
+O README/protocolo mais novo confirma uma segunda opção: `transport` pode ser
+`{type: "webrtc", sdp: "..."}`; o navegador cria a oferta SDP, o app-server
+cria a chamada autenticada e emite `thread/realtime/sdp` com a resposta. O
+código do checkout também documenta que o sideband WebSocket de uma chamada
+WebRTC reutiliza os headers da autenticação da sessão, inclusive para login
+ChatGPT.
 Não será feita conversão de `access_token`/`id_token`, replay de cookie,
 injeção de bearer privado ou alteração do provider para contornar essa
-restrição. O `codex_realtime` deve falhar cedo com mensagem acionável que
-distinga “auth.json ausente/inválido” de “login válido, mas este transporte
-realtime exige API key”.
+restrição. O adapter deve distinguir “auth.json ausente/inválido” de “login
+válido, mas o transporte WebSocket exige API key”; quando o cliente fornecer
+uma oferta SDP, deve selecionar WebRTC em vez de tentar converter o login.
 
-O suporte realtime continua válido quando o `auth.json` contém uma API key
-compatível, e esse é o único caso que pode ser chamado de smoke realtime
-verde. O suporte textual com login ChatGPT permanece separado e validado.
-Essa divergência é um bloqueio externo do transporte realtime atual, não uma
-falha das pipelines Gemini/Groq/locais.
+Assim, o suporte realtime por WebSocket continua válido quando o `auth.json`
+contém API key compatível, enquanto o suporte realtime com login ChatGPT deve
+ser implementado pelo caminho WebRTC e sua sinalização SDP. Não converter
+`access_token`/`id_token`, replay de cookie, injeção de bearer privado ou
+alteração do provider para contornar a restrição do WebSocket. O suporte
+textual com login ChatGPT permanece separado e validado.
 
 ## Governança de checkpoints e versões estáveis — 2026-08-01
 

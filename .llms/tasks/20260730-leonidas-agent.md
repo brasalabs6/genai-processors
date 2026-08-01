@@ -95,9 +95,20 @@ não é suficiente para o WebSocket `codex_realtime` no checkout atual. Não
 converter `access_token`/`id_token`, não fazer replay de cookies ou tokens
 privados e não inventar um bypass de entitlement. O realtime deve emitir um
 erro acionável diferenciando credencial inválida de credencial de login válida
-sem API key para o transporte solicitado. Só um smoke com API key compatível
-deve ser marcado como realtime verde; essa limitação é externa ao pipeline
-Gemini/Groq/local.
+sem API key para o transporte WebSocket. Quando o cliente fornecer uma oferta
+SDP, o adapter deve escolher WebRTC em vez de converter tokens. Só um smoke
+WebSocket com API key compatível ou um smoke WebRTC com login ChatGPT pode ser
+marcado como realtime verde; isso não altera o pipeline Gemini/Groq/local.
+O README/protocolo mais novo também confirma `transport: {type: "webrtc", sdp}`:
+o navegador cria a oferta, o app-server cria a chamada autenticada e emite a
+resposta em `thread/realtime/sdp`; o código do checkout documenta que o
+sideband WebSocket reutiliza os headers da autenticação da sessão, inclusive
+para login ChatGPT. Portanto, o caminho para cumprir realtime com login do
+`auth.json` é WebRTC + sinalização SDP, não a conversão de tokens para API key.
+Não converter `access_token`/`id_token`, não fazer replay de cookies ou tokens
+privados e não inventar bypass de entitlement. WebSocket fica como transporte
+compatível para `OPENAI_API_KEY`; o realtime ChatGPT deve ter smoke real via
+WebRTC antes de ser marcado verde.
 
 ## Governança adicional: checkpoints e versões estáveis — 2026-08-01
 
