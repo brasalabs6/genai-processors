@@ -643,3 +643,12 @@ sintético de dois falantes e um runner opt-in para o adapter Pyannote. O runner
 deve falhar explicitamente quando dependência, pesos ou credencial Hugging
 Face estiverem ausentes; nunca deve substituir o resultado por um fake e nunca
 deve bloquear Gemini ou a cascata com diarização desativada.
+
+Verificação de dependências: o dry-run de `pyannote.audio==4.0.7` tentou
+resolver uma versão nova de Torch incompatível com o runtime validado do
+Parakeet (`torch 2.6.0+cu124`), e foi cancelado antes de modificar o ambiente.
+`pyannote.audio==3.4.0` declara compatibilidade com Python 3.13 e Torch >=2.0,
+mas suas dependências opcionais não estão instaladas e os pesos do modelo
+`pyannote/speaker-diarization-community-1` ainda exigem acesso Hugging Face.
+O suporte permanece opt-in até existir um ambiente isolado validado para esse
+adapter.
