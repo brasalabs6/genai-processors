@@ -609,3 +609,10 @@ incompatibilidade concreta: `pyannote.audio==3.4.0` usa `use_auth_token`,
 removido em `huggingface_hub==1.26.0`. O instalador deve fixar
 `huggingface_hub<1.0` e repetir o smoke; somente depois desse ajuste o erro de
 acesso/peso do modelo pode ser classificado como bloqueio externo.
+
+Validação posterior: o runtime isolado passou `pip check`, import de Pyannote
+e CUDA; o smoke real chegou ao modelo e falhou apenas por ausência de
+autorização ao pipeline gated. A suíte Leonidas passou com 151 testes, 2 skips
+e 9 subtests; a cascata real CUDA passou em três turnos e Gemini Live passou
+nos dois perfis. O próximo trabalho de implementação continua sendo a frente
+UI mobile, conforme o requisito futuro registrado acima.

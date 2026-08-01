@@ -755,3 +755,11 @@ O primeiro smoke após a instalação encontrou incompatibilidade entre
 `pyannote.audio==3.4.0` e `huggingface_hub==1.26.0` (`use_auth_token` removido).
 O instalador foi corrigido para fixar `huggingface_hub<1.0`; o smoke deve ser
 repetido para separar essa falha de compatibilidade do acesso Hugging Face.
+
+Validação posterior: o runtime isolado passou `pip check`, import de Pyannote
+e CUDA (`torch==2.6.0+cu124`). O smoke real chegou ao carregamento do modelo e
+falhou somente porque o pipeline gated não está autorizado neste host; o
+worker agora reporta isso de forma redigida. A suíte completa do Leonidas
+passou com 151 testes, 2 skips e 9 subtests; o smoke cascata real CUDA passou
+em três turnos (50,63 s), e o smoke Gemini Live passou novamente nos dois
+perfis (35,90 s). Nenhum desses testes habilita diarização implicitamente.
