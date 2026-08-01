@@ -27,6 +27,19 @@ DEFAULT_VOICE = (
 )
 
 
+def required_resources_ready(snapshot: dict) -> bool:
+  """Accepts optional components while requiring the audio critical path."""
+  required = {
+      item['id']: item['state']
+      for item in snapshot['components']
+      if item['id'] in ('stt', 'tts')
+  }
+  return snapshot['overall_state'] == 'ready' and required == {
+      'stt': 'ready',
+      'tts': 'ready',
+  }
+
+
 async def run(
     audio_path: Path, voice_path: Path, device: str, turns: int = 1
 ) -> None:
@@ -42,9 +55,7 @@ async def run(
       capabilities.XTTS_V2_MODEL,
       device,
   )
-  if resource_state['overall_state'] != 'ready' or [
-      item['id'] for item in resource_state['components']
-  ] != ['stt', 'tts']:
+  if not required_resources_ready(resource_state):
     raise RuntimeError('Cascade resources did not reach canonical ready state')
   transcriber = pool.transcriber(capabilities.PARAKEET_V3_MODEL, device)
   synthesizer = pool.synthesizer(capabilities.XTTS_V2_MODEL, device)

@@ -521,3 +521,11 @@ O smoke real do Codex textual foi ampliado para dois turnos no mesmo thread:
 `codex_text_smoke_ok=true turns=2`, resposta não vazia e latência total de
 13,22 s. Isso confirma persistência de conversa no app-server com o login
 ChatGPT local, além do contrato offline de lifecycle.
+
+Validação pós-diarização: o standalone em `web_port=8081` e
+`websocket_port=8876` aceitou a origem local não padrão, anunciou quatro
+pipelines e três componentes e entregou os dois envelopes iniciais pelo
+WebSocket. Gemini 2.5/3.1 passou novamente em 34,4 s. O smoke CUDA local passou
+em três turnos reais (`6,06 s`, `6,07 s` e `4,39 s` de PCM); o validador foi
+ajustado para exigir somente STT/TTS prontos e aceitar o componente opcional de
+diarização.
