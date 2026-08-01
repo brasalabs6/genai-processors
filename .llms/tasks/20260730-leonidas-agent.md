@@ -690,3 +690,9 @@ autorização ao pipeline gated. A suíte Leonidas passou com 151 testes, 2 skip
 e 9 subtests; a cascata real CUDA passou em três turnos e Gemini Live passou
 nos dois perfis. O próximo trabalho de implementação continua sendo a frente
 UI mobile, conforme o requisito futuro registrado acima.
+
+Compatibilidade Codex atualizada: o checkout mais recente aceita WebRTC AVAS
+em `v1` e `v3`, mas rejeita `v2` nesse transporte. O adapter aceita `v3` por
+opt-in via `LEONIDAS_CODEX_REALTIME_VERSION=v3`; sem esse opt-in, a oferta
+WebRTC usa `v1`, compatível com o `codex-cli 0.144.0` instalado. O caminho
+WebSocket continua usando `v2` por padrão.

@@ -213,8 +213,8 @@ class CodexRealtimeClient:
     if sdp_offer is not None:
       if not sdp_offer.strip():
         raise ValueError('sdp_offer must not be empty')
-      if version != 'v1':
-        raise ValueError('Codex WebRTC realtime currently requires version v1')
+      if version not in {'v1', 'v3'}:
+        raise ValueError('Codex WebRTC realtime requires version v1 or v3')
     result = await self._rpc.request(
         'thread/start',
         {
@@ -478,7 +478,13 @@ class CodexRealtimeProcessor(processor.Processor):
           objective=self._objective,
           model=self._model,
           voice=self._voice,
-          version='v1' if sdp_offer is not None else self._version,
+          version=(
+              'v3'
+              if sdp_offer is not None and self._version == 'v3'
+              else 'v1'
+              if sdp_offer is not None
+              else self._version
+          ),
           sdp_offer=sdp_offer,
       )
       if remote_sdp is not None:

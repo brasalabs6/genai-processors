@@ -176,6 +176,14 @@ força v1 para WebRTC, enquanto v3 permanece opt-in para instalações cujo
 schema o suporte. A autorização upstream de voz continua pendente e impede
 marcar o smoke realtime como verde.
 
+Compatibilidade do checkout mais recente — 2026-08-01: o código em
+`~/github/codex` aceita WebRTC AVAS nas versões `v1` e `v3`; `v2` continua
+exclusivo do transporte WebSocket. O adapter agora aceita `v3` quando
+`LEONIDAS_CODEX_REALTIME_VERSION=v3` for definido, mas mantém `v1` automático
+para WebRTC quando a versão não for `v3`, preservando o binário local
+`codex-cli 0.144.0`. O smoke com v3 permanece condicionado a um binário que
+publique esse schema e a uma conta com entitlement de voz.
+
 ## Governança de checkpoints e versões estáveis — 2026-08-01
 
 Cada checkpoint funcional deve ser commitado com mensagem detalhada antes de

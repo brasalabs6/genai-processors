@@ -166,6 +166,34 @@ class JsonRpcClientTest(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(await start, 'v=0\\r\\nanswer')
     await client.close()
 
+  async def test_realtime_webrtc_accepts_frameless_v3(self):
+    client, _sent, server = codex_app_server.testing_pair()
+    start = asyncio.create_task(
+        client.start_realtime(
+            objective='Ajude o usuário.',
+            version='v3',
+            sdp_offer='v=0\\r\\n',
+        )
+    )
+    request = await server.next_request()
+    self.assertEqual(request['method'], 'thread/start')
+    await server.respond(request, {'thread': {'id': 'thread-webrtc-v3'}})
+    request = await server.next_request()
+    self.assertEqual(request['method'], 'thread/realtime/start')
+    self.assertEqual(request['params']['version'], 'v3')
+    self.assertEqual(request['params']['transport']['type'], 'webrtc')
+    await server.respond(request, {})
+    await server.notify(
+        'thread/realtime/sdp',
+        {'threadId': 'thread-webrtc-v3', 'sdp': 'v=answer\\r\\n'},
+    )
+    await server.notify(
+        'thread/realtime/started',
+        {'threadId': 'thread-webrtc-v3', 'version': 'v3'},
+    )
+    self.assertEqual(await start, 'v=answer\\r\\n')
+    await client.close()
+
 
 class CodexEventMappingTest(unittest.TestCase):
 
