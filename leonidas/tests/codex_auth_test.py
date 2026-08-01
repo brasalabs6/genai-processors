@@ -1,4 +1,5 @@
 import json
+import base64
 from pathlib import Path
 import tempfile
 import unittest
@@ -41,6 +42,33 @@ class CodexAuthTest(unittest.TestCase):
           path, require_api_key=False
       )
       self.assertNotIn('OPENAI_API_KEY', environment)
+
+  def test_expired_jwt_tokens_are_rejected_without_logging_claims(self):
+    def jwt(payload):
+      encoded = (
+          base64.urlsafe_b64encode(json.dumps(payload).encode('utf-8'))
+          .rstrip(b'=')
+          .decode('ascii')
+      )
+      return f'header.{encoded}.signature'
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+      path = Path(temp_dir) / 'auth.json'
+      path.write_text(
+          json.dumps(
+              {
+                  'auth_mode': 'chatgpt',
+                  'tokens': {
+                      'access_token': jwt({'exp': 1}),
+                      'id_token': jwt({'exp': 1}),
+                      'refresh_token': 'opaque-refresh-token',
+                  },
+              }
+          ),
+          encoding='utf-8',
+      )
+      with self.assertRaisesRegex(codex_auth.CodexAuthError, 'expired'):
+        codex_auth.validate_auth_file(path)
 
 
 if __name__ == '__main__':

@@ -564,3 +564,8 @@ Após a implementação do worker, a auditoria completa passou com 718 testes,
 build; Pyink dos 11 arquivos alterados, Flake8 restrito e `git diff --check`
 passaram. O smoke real Pyannote ainda retorna `DiarizationWorkerError` antes
 do load porque o runtime isolado não existe neste host.
+
+O loader Codex agora rejeita de forma redigida arquivos cujos JWTs conhecidos
+estão todos expirados, sem validar ou expor assinaturas/claims. A regressão
+sintética passou e o `codex_text` smoke real com o `auth.json` atual passou
+novamente em um turno (`response_chars=8`, 9,16 s).

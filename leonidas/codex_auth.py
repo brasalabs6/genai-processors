@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 from pathlib import Path
+import time
 from typing import Any
 
 
@@ -12,6 +14,25 @@ class CodexAuthError(RuntimeError):
   """Authentication state is unavailable or cannot be safely consumed."""
 
   public_message = True
+
+
+def _expired_known_tokens(tokens: Any) -> bool:
+  if not isinstance(tokens, dict):
+    return False
+  expiries: list[float] = []
+  for name in ('access_token', 'id_token'):
+    token = tokens.get(name)
+    if not isinstance(token, str) or token.count('.') != 2:
+      continue
+    try:
+      payload = token.split('.')[1]
+      payload += '=' * ((4 - len(payload) % 4) % 4)
+      claims = json.loads(base64.urlsafe_b64decode(payload))
+      if isinstance(claims.get('exp'), (int, float)):
+        expiries.append(float(claims['exp']))
+    except (ValueError, TypeError, json.JSONDecodeError):
+      continue
+  return bool(expiries) and all(expiry <= time.time() for expiry in expiries)
 
 
 def auth_path() -> Path:
@@ -43,6 +64,10 @@ def validate_auth_file(
   if not isinstance(document, dict):
     raise CodexAuthError('Codex authentication file has an invalid shape')
   tokens = document.get('tokens')
+  if _expired_known_tokens(tokens):
+    raise CodexAuthError(
+        'Codex authentication tokens are expired; sign in with Codex again'
+    )
   if require_api_key and not isinstance(document.get('OPENAI_API_KEY'), str):
     raise CodexAuthError(
         'Codex realtime requires an OPENAI_API_KEY in auth.json; '
