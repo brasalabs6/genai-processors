@@ -51,10 +51,22 @@ stateDiagram-v2
   running --> stopping: POST /session/stop
   running --> stopping: disconnect
   running --> stopping: apply config
+  running --> error: worker/audio resource failure
   stopping --> stopped: cleanup concluído
   stopping --> error: cleanup forçado falha
   error --> starting: start explícito
   error --> stopped: stop explícito
+```
+
+```mermaid
+flowchart LR
+  PCM[PCM endpointado] --> STT[Parakeet STT]
+  PCM -. janela opcional .-> DIA[Diarização worker]
+  STT --> TURN[Turno/transcrição]
+  DIA --> SEG[Segmentos de speaker]
+  TURN --> LLM[Groq reasoning]
+  LLM --> TTS[XTTS]
+  SEG -. atraso/erro não bloqueia .-> TURN
 ```
 
 Invariantes:

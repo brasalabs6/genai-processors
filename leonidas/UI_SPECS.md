@@ -107,6 +107,16 @@ Durante carga, o estado de sessão é `starting`, Start fica desabilitado e Stop
 permanece habilitado. A UI não promete percentual quando o backend só conhece
 fases discretas.
 
+Se um worker local morrer ou a memória mínima não estiver disponível, a UI
+mostra a sessão como `Erro`, exibe `last_error_detail` acionável e mantém Start
+disponível para uma nova tentativa explícita. Não exibe `Falando` indefinidamente
+nem reinicia em loop silencioso.
+
+Quando diarização estiver instalada, a UI exibirá seu estado (`indisponível`,
+`carregando`, `pronta` ou `erro`), device e memória estimada. A ativação será
+independente do botão de microfone; enquanto estiver indisponível, a
+transcrição e o playback continuam normalmente.
+
 O erro de runtime XTTS deve distinguir ambiente ausente, referência de voz
 ausente e termos CPML ainda não aceitos. A UI nunca oferece um botão que aceite
 licença automaticamente; ela mostra o comando de preparação documentado.

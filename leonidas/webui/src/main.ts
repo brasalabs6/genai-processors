@@ -37,7 +37,7 @@ class LeonidasApp {
   private config: ConfigSnapshot | null = null;
   private session: SessionSnapshot = {
     state: 'stopped', session_id: null, media_connected: false,
-    started_at: null, last_error: null,
+    started_at: null, last_error: null, last_error_detail: null,
   };
   private socket: WebSocket | null = null;
   private reconnectTimer: number | null = null;
@@ -435,6 +435,9 @@ class LeonidasApp {
     const labels = {stopped: 'Parado', starting: 'Iniciando', running: 'Em sessão', stopping: 'Parando', error: 'Erro'};
     const tone = this.session.state === 'running' ? 'ok' : this.session.state === 'error' ? 'error' : this.session.state === 'starting' || this.session.state === 'stopping' ? 'warn' : 'neutral';
     this.setStatus('#session-status', labels[this.session.state], tone);
+    if (this.session.state === 'error' && this.session.last_error_detail) {
+      this.showError('Sessão encerrada', this.session.last_error_detail);
+    }
     // A preparation failure is retryable: the backend creates a fresh
     // processor/worker request on the next Start. Keeping Start enabled here
     // avoids forcing a full-page reload after a transient CUDA/model error.

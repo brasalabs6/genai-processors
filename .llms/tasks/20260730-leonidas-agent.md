@@ -1,5 +1,55 @@
 # Implementar e validar o agente Leonidas
 
+## Requisito adicional: interrupção tardia de áudio local 2026-08-01
+
+O usuário informou que a pipeline local funciona parcialmente e depois para
+de reproduzir voz. A reprodução controlada no PR1 mostrou que o worker XTTS
+também pode ser encerrado com código `-9`; o journal registrou `global_oom`,
+com o processo Python usando aproximadamente 3,7 GiB de RSS, apenas 4 GiB de
+memória disponível e swap desabilitado. Isso transforma uma falha de recurso
+em silêncio aparente no browser.
+
+Antes de considerar o MVP funcional, a execução deve:
+
+1. registrar diagnóstico estruturado para OOM/kill, timeout, protocolo e
+   playback;
+2. publicar estado de erro acionável quando o worker de áudio morrer, sem
+   manter a sessão em `speaking`/`running` falsamente;
+3. implementar recuperação limitada, sem loop infinito de reinício, e evitar
+   novos pedidos enquanto o recurso local estiver indisponível;
+4. cobrir com regressão worker morto e sequência de múltiplas sínteses;
+5. validar múltiplos turnos reais Parakeet → Groq → XTTS e repetir Gemini
+   2.5/3.1.
+
+O preflight de importação não é evidência suficiente: o teste deve atravessar
+`load` e sínteses reais. O ambiente de teste deve registrar memória disponível,
+swap, VRAM e processos relevantes; se houver OOM externo causado por outras
+aplicações, isso deve ser separado da conclusão sobre o código.
+
+## Requisito adicional: diarização — 2026-08-01
+
+A próxima evolução obrigatória do agente inclui diarização local opcional. O
+componente deve ser um adapter independente do Parakeet, Groq e XTTS, aceitar
+janelas/turnos de áudio e emitir segmentos `{speaker_id, start, end,
+confidence}`. Deve suportar CUDA e fallback CPU, declarar custos de memória e
+cache, executar fora do event loop, cancelar de forma segura e nunca impedir
+STT, reasoning ou playback quando estiver ausente ou indisponível.
+
+Adicionar testes de contrato com áudio sintético de dois falantes e smoke real
+opt-in. Não adicionar pesos ou dependências CUDA ao pacote base, não acoplar a
+diarização ao protocolo provider-specific e não considerar o requisito
+completo até que a UI/capability mostre `unavailable/loading/ready/error`.
+
+### Evidência da continuação 2026-08-01
+
+O PR1 foi validado nos dois modelos Gemini Live (2.5 e 3.1) com sucesso. A
+falha local foi reproduzida no host: o processo XTTS recebeu SIGKILL por
+`global_oom`; o guard agora impede o load quando `MemAvailable` está abaixo de
+5120 MiB, diferencia OOM de protocolo e publica detalhe seguro para a UI. A
+suíte Leonidas e a WebUI permanecem verdes. A prova real de múltiplos turnos
+locais ainda depende de memória disponível no host; não declarar a cascata
+local como validada até repetir esse smoke após liberar memória.
+
 ## Reconciliação da troca de executor 2026-07-31
 
 O usuário solicitou a continuidade pelo executor Luna e exigiu um commit do

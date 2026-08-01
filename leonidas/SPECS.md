@@ -200,6 +200,12 @@ Defaults ficam versionados em código. O estado local é salvo atomicamente em
 
 Estados canônicos: `stopped`, `starting`, `running`, `stopping`, `error`.
 
+O snapshot de sessão inclui `last_error` (classe estável) e
+`last_error_detail` somente para diagnósticos explicitamente aprovados pelo
+adapter. Falha de worker local, OOM ou timeout nunca pode deixar a sessão em
+`speaking`/`running` sem processamento; deve transicionar para `error` e
+permitir novo Start explícito.
+
 - Start exige WebSocket de mídia conectado, configuração ativa válida,
   credenciais da pipeline e preflight local aprovado.
 - Stop é idempotente, encerra entrada, cancela tasks, fecha processadores e
@@ -211,6 +217,22 @@ Estados canônicos: `stopped`, `starting`, `running`, `stopping`, `error`.
   também no rollback deixa a sessão em `error`; nunca inicia loop de reset.
 - Apenas uma sessão multimídia pode estar ativa. Conexões adicionais recebem
   fechamento WebSocket por violação de política.
+
+O carregamento XTTS exige uma reserva mínima configurável de memória do
+sistema (`LEONIDAS_XTTS_MIN_AVAILABLE_MEMORY_MIB`, default 5120 MiB). Se o
+worker for morto por `SIGKILL`/OOM, o erro deve distinguir falta de recurso de
+falha de protocolo e não iniciar retries ilimitados.
+
+### Diarização opcional
+
+A cascata pode incluir um adapter de diarização independente do STT. Seu
+contrato de saída é um segmento com `speaker_id`, `start_ms`, `end_ms` e
+`confidence`; segmentos são associados à transcrição por intervalo, nunca por
+posição textual presumida. O adapter declara `device`, memória esperada,
+cache/modelo, fallback CPU e estado de readiness. Falhas ou ausência do
+modelo produzem `unavailable`/`error` observável, mas não interrompem
+Parakeet → Groq → XTTS. A inferência ocorre em worker/thread apropriado e é
+cancelável no Stop/Apply/shutdown.
 
 ## 8. APIs
 

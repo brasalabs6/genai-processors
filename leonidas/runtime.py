@@ -72,6 +72,7 @@ class SessionManager:
     self._startup_task: asyncio.Task[None] | None = None
     self._startup_generation = 0
     self._last_error: str | None = None
+    self._last_error_detail: str | None = None
     self._lock = asyncio.Lock()
     self._state_listeners: set[StateListener] = set()
 
@@ -124,6 +125,7 @@ class SessionManager:
         'media_connected': self._sender is not None,
         'started_at': self._started_at,
         'last_error': self._last_error,
+        'last_error_detail': self._last_error_detail,
     }
 
   async def _inputs(
@@ -152,6 +154,7 @@ class SessionManager:
         raise MediaNotConnectedError('Connect the media WebSocket before Start')
       self._state = SessionState.STARTING
       self._last_error = None
+      self._last_error_detail = None
       agent_config = self._config_store.snapshot().active
       if self._pipeline_preparer is not None and self._requires_preparation(
           agent_config
@@ -222,12 +225,14 @@ class SessionManager:
       if error is not None:
         self._state = SessionState.ERROR
         self._last_error = type(error).__name__
+        self._last_error_detail = self._public_error_detail(error)
       else:
         try:
           self._activate(agent_config)
         except Exception as exc:
           self._state = SessionState.ERROR
           self._last_error = type(exc).__name__
+          self._last_error_detail = self._public_error_detail(exc)
       self._startup_task = None
       snapshot = self.snapshot()
     await self._notify_state(snapshot)
@@ -252,6 +257,7 @@ class SessionManager:
         return
       self._state = SessionState.ERROR
       self._last_error = type(exception).__name__
+      self._last_error_detail = self._public_error_detail(exception)
       snapshot = self.snapshot()
     logging.error(
         'Leonidas pipeline failed error_type=%s', type(exception).__name__
@@ -298,6 +304,8 @@ class SessionManager:
       self._session_id = None
       self._started_at = None
       self._state = SessionState.STOPPED
+      self._last_error = None
+      self._last_error_detail = None
       stopped_snapshot = self.snapshot()
     await self._notify_state(stopped_snapshot)
     return stopped_snapshot
@@ -357,3 +365,11 @@ class SessionManager:
         )
       raise
     return self._config_store.snapshot().to_dict()
+
+  @staticmethod
+  def _public_error_detail(exception: BaseException) -> str | None:
+    """Returns only adapter-approved, bounded diagnostics for the UI."""
+    if not getattr(exception, 'public_message', False):
+      return None
+    message = str(exception).strip()
+    return message[:500] if message else type(exception).__name__

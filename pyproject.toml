@@ -43,6 +43,11 @@ dependencies = [
     "shortuuid>=1.0.0",
     "xxhash>=3.0.0",
     "mcp>=1.26.0",
+    # `genai_processors.core.vad` is part of the maintained core surface and
+    # imports the `webrtcvad` module directly. This maintained wheel provides
+    # that module on supported CPython versions without the legacy
+    # `pkg_resources` dependency.
+    "webrtcvad-wheels==2.0.14",
 ]
 
 # `version` is automatically set by flit to use `genai_processors.__version__`
@@ -62,9 +67,6 @@ contrib = [
 cascade = [
     "torch>=2.6.0",
     "transformers>=5.0.0",
-    # Maintained drop-in distribution that imports as `webrtcvad` and ships
-    # CPython 3.11-3.13 wheels without the legacy pkg_resources dependency.
-    "webrtcvad-wheels==2.0.14",
 ]
 xtts = [
     "coqui-tts==0.27.5",
@@ -87,7 +89,6 @@ dev = [
     "torch",
     "transformers",
     "typing_extensions",
-    "webrtcvad-wheels==2.0.14",
 ]
 
 [tool.pyink]

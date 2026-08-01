@@ -16,7 +16,20 @@ from leonidas.cascade import device as device_selection
 
 
 WORKER_RESPONSE_LIMIT = 64 * 1024 * 1024
+DEFAULT_MIN_AVAILABLE_MEMORY_MIB = 5120
 ProgressCallback = Callable[[str], Awaitable[None]]
+
+
+class XttsWorkerCrashedError(RuntimeError):
+  """The isolated worker exited before returning the requested result."""
+
+  public_message = True
+
+
+class XttsResourceError(RuntimeError):
+  """The host cannot safely load the XTTS model right now."""
+
+  public_message = True
 
 
 class XttsWorkerSynthesizer:
@@ -100,6 +113,50 @@ class XttsWorkerSynthesizer:
       if not path.is_file():
         raise RuntimeError(f'XTTS voice reference is missing: {voice_id!r}')
 
+  @staticmethod
+  def _available_memory_mib() -> int | None:
+    """Reads Linux MemAvailable without importing a platform dependency."""
+    try:
+      for line in (
+          Path('/proc/meminfo').read_text(encoding='ascii').splitlines()
+      ):
+        if line.startswith('MemAvailable:'):
+          return int(line.split()[1]) // 1024
+    except (OSError, ValueError):
+      return None
+    return None
+
+  def _ensure_load_memory_budget(self) -> None:
+    # Test workers and explicit CPU runtimes are intentionally not gated by
+    # the production XTTS guard. The real isolated `.venv-xtts` process is the
+    # path whose model load has a multi-GiB resident-memory peak.
+    if self.device == 'cpu' or '.venv-xtts' not in str(self._python):
+      return
+    available = self._available_memory_mib()
+    if available is None:
+      return
+    configured = os.environ.get(
+        'LEONIDAS_XTTS_MIN_AVAILABLE_MEMORY_MIB',
+        str(DEFAULT_MIN_AVAILABLE_MEMORY_MIB),
+    )
+    try:
+      minimum = int(configured)
+    except ValueError as exc:
+      raise XttsResourceError(
+          'LEONIDAS_XTTS_MIN_AVAILABLE_MEMORY_MIB must be an integer'
+      ) from exc
+    if minimum <= 0:
+      raise XttsResourceError(
+          'LEONIDAS_XTTS_MIN_AVAILABLE_MEMORY_MIB must be positive'
+      )
+    if available < minimum:
+      raise XttsResourceError(
+          'Insufficient system memory for XTTS: '
+          f'{available} MiB available, {minimum} MiB required. '
+          'Close memory-heavy applications or add swap before starting '
+          'cascade_local.'
+      )
+
   async def _consume_stderr(self, process: asyncio.subprocess.Process) -> None:
     if process.stderr is None:
       return
@@ -116,16 +173,24 @@ class XttsWorkerSynthesizer:
       raise ValueError(f'Unknown or unavailable voice_id: {voice_id!r}')
     if language != 'pt':
       raise ValueError('XTTS language must be pt')
-    response = await self._request(
-        {
-            'op': 'synthesize',
-            'model_id': self.model_id,
-            'device': self.device,
-            'text': text.strip()[:12000],
-            'speaker_wav': str(voice.resolve()),
-            'language': language,
-        }
-    )
+    payload = {
+        'op': 'synthesize',
+        'model_id': self.model_id,
+        'device': self.device,
+        'text': text.strip()[:12000],
+        'speaker_wav': str(voice.resolve()),
+        'language': language,
+    }
+    for attempt in range(2):
+      try:
+        response = await self._request(payload)
+        break
+      except XttsWorkerCrashedError:
+        if attempt:
+          raise
+        logging.warning('XTTS worker crashed; retrying one fresh request')
+    else:  # pragma: no cover - loop either returns or raises
+      raise RuntimeError('XTTS synthesis did not produce a response')
     return base64.b64decode(response['audio'], validate=True)
 
   async def load(
@@ -133,6 +198,7 @@ class XttsWorkerSynthesizer:
   ) -> dict[str, Any]:
     """Loads and warms the persistent worker before a session starts."""
     self.validate_runtime()
+    self._ensure_load_memory_budget()
     if not self._voices:
       raise RuntimeError('XTTS requires at least one configured voice')
     voice = next(iter(self._voices.values()))
@@ -220,7 +286,12 @@ class XttsWorkerSynthesizer:
     while True:
       line = await process.stdout.readline()
       if not line:
-        raise RuntimeError(
+        if process.returncode == -9:
+          raise XttsResourceError(
+              'XTTS worker was killed with SIGKILL, likely by the OS OOM '
+              'killer. Check MemAvailable, swap and the kernel journal.'
+          )
+        raise XttsWorkerCrashedError(
             f'XTTS worker exited unexpectedly with {process.returncode}'
         )
       response = json.loads(line)

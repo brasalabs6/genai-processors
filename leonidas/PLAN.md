@@ -2,6 +2,73 @@
 
 Versão: 20260730-0041
 
+## Incidente de continuidade de áudio local — 2026-08-01
+
+O usuário relatou que a pipeline local reproduz voz inicialmente, mas deixa
+de emitir áudio depois de algum tempo. A investigação reproduziu uma falha de
+infraestrutura que atualmente pode aparecer como silêncio na UI: o worker
+XTTS terminou com `-9` durante o carregamento/aquecimento. O journal do kernel
+registrou `global_oom` e matou um processo Python com 3,7 GiB de RSS enquanto
+a máquina estava com apenas cerca de 4 GiB disponíveis e sem swap. Portanto,
+o preflight anterior, que apenas importava `TTS`, não prova que o worker
+consegue carregar e permanecer vivo.
+
+Requisitos adicionais desta onda:
+
+- distinguir explicitamente worker morto por OOM/kill, timeout, erro de
+  protocolo e falha de playback;
+- nunca deixar a UI aparentar que a sessão continua falando quando o backend
+  perdeu o worker de áudio;
+- expor a falha e a recuperação nos estados, métricas e logs, preservando o
+  contrato `ProcessorPart`;
+- adicionar regressões para worker encerrado e para múltiplos pedidos de áudio;
+- validar a composição real em mais de um turno, com memória do sistema
+  suficientemente livre para não confundir falha ambiental com falha da
+  pipeline;
+- manter Gemini 2.5/3.1 como regressão obrigatória.
+
+O incidente não autoriza mascarar OOM com retries infinitos. A recuperação
+deve ser limitada e observável; se a memória disponível for insuficiente, a
+UI deve informar a causa e impedir novos turnos locais até o recurso estar
+saudável.
+
+## Requisito adicional: diarização local — 2026-08-01
+
+O usuário reforçou que a evolução do agente deve incluir diarização. Ela será
+um componente opcional da cascata local, com contrato próprio e sem bloquear o
+caminho crítico de áudio:
+
+- receber PCM endpointado ou janelas de áudio e emitir segmentos com
+  `speaker_id`, início/fim e confiança;
+- preservar a transcrição Parakeet mesmo quando a diarização estiver
+  indisponível, atrasada ou em CPU;
+- declarar device, VRAM/RAM, cache, versão de PyTorch/CUDA e fallback CPU;
+- executar fora do event loop e fora do worker XTTS, com cancelamento e
+  shutdown explícitos;
+- aparecer na capability/configuração somente quando instalada e pronta;
+- ter testes de contrato com áudio sintético multi-speaker e smoke real
+  opt-in, sem tornar CI ou Gemini dependentes de pesos de diarização.
+
+A implementação entra depois da correção de continuidade do áudio; até lá o
+contrato permanece documentado para evitar acoplamento posterior ao Parakeet,
+Groq ou XTTS.
+
+### Evidência desta onda
+
+- Reprodução real do defeito: worker XTTS terminou com `-9`; journal confirmou
+  `global_oom`, 3,7 GiB de RSS e ausência de swap.
+- Implementado guard de memória antes do load real, com limite padrão de
+  5120 MiB e override explícito `LEONIDAS_XTTS_MIN_AVAILABLE_MEMORY_MIB`.
+- Implementados tipos de erro para recurso insuficiente e crash transitório,
+  retry único somente para crash não classificado como OOM, e
+  `last_error_detail` seguro na sessão/UI.
+- Regressão XTTS de SIGKILL passou; cascata offline: 128 passed, 2 skipped.
+- WebUI: 22 testes, typecheck e build passaram.
+- Gemini Live 2.5/3.1 passou no smoke real com mídia gerada em 30,3 s.
+- Smoke local multi-turno permanece pendente até liberar memória do host;
+  o preflight atual falha corretamente com `memory_available_mib=1801` e
+  `system_memory=missing`, sem iniciar outro worker condenado ao OOM.
+
 ## Reconciliação da troca de executor 2026-07-31
 
 O usuário pediu continuidade sob o executor Luna e determinou que o estado

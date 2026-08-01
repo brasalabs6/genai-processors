@@ -100,6 +100,7 @@ export interface SessionSnapshot {
   media_connected: boolean;
   started_at: number | null;
   last_error: string | null;
+  last_error_detail: string | null;
 }
 
 export interface MetricSummary {

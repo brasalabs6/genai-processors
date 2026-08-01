@@ -7,6 +7,7 @@ import subprocess
 from typing import Any
 
 from leonidas.cascade import prepare_voice
+from leonidas.cascade import xtts_process
 
 
 def _arguments() -> argparse.Namespace:
@@ -54,6 +55,14 @@ def main() -> int:
       'voice_reference': voice.is_file(),
       'xtts_license_agreement': agreement.is_file(),
   }
+  available_memory = xtts_process.XttsWorkerSynthesizer._available_memory_mib()
+  minimum_memory = xtts_process.DEFAULT_MIN_AVAILABLE_MEMORY_MIB
+  if available_memory is not None:
+    print(
+        f'memory_available_mib={available_memory} '
+        f'memory_required_mib={minimum_memory}'
+    )
+    checks['system_memory'] = available_memory >= minimum_memory
   print(f'requested_device={args.device!r} resolved_device={resolved_device!r}')
   if torch_error is not None:
     print(f'torch_error_type={torch_error!r}')

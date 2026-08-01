@@ -179,11 +179,20 @@ class CascadeResources:
       )
       raise
     except Exception as exc:
-      code = 'cuda_unavailable' if 'CUDA' in str(exc) else 'model_load_failed'
+      if isinstance(exc, xtts_process.XttsResourceError):
+        code = 'insufficient_system_memory'
+      elif 'CUDA' in str(exc):
+        code = 'cuda_unavailable'
+      else:
+        code = 'model_load_failed'
       error = {
           'stage': component_id,
           'code': code,
-          'message': f'{component_id.upper()} local não ficou disponível.',
+          'message': (
+              str(exc)
+              if getattr(exc, 'public_message', False)
+              else f'{component_id.upper()} local não ficou disponível.'
+          ),
           'recovery': 'Verifique CUDA, cache do modelo e os logs do Leonidas.',
       }
       self._last_error = copy.deepcopy(error)
