@@ -338,15 +338,19 @@ class CodexRealtimeProcessor(processor.Processor):
       if self._client_factory is None:
         raise CodexProtocolError('Codex client factory is not configured')
       self._client, cleanup = await self._client_factory()
-    await self._client.start_realtime(
-        objective=self._objective,
-        model=self._model,
-        voice=self._voice,
-        version=self._version,
-    )
-    input_task = asyncio.create_task(content.__anext__())
-    event_task = asyncio.create_task(self._client._rpc.next_notification())
+    started = False
+    input_task: asyncio.Task[Any] | None = None
+    event_task: asyncio.Task[Any] | None = None
     try:
+      await self._client.start_realtime(
+          objective=self._objective,
+          model=self._model,
+          voice=self._voice,
+          version=self._version,
+      )
+      started = True
+      input_task = asyncio.create_task(content.__anext__())
+      event_task = asyncio.create_task(self._client._rpc.next_notification())
       while True:
         done, _ = await asyncio.wait(
             (input_task, event_task), return_when=asyncio.FIRST_COMPLETED
@@ -373,12 +377,16 @@ class CodexRealtimeProcessor(processor.Processor):
               self._client._rpc.next_notification()
           )
     finally:
-      for task in (input_task, event_task):
+      tasks = [task for task in (input_task, event_task) if task is not None]
+      for task in tasks:
         task.cancel()
-      await asyncio.gather(input_task, event_task, return_exceptions=True)
-      await self._client.stop_realtime()
-      if cleanup is not None:
-        await cleanup()
+      await asyncio.gather(*tasks, return_exceptions=True)
+      try:
+        if started:
+          await self._client.stop_realtime()
+      finally:
+        if cleanup is not None:
+          await cleanup()
 
 
 class _TestingServer:
