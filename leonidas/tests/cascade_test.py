@@ -570,7 +570,7 @@ class CascadeResourcesTest(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(pool.snapshot()['overall_state'], 'ready')
     self.assertEqual(
         [item['state'] for item in pool.snapshot()['components']],
-        ['ready', 'ready'],
+        ['ready', 'ready', 'unavailable'],
     )
     self.assertTrue(
         any(item['overall_state'] == 'loading' for item in snapshots)
