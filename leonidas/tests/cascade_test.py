@@ -5,6 +5,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
 import httpx
 import numpy as np
@@ -536,6 +537,13 @@ class CascadeResourcesTest(unittest.IsolatedAsyncioTestCase):
       self,
   ):
     order = []
+    availability = mock.patch.object(
+        diarization,
+        'availability',
+        return_value={'state': 'unavailable'},
+    )
+    availability.start()
+    self.addCleanup(availability.stop)
 
     class Resource:
 
