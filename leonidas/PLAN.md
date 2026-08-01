@@ -53,6 +53,31 @@ A implementação entra depois da correção de continuidade do áudio; até lá
 contrato permanece documentado para evitar acoplamento posterior ao Parakeet,
 Groq ou XTTS.
 
+## Requisito adicional: backend realtime do Codex — 2026-08-01
+
+Ao final desta onda, analisar o documento
+`Codex_App_Server_Realtime_API_Engenharia_Reversa.md` e verificar se o
+contrato permite adicionar um adapter de backend realtime do Codex. O adapter
+deve:
+
+- ficar atrás da mesma composição/capability de modelos, sem quebrar Gemini,
+  Groq ou os adapters locais;
+- traduzir eventos para `ProcessorPart`, estados e cancelamento internos;
+- manter credenciais e conexão do backend exclusivamente no servidor;
+- documentar autenticação, limites, reconexão, streaming, áudio e lifecycle;
+- ter contrato/testes offline antes de qualquer smoke opt-in real;
+- ser implementado somente onde o documento e o código local confirmarem um
+protocolo estável; lacunas da engenharia reversa devem permanecer explícitas.
+
+## Governança de checkpoints e versões estáveis — 2026-08-01
+
+Cada checkpoint funcional deve ser commitado com mensagem detalhada antes de
+abrir a próxima frente. Milestones que passam seus gates offline e reais devem
+receber tag anotada versionada; a tag só pode ser criada depois de validar o
+estado, revisar o diff e confirmar que nenhum artefato privado foi incluído.
+Falhas, bloqueios ambientais e requisitos ainda não implementados permanecem
+fora de tags estáveis.
+
 ### Evidência desta onda
 
 - Reprodução real do defeito: worker XTTS terminou com `-9`; journal confirmou
@@ -68,6 +93,13 @@ Groq ou XTTS.
 - Smoke local multi-turno permanece pendente até liberar memória do host;
   o preflight atual falha corretamente com `memory_available_mib=1801` e
   `system_memory=missing`, sem iniciar outro worker condenado ao OOM.
+
+O host foi posteriormente liberado e o novo smoke passou: preflight CUDA com
+10.685 MiB disponíveis, XTTS carregado com 1.831 MiB alocados/1.918 MiB
+reservados na GPU, cinco sínteses consecutivas no mesmo worker e
+`cascade_smoke --device cuda --turns 3` concluído em 37,51 s. Os três turnos
+produziram transcrição, resposta Groq e PCM válido; não houve worker órfão.
+Esta é a primeira evidência multi-turno real do caminho local.
 
 ## Reconciliação da troca de executor 2026-07-31
 

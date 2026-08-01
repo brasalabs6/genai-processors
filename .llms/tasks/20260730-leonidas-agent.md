@@ -40,6 +40,26 @@ opt-in. Não adicionar pesos ou dependências CUDA ao pacote base, não acoplar 
 diarização ao protocolo provider-specific e não considerar o requisito
 completo até que a UI/capability mostre `unavailable/loading/ready/error`.
 
+## Requisito adicional: backend realtime do Codex — 2026-08-01
+
+Depois da estabilização/validação do áudio local e do contrato de diarização,
+ler integralmente `Codex_App_Server_Realtime_API_Engenharia_Reversa.md`.
+Determinar, com evidência do documento e do repositório, o protocolo realtime,
+autenticação, eventos, áudio, cancelamento e limites. Se for implementável com
+contrato confiável, adicionar um adapter server-side selecionável por
+capability, mantendo `ProcessorPart` e sem tocar nas pipelines Gemini/Groq.
+Criar testes de tradução e lifecycle antes de smoke real. Não inventar campos
+ou endpoints que o documento não confirme e não enviar tokens para a UI.
+
+## Governança adicional: checkpoints e versões estáveis — 2026-08-01
+
+Commitar cada checkpoint funcional com escopo explícito antes de iniciar a
+próxima frente. Criar tags anotadas somente para milestones realmente verdes,
+após revisão do diff, testes correspondentes e verificação de que logs, chaves,
+pesos, runtime e artefatos privados ficaram fora do Git. Não chamar uma
+versão de estável enquanto qualquer gate obrigatório estiver apenas pendente,
+flaky ou bloqueado por recurso externo.
+
 ### Evidência da continuação 2026-08-01
 
 O PR1 foi validado nos dois modelos Gemini Live (2.5 e 3.1) com sucesso. A
@@ -49,6 +69,13 @@ falha local foi reproduzida no host: o processo XTTS recebeu SIGKILL por
 suíte Leonidas e a WebUI permanecem verdes. A prova real de múltiplos turnos
 locais ainda depende de memória disponível no host; não declarar a cascata
 local como validada até repetir esse smoke após liberar memória.
+
+O host foi liberado e a validação foi repetida com sucesso: preflight CUDA
+reportou 10.685 MiB disponíveis; cinco sínteses XTTS consecutivas passaram e
+`cascade_smoke --device cuda --turns 3` produziu três transcrições, respostas
+Groq e áudios PCM válidos em 37,51 s. A continuidade do worker local está
+empiricamente validada; ainda falta a revisão do documento de API realtime do
+Codex e a implementação/teste do adapter correspondente.
 
 ## Reconciliação da troca de executor 2026-07-31
 
