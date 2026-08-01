@@ -116,6 +116,9 @@ Quando diarização estiver instalada, a UI exibirá seu estado (`indisponível`
 `carregando`, `pronta` ou `erro`), device e memória estimada. A ativação será
 independente do botão de microfone; enquanto estiver indisponível, a
 transcrição e o playback continuam normalmente.
+No painel da cascata, o checkbox “Ativar diarização opcional” só fica habilitado
+quando a capability anuncia a dependência instalada; alterar o checkbox é uma
+mudança de configuração que exige Apply/Start e nunca altera Gemini.
 
 Quando `codex_realtime` estiver selecionado, a UI mostra o badge “Codex
 experimental”, o modelo `gpt-realtime-1.5`, a versão realtime negociada e as
