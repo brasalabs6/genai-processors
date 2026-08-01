@@ -117,6 +117,12 @@ Quando diarização estiver instalada, a UI exibirá seu estado (`indisponível`
 independente do botão de microfone; enquanto estiver indisponível, a
 transcrição e o playback continuam normalmente.
 
+Quando `codex_realtime` estiver selecionado, a UI mostra o badge “Codex
+experimental”, o modelo `gpt-realtime-1.5`, a versão realtime negociada e as
+vozes anunciadas pelo capability document. Erros de `auth.json`, API key
+ausente, feature desabilitada ou versão não suportada são acionáveis. A UI
+nunca mostra o conteúdo de `auth.json` nem oferece campo de credencial.
+
 O erro de runtime XTTS deve distinguir ambiente ausente, referência de voz
 ausente e termos CPML ainda não aceitos. A UI nunca oferece um botão que aceite
 licença automaticamente; ela mostra o comando de preparação documentado.

@@ -226,7 +226,8 @@ falha de protocolo e não iniciar retries ilimitados.
 ### Diarização opcional
 
 A cascata pode incluir um adapter de diarização independente do STT. Seu
-contrato de saída é um segmento com `speaker_id`, `start_ms`, `end_ms` e
+contrato de saída é um segmento com `speaker_id`, `start`, `end` (segundos
+relativos ao áudio endpointado) e
 `confidence`; segmentos são associados à transcrição por intervalo, nunca por
 posição textual presumida. O adapter declara `device`, memória esperada,
 cache/modelo, fallback CPU e estado de readiness. Falhas ou ausência do
@@ -269,8 +270,26 @@ com `id`, `model_id`, `state`, `phase`, `device`, `gpu_name`, `load_ms`,
 `memory_allocated_mib`, `memory_reserved_mib` e `error`. Campos de GPU/memória
 são `null` em CPU. Erros possuem `stage`, `code`, `message` e `recovery`,
 nunca traceback, prompt ou credencial. Os identificadores de componente são
-sempre `stt` e `tts`; campos privados do worker, como request `id` e `type`,
-nunca entram nesse contrato.
+`stt`, `tts` e, quando configurado, `diarization`; campos privados do worker,
+como request `id` e `type`, nunca entram nesse contrato.
+
+### Codex Realtime experimental
+
+`pipeline_id=codex_realtime` inicia `codex app-server --listen stdio://` no
+servidor, executa `initialize` com `capabilities.experimentalApi=true`, envia
+`initialized`, cria um thread efêmero e usa os métodos confirmados
+`thread/realtime/start`, `appendText`, `appendAudio` e `stop`. O checkout
+`~/github/codex` é a referência mais recente: ele confirma v3, enquanto o
+binário instalado pode anunciar apenas v1/v2; a versão é configurável e v3 é o
+default atual.
+
+O browser nunca recebe JSON-RPC, request IDs, `auth.json` ou tokens. O realtime
+atual exige `OPENAI_API_KEY` em `auth.json`; tokens de login ChatGPT não são
+convertidos. O smoke real é opt-in e registra apenas status, versão e
+latência. A feature `realtime_conversation` é habilitada somente no
+subprocesso local, sem alterar Gemini ou a cascata. O áudio vira
+`ProcessorPart` no substream `realtime`; como o schema RPC não declara codec, o
+MIME de playback deve ser configurado explicitamente pelo runtime.
 
 `POST /api/v1/session/start` preserva `200/running` para Gemini. Para cascata
 fria retorna `202/starting`; readiness e transições posteriores chegam pelo

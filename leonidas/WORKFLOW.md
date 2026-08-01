@@ -15,11 +15,13 @@ flowchart LR
   REG --> G25[Gemini Live 2.5]
   REG --> G31[Gemini Live 3.1]
   REG --> CAS[Cascade local]
+  REG --> CODEX[Codex app-server realtime experimental]
   CAS --> STT[Parakeet v3]
   STT --> GRQ[Groq GPT-OSS]
   GRQ --> XTTS[XTTS v2]
   G25 --> RATE[RateLimitAudio]
   G31 --> RATE
+  CODEX --> RATE
   RATE --> WS
 ```
 
@@ -75,6 +77,45 @@ Invariantes:
 - toda inicialização cria nova fila e novo stream;
 - `stop` pode ser repetido sem erro;
 - nenhuma transição automática sai de `error`.
+
+## Codex app-server e autenticação
+
+```mermaid
+sequenceDiagram
+  participant Leonidas
+  participant Auth as ~/.codex/auth.json
+  participant Codex as codex app-server
+  participant Model as Realtime backend
+  Leonidas->>Auth: validar shape sem registrar valores
+  Leonidas->>Codex: spawn stdio + CODEX_HOME
+  Leonidas->>Codex: initialize(experimentalApi=true)
+  Leonidas->>Codex: initialized
+  Leonidas->>Codex: thread/start(ephemeral, safe policy)
+  Leonidas->>Codex: thread/realtime/start(v3 ou v2 explícito)
+  Codex->>Model: sessão autenticada server-side
+  Model-->>Codex: started/transcript/audio/error/closed
+  Codex-->>Leonidas: JSONL multiplexado
+  Leonidas-->>UI: ProcessorPart/state
+```
+
+```mermaid
+stateDiagram-v2
+  [*] --> auth_missing
+  auth_missing --> auth_invalid: arquivo ausente/JSON inválido
+  auth_invalid --> auth_ready: auth.json corrigido
+  auth_missing --> auth_ready: API key disponível
+  auth_ready --> thread_starting: initialize concluído
+  thread_starting --> realtime_starting: thread/start
+  realtime_starting --> running: realtime/started
+  realtime_starting --> error: feature/versão/credencial
+  running --> stopping: stop/disconnect
+  stopping --> stopped: cleanup
+  error --> auth_ready: nova tentativa explícita
+```
+
+Tokens de login ChatGPT não satisfazem o requisito de API key do realtime
+observado no app-server atual; o smoke real deve permanecer bloqueado e
+explícito até uma credencial compatível existir.
 
 ## Aplicar configuração
 
