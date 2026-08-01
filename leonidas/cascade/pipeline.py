@@ -9,6 +9,7 @@ from genai_processors import content_api
 from genai_processors import processor
 
 from leonidas.cascade import context
+from leonidas.cascade import diarization
 from leonidas.cascade import transcript_filter
 from leonidas.cascade import vad
 from leonidas import telemetry
@@ -32,6 +33,7 @@ class CascadeProcessor(processor.Processor):
       context_trigger_tokens: int | None = None,
       context_target_tokens: int | None = None,
       metrics: telemetry.MetricsStore | None = None,
+      diarizer: diarization.Diarizer | None = None,
   ):
     super().__init__()
     self._transcriber = transcriber
@@ -54,6 +56,7 @@ class CascadeProcessor(processor.Processor):
     # Kept as a read-compatible snapshot for diagnostics and existing callers.
     self._history: list[tuple[str, str]] = []
     self._metrics = metrics or telemetry.MetricsStore()
+    self._diarizer = diarizer or diarization.NullDiarizer()
 
   @staticmethod
   def _state(value: str) -> content_api.ProcessorPart:
@@ -127,6 +130,7 @@ class CascadeProcessor(processor.Processor):
         asyncio.Queue(64)
     )
     response_task: asyncio.Task[None] | None = None
+    diarization_tasks: set[asyncio.Task[None]] = set()
 
     async def produce_turn(prompt: str) -> None:
       try:
@@ -162,6 +166,32 @@ class CascadeProcessor(processor.Processor):
       await interrupt()
       response_task = asyncio.create_task(produce_turn(prompt))
 
+    async def produce_diarization(audio: bytes) -> None:
+      try:
+        segments = await self._diarizer.diarize(audio, sample_rate=16000)
+        if segments:
+          await output.put(
+              content_api.ProcessorPart(
+                  '',
+                  substream_name='diarization',
+                  metadata={
+                      'speaker_segments': [
+                          segment.to_dict() for segment in segments
+                      ],
+                      'is_final': True,
+                  },
+              )
+          )
+      except asyncio.CancelledError:
+        raise
+      except Exception:
+        self._metrics.increment('diarization_errors')
+
+    def schedule_diarization(audio: bytes) -> None:
+      task = asyncio.create_task(produce_diarization(audio))
+      diarization_tasks.add(task)
+      task.add_done_callback(diarization_tasks.discard)
+
     async def handle_event(event: vad.EndpointEvent) -> None:
       if event.kind == 'start':
         self._metrics.increment('vad_utterances_started')
@@ -172,6 +202,7 @@ class CascadeProcessor(processor.Processor):
         return
       if event.kind != 'utterance':
         return
+      schedule_diarization(event.audio)
       await output.put(self._state('transcribing'))
       started = time.perf_counter()
       transcript = await self._transcriber.transcribe(event.audio)
@@ -225,6 +256,8 @@ class CascadeProcessor(processor.Processor):
         if response_task is not None:
           await response_task
       finally:
+        if diarization_tasks:
+          await asyncio.gather(*diarization_tasks, return_exceptions=True)
         await output.put(None)
 
     consumer = asyncio.create_task(consume())
@@ -245,6 +278,7 @@ class CascadeProcessor(processor.Processor):
         response_task.cancel()
       if response_task is not None:
         tasks.append(response_task)
+      tasks.extend(diarization_tasks)
       await asyncio.gather(*tasks, return_exceptions=True)
       close = getattr(self._reasoner, 'close', None)
       if close is not None:

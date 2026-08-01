@@ -37,6 +37,19 @@ class CapabilitiesTest(unittest.TestCase):
     self.assertEqual(cascade['tts_models'], [capabilities.XTTS_V2_MODEL])
     self.assertNotIn('api_key', str(public).lower())
 
+  def test_codex_capability_advertises_confirmed_realtime_versions(self):
+    public = capabilities.public_capabilities()
+    codex = next(
+        item
+        for item in public['pipelines']
+        if item['id'] == capabilities.PIPELINE_CODEX
+    )
+    self.assertTrue(codex['implemented'])
+    self.assertIn('v3', codex['realtime_versions'])
+    self.assertEqual(
+        codex['models'][0]['id'], capabilities.CODEX_REALTIME_MODEL
+    )
+
 
 if __name__ == '__main__':
   unittest.main()

@@ -306,13 +306,44 @@ def notification_parts(
 class CodexRealtimeProcessor(processor.Processor):
   """A Processor facade for a persistent Codex realtime client."""
 
-  def __init__(self, client: CodexRealtimeClient, *, objective: str):
+  def __init__(
+      self,
+      client: CodexRealtimeClient | None = None,
+      *,
+      objective: str,
+      model: str | None = None,
+      voice: str | None = None,
+      version: str = 'v3',
+      client_factory: (
+          Callable[
+              [],
+              Awaitable[
+                  tuple[CodexRealtimeClient, Callable[[], Awaitable[None]]]
+              ],
+          ]
+          | None
+      ) = None,
+  ):
     super().__init__()
     self._client = client
     self._objective = objective
+    self._model = model
+    self._voice = voice
+    self._version = version
+    self._client_factory = client_factory
 
   async def call(self, content: Any):
-    await self._client.start_realtime(objective=self._objective)
+    cleanup: Callable[[], Awaitable[None]] | None = None
+    if self._client is None:
+      if self._client_factory is None:
+        raise CodexProtocolError('Codex client factory is not configured')
+      self._client, cleanup = await self._client_factory()
+    await self._client.start_realtime(
+        objective=self._objective,
+        model=self._model,
+        voice=self._voice,
+        version=self._version,
+    )
     input_task = asyncio.create_task(content.__anext__())
     event_task = asyncio.create_task(self._client._rpc.next_notification())
     try:
@@ -346,6 +377,8 @@ class CodexRealtimeProcessor(processor.Processor):
         task.cancel()
       await asyncio.gather(input_task, event_task, return_exceptions=True)
       await self._client.stop_realtime()
+      if cleanup is not None:
+        await cleanup()
 
 
 class _TestingServer:

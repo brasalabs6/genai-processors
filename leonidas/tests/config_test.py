@@ -57,12 +57,23 @@ class AgentConfigTest(unittest.TestCase):
 
     self.assertEqual(value.cascade.reasoning_effort, 'high')
     self.assertEqual(value.cascade.device, 'cuda')
+    self.assertFalse(value.cascade.diarization_enabled)
     self.assertEqual(value.voice_name, None)
 
     invalid = value.to_dict()
     invalid['cascade']['reasoning_effort'] = 'extreme'
     with self.assertRaisesRegex(config.ConfigValidationError, 'reasoning'):
       config.AgentConfig.from_dict(invalid)
+
+  def test_codex_realtime_configuration_is_explicit_and_validated(self):
+    value = config.AgentConfig.from_dict(
+        {
+            'pipeline_id': capabilities.PIPELINE_CODEX,
+            'model_id': capabilities.CODEX_REALTIME_MODEL,
+            'voice_name': capabilities.CODEX_VOICES[0],
+        }
+    )
+    self.assertEqual(value.pipeline_id, capabilities.PIPELINE_CODEX)
 
 
 class ConfigStoreTest(unittest.TestCase):

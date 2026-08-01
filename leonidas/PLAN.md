@@ -76,6 +76,14 @@ local. A versão mais recente disponível no workspace passa a ser a referência
 preferencial; diferenças entre ela, o binário e o documento devem ser
 registradas e cobertas por testes, sem presumir suporte a versões futuras.
 
+Autenticação — 2026-08-01: o adapter deve descobrir a autenticação local pelo
+arquivo `~/.codex/auth.json` (ou pelo caminho equivalente configurado pelo
+runtime), sempre no processo servidor. O conteúdo nunca pode aparecer em
+logs, respostas HTTP/WebSocket, fixtures ou commits. O smoke real deve ser
+opt-in, validar apenas handshake/lifecycle e relatar somente versão, estado e
+latência; ausência, JSON inválido ou credencial expirada devem produzir erro
+acionável sem quebrar Gemini/Groq.
+
 ## Governança de checkpoints e versões estáveis — 2026-08-01
 
 Cada checkpoint funcional deve ser commitado com mensagem detalhada antes de
@@ -116,6 +124,14 @@ explicitamente para o binário instalado; nenhum campo v3 é enviado no teste v2
 O contrato offline passou 4 testes. A implementação ainda não está conectada
 à composição/capability pública até concluir a revisão de campos do checkout
 `~/github/codex` e os testes de integração do pipeline.
+
+O loader de autenticação agora lê `auth.json` apenas no servidor e exige
+`OPENAI_API_KEY` para o realtime; tokens de login `chatgpt` são reconhecidos,
+mas não são aceitos pelo backend realtime atual. O smoke real foi executado
+com o ambiente local e falhou de forma segura porque o arquivo existente só
+contém tokens ChatGPT (`auth_mode=chatgpt`) e o app-server respondeu que realtime
+exige API key. Não houve exposição de valores secretos. O smoke poderá ser
+repetido assim que `auth.json` tiver uma API key compatível.
 
 ## Reconciliação da troca de executor 2026-07-31
 

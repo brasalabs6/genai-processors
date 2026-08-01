@@ -9,9 +9,11 @@ from genai_processors.core import rate_limit_audio
 from leonidas import capabilities
 from leonidas import config
 from leonidas.cascade import groq_reasoning
+from leonidas.cascade import diarization
 from leonidas.cascade import pipeline as cascade_pipeline
 from leonidas.cascade import resources
 from leonidas.pipelines import gemini_live
+from leonidas.pipelines import codex_realtime
 from leonidas import telemetry
 
 
@@ -59,6 +61,11 @@ class PipelineRegistry:
         synthesizer = self._resources.synthesizer(
             cascade.tts_model_id, cascade.device
         )
+        diarizer = (
+            diarization.PyannoteDiarizer(device=cascade.device)
+            if cascade.diarization_enabled
+            else diarization.NullDiarizer()
+        )
         synthesizer.validate_runtime()
         cascade_processor = cascade_pipeline.CascadeProcessor(
             transcriber=transcriber,
@@ -72,10 +79,13 @@ class PipelineRegistry:
             context_trigger_tokens=context_trigger,
             context_target_tokens=context_target,
             metrics=self._metrics,
+            diarizer=diarizer,
         )
         return cascade_processor + rate_limit_audio.RateLimitAudio(24000)
       except RuntimeError as exc:
         raise ValueError(str(exc)) from exc
+    if agent_config.pipeline_id == capabilities.PIPELINE_CODEX:
+      return codex_realtime.create(agent_config)
     raise ValueError(f'Unsupported pipeline: {agent_config.pipeline_id!r}')
 
   def requires_preparation(self, agent_config: config.AgentConfig) -> bool:
