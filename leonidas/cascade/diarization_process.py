@@ -52,6 +52,8 @@ class PyannoteWorkerDiarizer:
   async def _start(self) -> asyncio.subprocess.Process:
     if self._process is not None and self._process.returncode is None:
       return self._process
+    if self._process is not None:
+      await self._invalidate(self._process)
     if not self._python.is_file():
       raise DiarizationWorkerError(
           'Diarization runtime is missing. Configure '
@@ -80,11 +82,11 @@ class PyannoteWorkerDiarizer:
         await self._invalidate(process)
         raise DiarizationWorkerError('Diarization worker pipes are unavailable')
       request_id = uuid.uuid4().hex
-      process.stdin.write(
-          (json.dumps({'id': request_id, **payload}) + '\n').encode('utf-8')
-      )
-      await process.stdin.drain()
       try:
+        process.stdin.write(
+            (json.dumps({'id': request_id, **payload}) + '\n').encode('utf-8')
+        )
+        await process.stdin.drain()
         while True:
           line = await asyncio.wait_for(
               process.stdout.readline(), timeout=self._timeout
