@@ -21,25 +21,38 @@ GROQ_GPT_OSS_120B = 'openai/gpt-oss-120b'
 XTTS_V2_MODEL = 'tts_models/multilingual/multi-dataset/xtts_v2'
 CASCADE_VOICES = ('leonidas',)
 CODEX_VOICES = (
-    'alloy',
-    'arbor',
-    'ash',
-    'ballad',
-    'breeze',
-    'cedar',
-    'coral',
-    'cove',
-    'echo',
-    'ember',
     'juniper',
     'maple',
+    'spruce',
+    'ember',
+    'vale',
+    'breeze',
+    'arbor',
+    'sol',
+    'cove',
+    'alloy',
+    'ash',
+    'ballad',
+    'cedar',
+    'coral',
+    'echo',
     'marin',
     'sage',
     'shimmer',
-    'sol',
-    'spruce',
-    'vale',
     'verse',
+)
+CODEX_WEBRTC_V1_VOICES = frozenset(
+    {
+        'juniper',
+        'maple',
+        'spruce',
+        'ember',
+        'vale',
+        'breeze',
+        'arbor',
+        'sol',
+        'cove',
+    }
 )
 
 VOICES = (

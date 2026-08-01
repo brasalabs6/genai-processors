@@ -9,6 +9,33 @@ from leonidas import websocket_server
 
 class WebSocketProtocolTest(unittest.TestCase):
 
+  def test_decodes_bounded_codex_webrtc_offer_control_part(self):
+    part = websocket_server._decode(
+        json.dumps(
+            {
+                'mimetype': websocket_server.CODEX_WEBRTC_OFFER_MIMETYPE,
+                'part': {'text': 'v=0\r\n'},
+            }
+        )
+    )
+    self.assertEqual(
+        part.mimetype, websocket_server.CODEX_WEBRTC_OFFER_MIMETYPE
+    )
+    self.assertEqual(part.part.text, 'v=0\r\n')
+    self.assertEqual(part.substream_name, 'realtime')
+
+  def test_rejects_oversized_codex_webrtc_offer(self):
+    oversized = 'x' * (websocket_server.CODEX_WEBRTC_SDP_MAX_BYTES + 1)
+    with self.assertRaisesRegex(ValueError, 'SDP payload is too large'):
+      websocket_server._decode(
+          json.dumps(
+              {
+                  'mimetype': websocket_server.CODEX_WEBRTC_OFFER_MIMETYPE,
+                  'part': {'text': oversized},
+              }
+          )
+      )
+
   def test_text_becomes_complete_user_turn(self):
     message = json.dumps(
         content_api.ProcessorPart('olá').to_dict(mode='python')

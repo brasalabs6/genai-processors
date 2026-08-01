@@ -38,7 +38,7 @@ def main() -> int:
   parser = argparse.ArgumentParser()
   parser.add_argument(
       '--version',
-      default=os.environ.get('LEONIDAS_CODEX_REALTIME_VERSION', 'v3'),
+      default=os.environ.get('LEONIDAS_CODEX_REALTIME_VERSION', 'v2'),
       choices=('v1', 'v2', 'v3'),
   )
   args = parser.parse_args()

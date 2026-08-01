@@ -17,9 +17,32 @@ from typing import Any
 from genai_processors import content_api
 from genai_processors import processor
 
+from leonidas import capabilities
+
+
+CODEX_WEBRTC_OFFER_MIMETYPE = 'application/x-codex-webrtc-offer'
+CODEX_WEBRTC_ANSWER_MIMETYPE = 'application/x-codex-webrtc-answer'
+
 
 class CodexProtocolError(RuntimeError):
   """The app-server returned an invalid or rejected protocol operation."""
+
+  public_message = True
+
+  def __init__(self, message: str):
+    normalized = message.strip()
+    lowered = normalized.lower()
+    if 'voice session access denied' in lowered or (
+        '403 forbidden' in lowered and 'realtime' in lowered
+    ):
+      normalized = (
+          'Codex realtime voice access denied by the upstream service; '
+          'verify that this Codex account has realtime voice entitlement.'
+      )
+    else:
+      for marker in (', url:', ', cf-ray:', ', request id:'):
+        normalized = normalized.split(marker, maxsplit=1)[0]
+    super().__init__(normalized or 'Codex realtime protocol error')
 
 
 SendLine = Callable[[str], Awaitable[None]]
@@ -344,12 +367,15 @@ class CodexTurnClient:
 
 
 def notification_parts(
-    message: dict[str, Any], *, audio_mimetype: str = 'audio/pcm;rate=24000'
+    message: dict[str, Any],
+    *,
+    audio_mimetype: str = 'audio/pcm;rate=24000',
+    include_audio: bool = True,
 ) -> list[content_api.ProcessorPart]:
   """Translate confirmed realtime notifications into internal content parts."""
   method = message.get('method')
   params = message.get('params') or {}
-  if method == 'thread/realtime/outputAudio/delta':
+  if method == 'thread/realtime/outputAudio/delta' and include_audio:
     audio = params.get('audio') or {}
     try:
       data = base64.b64decode(str(audio['data']), validate=True)
@@ -425,15 +451,48 @@ class CodexRealtimeProcessor(processor.Processor):
     started = False
     input_task: asyncio.Task[Any] | None = None
     event_task: asyncio.Task[Any] | None = None
+    input_iterator = aiter(content)
     try:
-      await self._client.start_realtime(
+      first_part: content_api.ProcessorPart | None = None
+      try:
+        first_part = await anext(input_iterator)
+      except StopAsyncIteration:
+        pass
+      sdp_offer: str | None = None
+      if (
+          first_part is not None
+          and first_part.mimetype == CODEX_WEBRTC_OFFER_MIMETYPE
+      ):
+        sdp_offer = first_part.part.text
+        if not isinstance(sdp_offer, str) or not sdp_offer:
+          raise CodexProtocolError('Codex WebRTC SDP offer is empty')
+        if (
+            self._voice
+            and self._voice not in capabilities.CODEX_WEBRTC_V1_VOICES
+        ):
+          raise CodexProtocolError(
+              f'Codex WebRTC v1 does not support voice {self._voice!r}; '
+              'choose a compatible Codex voice'
+          )
+      remote_sdp = await self._client.start_realtime(
           objective=self._objective,
           model=self._model,
           voice=self._voice,
-          version=self._version,
+          version='v1' if sdp_offer is not None else self._version,
+          sdp_offer=sdp_offer,
       )
+      if remote_sdp is not None:
+        yield content_api.ProcessorPart(
+            remote_sdp,
+            mimetype=CODEX_WEBRTC_ANSWER_MIMETYPE,
+            role='model',
+            substream_name='realtime',
+            metadata={'codex_webrtc_answer': True},
+        )
       started = True
-      input_task = asyncio.create_task(content.__anext__())
+      if first_part is not None and sdp_offer is None:
+        await self._append_input(first_part)
+      input_task = asyncio.create_task(anext(input_iterator))
       event_task = asyncio.create_task(self._client._rpc.next_notification())
       while True:
         done, _ = await asyncio.wait(
@@ -444,18 +503,13 @@ class CodexRealtimeProcessor(processor.Processor):
             part = input_task.result()
           except StopAsyncIteration:
             break
-          if content_api.is_text(part.mimetype) and part.text.strip():
-            await self._client.append_text(part.text.strip())
-          elif content_api.is_audio(part.mimetype) and part.bytes:
-            sample_rate = int(part.get_metadata('sample_rate') or 16000)
-            channels = int(part.get_metadata('num_channels') or 1)
-            await self._client.append_audio(
-                part.bytes, sample_rate=sample_rate, num_channels=channels
-            )
-          input_task = asyncio.create_task(content.__anext__())
+          await self._append_input(part)
+          input_task = asyncio.create_task(anext(input_iterator))
         if event_task in done:
           message = event_task.result()
-          for output in notification_parts(message):
+          for output in notification_parts(
+              message, include_audio=sdp_offer is None
+          ):
             yield output
           event_task = asyncio.create_task(
               self._client._rpc.next_notification()
@@ -471,6 +525,18 @@ class CodexRealtimeProcessor(processor.Processor):
       finally:
         if cleanup is not None:
           await cleanup()
+
+  async def _append_input(self, part: content_api.ProcessorPart) -> None:
+    if part.mimetype == CODEX_WEBRTC_OFFER_MIMETYPE:
+      raise CodexProtocolError('Codex WebRTC offer must be the first input')
+    if content_api.is_text(part.mimetype) and part.text.strip():
+      await self._client.append_text(part.text.strip())
+    elif content_api.is_audio(part.mimetype) and part.bytes:
+      sample_rate = int(part.get_metadata('sample_rate') or 16000)
+      channels = int(part.get_metadata('num_channels') or 1)
+      await self._client.append_audio(
+          part.bytes, sample_rate=sample_rate, num_channels=channels
+      )
 
 
 class _TestingServer:

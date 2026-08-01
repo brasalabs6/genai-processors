@@ -49,6 +49,7 @@ class CapabilitiesTest(unittest.TestCase):
     self.assertEqual(
         codex['models'][0]['id'], capabilities.CODEX_REALTIME_MODEL
     )
+    self.assertIn(codex['voices'][0], capabilities.CODEX_WEBRTC_V1_VOICES)
 
   def test_codex_text_is_an_explicit_non_realtime_fallback(self):
     public = capabilities.public_capabilities()

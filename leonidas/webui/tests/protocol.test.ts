@@ -3,6 +3,7 @@ import {describe, expect, it} from 'vitest';
 import {
   audioMessage,
   clientMetricMessage,
+  codexWebRtcOfferMessage,
   connectionClosePolicy,
   imageMessage,
   micOffMessage,
@@ -54,6 +55,10 @@ describe('Leonidas ProcessorPart protocol', () => {
       name: 'flush',
       value: 2,
     });
+    expect(codexWebRtcOfferMessage('v=0').mimetype).toBe(
+      'application/x-codex-webrtc-offer',
+    );
+    expect(() => codexWebRtcOfferMessage('  ')).toThrow(/SDP/);
   });
 
   it('does not expose config or reset commands over media websocket', async () => {

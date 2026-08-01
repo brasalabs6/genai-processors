@@ -6,11 +6,13 @@ import {PcmPlayer} from './audio';
 import {LogBuffer} from './log-buffer';
 import {MediaController} from './media';
 import {
+  CODEX_WEBRTC_ANSWER_MIMETYPE,
   connectionClosePolicy,
   parseServerMessage,
   resolveWebSocketUrl,
   textMessage,
 } from './protocol';
+import {CodexWebRtcController} from './webrtc';
 import type {ProcessorMessage} from './protocol';
 import type {
   AgentConfig,
@@ -45,6 +47,7 @@ class LeonidasApp {
   private intentionalClose = false;
   private readonly player = new PcmPlayer();
   private readonly media: MediaController;
+  private readonly webrtc: CodexWebRtcController;
   private readonly logBuffer = new LogBuffer(2000);
   private logsPaused = false;
   private logRenderPending = false;
@@ -69,6 +72,11 @@ class LeonidasApp {
   private readonly preview = element<HTMLVideoElement>('#preview');
 
   constructor() {
+    this.webrtc = new CodexWebRtcController(
+      element<HTMLAudioElement>('#codex-audio'),
+      (message) => this.send(message),
+      (active) => this.renderCapture(active || this.media.microphoneActive, this.media.activeVisual),
+    );
     this.media = new MediaController(
       this.preview,
       (message) => this.send(message),
@@ -111,7 +119,9 @@ class LeonidasApp {
     element('#start-session').addEventListener('click', () => void this.start());
     element('#stop-session').addEventListener('click', () => void this.stop());
     element('#apply-config').addEventListener('click', () => void this.apply());
-    element('#microphone').addEventListener('click', () => this.guard(() => this.media.toggleMicrophone()));
+    element('#microphone').addEventListener('click', () => this.guard(() => this.isCodexRealtime()
+      ? this.webrtc.toggleMicrophone()
+      : this.media.toggleMicrophone()));
     element('#camera').addEventListener('click', () => this.guard(() => this.media.toggleCamera()));
     element('#screen').addEventListener('click', () => this.guard(() => this.media.toggleScreen()));
     element('#clear-conversation').addEventListener('click', () => {
@@ -177,6 +187,7 @@ class LeonidasApp {
       this.socket?.close();
       this.eventSource?.close();
       void this.media.close();
+      void this.webrtc.stop();
       void this.player.close();
     });
     document.addEventListener('visibilitychange', () => {
@@ -248,7 +259,9 @@ class LeonidasApp {
         }
       : {
           pipeline_id: id, model_id: modelId,
-          voice_name: id === 'codex_realtime' ? 'alloy' : null,
+          voice_name: id === 'codex_realtime'
+            ? this.capabilities.pipelines.find((item) => item.id === id)?.voices?.[0] ?? null
+            : null,
         };
     await this.updateDraft(updates);
   }
@@ -271,11 +284,20 @@ class LeonidasApp {
       this.audioPlaybackFailed = false;
       this.session = await controlApi.start();
       this.renderSession();
-    } catch (error) { this.showError('Sessão não iniciada', this.errorText(error)); }
+      if (this.isCodexRealtime()) await this.webrtc.start();
+    } catch (error) {
+      if (this.isCodexRealtime() && this.session.state !== 'stopped') {
+        await controlApi.stop().catch(() => undefined);
+        this.session = await controlApi.session().catch(() => this.session);
+        this.renderSession();
+      }
+      this.showError('Sessão não iniciada', this.errorText(error));
+    }
   }
 
   private async stop(): Promise<void> {
     try {
+      await this.webrtc.stop();
       this.session = await controlApi.stop();
       this.player.flush();
       this.renderSession();
@@ -293,6 +315,7 @@ class LeonidasApp {
     socket.addEventListener('message', (event) => this.handleMessage(String(event.data)));
     socket.addEventListener('error', () => this.setStatus('#ws-status', 'Erro WebSocket', 'error'));
     socket.addEventListener('close', (event) => {
+      this.webrtc.reject(new Error('WebSocket de sinalização encerrado.'));
       const policy = connectionClosePolicy(event.code, event.reason);
       this.setStatus('#ws-status', policy.label, 'error');
       this.player.flush();
@@ -326,6 +349,11 @@ class LeonidasApp {
     try {
       const message = parseServerMessage(raw);
       const metadata = message.metadata ?? {};
+      if (message.mimetype === CODEX_WEBRTC_ANSWER_MIMETYPE) {
+        const sdp = message.part?.text;
+        if (sdp) this.webrtc.acceptAnswer(sdp);
+        return;
+      }
       if (message.mimetype === 'application/x-state') {
         this.reconnectAttempt = 0;
         const state = metadata.state;
@@ -376,9 +404,14 @@ class LeonidasApp {
     } catch (error) { this.showError('Mensagem inválida', this.errorText(error)); }
   }
 
-  private send(message: ProcessorMessage): void {
-    if (this.socket?.readyState !== WebSocket.OPEN) return;
+  private send(message: ProcessorMessage): boolean {
+    if (this.socket?.readyState !== WebSocket.OPEN) return false;
     this.socket.send(JSON.stringify(message));
+    return true;
+  }
+
+  private isCodexRealtime(): boolean {
+    return this.config?.active.pipeline_id === 'codex_realtime';
   }
 
   private renderCapabilities(): void {

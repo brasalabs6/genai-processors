@@ -13,10 +13,14 @@ from websockets.exceptions import ConnectionClosed
 
 from leonidas import runtime
 from leonidas import telemetry
+from leonidas import codex_app_server
 
 
 _ALLOWED_CLIENT_METRICS = frozenset({'playback_flush_ms'})
 _MAX_CLIENT_METRIC_VALUE = 60_000.0
+CODEX_WEBRTC_OFFER_MIMETYPE = codex_app_server.CODEX_WEBRTC_OFFER_MIMETYPE
+CODEX_WEBRTC_ANSWER_MIMETYPE = codex_app_server.CODEX_WEBRTC_ANSWER_MIMETYPE
+CODEX_WEBRTC_SDP_MAX_BYTES = 128 * 1024
 
 
 class ResourceStateSource(Protocol):
@@ -75,6 +79,15 @@ def _decode(message: str | bytes) -> content_api.ProcessorPart:
   if 'part' not in payload:
     payload['part'] = {'text': ''}
   part = content_api.ProcessorPart.from_dict(data=payload)
+  if part.mimetype == CODEX_WEBRTC_OFFER_MIMETYPE:
+    if not isinstance(part.part.text, str):
+      raise ValueError('Codex WebRTC SDP offer must be text')
+    if len(part.part.text.encode('utf-8')) > CODEX_WEBRTC_SDP_MAX_BYTES:
+      raise ValueError('Codex WebRTC SDP payload is too large')
+    part.role = 'user'
+    part.substream_name = 'realtime'
+    part.metadata['codex_webrtc_offer'] = True
+    return part
   if content_api.is_audio(part.mimetype) or content_api.is_image(part.mimetype):
     part.role = 'user'
     part.substream_name = 'realtime'

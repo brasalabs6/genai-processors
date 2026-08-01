@@ -91,12 +91,18 @@ sequenceDiagram
   Leonidas->>Codex: initialize(experimentalApi=true)
   Leonidas->>Codex: initialized
   Leonidas->>Codex: thread/start(ephemeral, safe policy)
-  Leonidas->>Codex: thread/realtime/start(v3 ou v2 explícito)
+  Leonidas->>Codex: thread/realtime/start(v2 default; v3 opt-in)
   Codex->>Model: sessão autenticada server-side
   Model-->>Codex: started/transcript/audio/error/closed
   Codex-->>Leonidas: JSONL multiplexado
   Leonidas-->>UI: ProcessorPart/state
 ```
+
+Para login ChatGPT sem API key, o fluxo usa WebRTC: o browser cria track de
+microfone + `oai-events`, envia uma oferta SDP pelo envelope
+`application/x-codex-webrtc-offer`, e aplica a resposta emitida pelo backend
+como `application/x-codex-webrtc-answer`. A versão WebRTC é v1; o WebSocket
+continua sendo o transporte de compatibilidade para API key.
 
 ```mermaid
 stateDiagram-v2

@@ -122,7 +122,11 @@ mudança de configuração que exige Apply/Start e nunca altera Gemini.
 
 Quando `codex_realtime` estiver selecionado, a UI mostra o badge “Codex
 experimental”, o modelo `gpt-realtime-1.5`, a versão realtime negociada e as
-vozes anunciadas pelo capability document. Erros de `auth.json`, API key
+vozes anunciadas pelo capability document. No transporte WebRTC v1, deve
+priorizar as vozes compatíveis (`juniper`, `maple`, `spruce`, `ember`, `vale`,
+`breeze`, `arbor`, `sol`, `cove`) e enviar a oferta SDP somente pelo WebSocket
+de sinalização local; o microfone não deve ser duplicado como PCM. Erros de
+`auth.json`, API key
 ausente, feature desabilitada ou versão não suportada são acionáveis. A UI
 nunca mostra o conteúdo de `auth.json` nem oferece campo de credencial.
 

@@ -136,6 +136,46 @@ ser implementado pelo caminho WebRTC e sua sinalização SDP. Não converter
 alteração do provider para contornar a restrição do WebSocket. O suporte
 textual com login ChatGPT permanece separado e validado.
 
+### Requisito adicional: sinalização WebRTC Codex — 2026-08-01
+
+Para permitir `codex_realtime` com o login existente em `auth.json`, a UI e o
+servidor devem trocar somente a oferta/resposta SDP pelo canal de controle;
+credenciais e conexão upstream continuam no app-server. O envelope deve ser
+explicitamente tipado (`application/x-codex-webrtc-offer` e
+`application/x-codex-webrtc-answer`), limitado em tamanho e rejeitado por
+Gemini/cascata como input de mídia comum. A UI deve:
+
+- criar `RTCPeerConnection` apenas para `codex_realtime` e versão WebRTC
+  suportada (`v1`), com microfone em track e reprodução no elemento de áudio;
+- enviar a oferta SDP pelo WebSocket já autenticado localmente;
+- aplicar a resposta SDP recebida, tratar `connectionstatechange`, timeout,
+  stop/reset e permissão de microfone;
+- manter câmera/tela e mensagens de texto sob o contrato existente, sem
+  duplicar áudio PCM pelo WebSocket quando o transporte WebRTC estiver ativo;
+- testar o envelope, as transições e o fallback explícito para WebSocket/API
+  key. Não enviar `auth.json`, bearer ou cookies ao navegador.
+
+Implementação inicial concluída nesta onda: o backend aceita a oferta como
+`ProcessorPart` limitado, o `CodexRealtimeProcessor` a consome antes de abrir
+a sessão, força versão `v1` no transporte WebRTC e emite a resposta como
+`application/x-codex-webrtc-answer`; o áudio recebido pelo sideband é
+descartado nesse modo para não duplicar a track remota. A UI criou
+`RTCPeerConnection`, o data channel `oai-events`, a track de microfone, o
+reprodutor remoto e timeout/cleanup de sinalização. O caminho PCM/WebSocket e
+Gemini permanecem inalterados. O smoke real de navegador ainda é pendente e
+deve ser executado com a UI standalone e o `auth.json` local antes de marcar
+este transporte como verde.
+
+Smoke Chromium real — 2026-08-01: com `RTCPeerConnection`, dispositivo de
+áudio fake, data channel `oai-events` e SDP real, a oferta chegou ao backend e
+o pipeline alcançou a chamada upstream. O serviço respondeu `403 Voice session
+access denied` para a conta Codex local; o erro agora é sanitizado para a UI
+sem URL, request id ou headers. O app-server instalado (`codex-cli 0.144.0`)
+também aceita somente v1/v2; o pipeline usa v2 por padrão para WebSocket e
+força v1 para WebRTC, enquanto v3 permanece opt-in para instalações cujo
+schema o suporte. A autorização upstream de voz continua pendente e impede
+marcar o smoke realtime como verde.
+
 ## Governança de checkpoints e versões estáveis — 2026-08-01
 
 Cada checkpoint funcional deve ser commitado com mensagem detalhada antes de

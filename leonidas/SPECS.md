@@ -280,16 +280,21 @@ servidor, executa `initialize` com `capabilities.experimentalApi=true`, envia
 `initialized`, cria um thread efêmero e usa os métodos confirmados
 `thread/realtime/start`, `appendText`, `appendAudio` e `stop`. O checkout
 `~/github/codex` é a referência mais recente: ele confirma v3, enquanto o
-binário instalado pode anunciar apenas v1/v2; a versão é configurável e v3 é o
-default atual.
+binário instalado pode anunciar apenas v1/v2; a versão é configurável, v2 é o
+default compatível com `codex-cli 0.144.0` e v3 é opt-in quando disponível.
 
-O browser nunca recebe JSON-RPC, request IDs, `auth.json` ou tokens. O realtime
-atual exige `OPENAI_API_KEY` em `auth.json`; tokens de login ChatGPT não são
-convertidos. O smoke real é opt-in e registra apenas status, versão e
-latência. A feature `realtime_conversation` é habilitada somente no
-subprocesso local, sem alterar Gemini ou a cascata. O áudio vira
-`ProcessorPart` no substream `realtime`; como o schema RPC não declara codec, o
-MIME de playback deve ser configurado explicitamente pelo runtime.
+O browser nunca recebe JSON-RPC, request IDs, `auth.json` ou tokens. WebSocket
+realtime exige `OPENAI_API_KEY` compatível; para login ChatGPT, o browser cria
+WebRTC v1 com track de áudio e data channel `oai-events`, envia a oferta SDP
+como `application/x-codex-webrtc-offer` e recebe a resposta como
+`application/x-codex-webrtc-answer`. Tokens não são convertidos. O áudio
+WebRTC é reproduzido pela track remota; áudio de sideband não é duplicado.
+O smoke real é opt-in e registra apenas status, versão, latência e estado de
+conexão. A feature `realtime_conversation` é habilitada somente no subprocesso
+local, sem alterar Gemini ou a cascata. Para WebSocket, áudio vira
+`ProcessorPart` no substream `realtime` com MIME explícito. Um erro `403 Voice
+session access denied` significa falta de entitlement upstream e é sanitizado,
+não mascarado como falha de autenticação local.
 
 ### Codex Text fallback
 

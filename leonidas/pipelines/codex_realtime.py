@@ -80,7 +80,10 @@ async def _open_client() -> tuple[
     codex_app_server.CodexRealtimeClient,
     Any,
 ]:
-  rpc, cleanup = await _open_rpc(require_api_key=True, enable_realtime=True)
+  # The transport is selected after the first input arrives. WebRTC uses the
+  # ChatGPT login stored in auth.json; WebSocket remains available when that
+  # file also contains an API-key-compatible credential.
+  rpc, cleanup = await _open_rpc(require_api_key=False, enable_realtime=True)
   client = codex_app_server.CodexRealtimeClient(
       rpc, audio_mimetype='audio/pcm;rate=24000'
   )
@@ -111,6 +114,8 @@ def create(agent_config: config.AgentConfig) -> processor.Processor:
       objective=agent_config.objective,
       model=agent_config.model_id,
       voice=agent_config.voice_name,
-      version=os.environ.get('LEONIDAS_CODEX_REALTIME_VERSION', 'v3'),
+      # codex-cli 0.144.0 in the supported local setup accepts v1/v2;
+      # installations with the newer v3 schema can opt in explicitly.
+      version=os.environ.get('LEONIDAS_CODEX_REALTIME_VERSION', 'v2'),
       client_factory=_open_client,
   )

@@ -13,6 +13,9 @@ export interface ProcessorMessage {
   metadata?: Record<string, unknown>;
 }
 
+export const CODEX_WEBRTC_OFFER_MIMETYPE = 'application/x-codex-webrtc-offer';
+export const CODEX_WEBRTC_ANSWER_MIMETYPE = 'application/x-codex-webrtc-answer';
+
 export function resolveWebSocketUrl(
   location: BrowserLocation,
   search: string,
@@ -48,6 +51,17 @@ export function connectionClosePolicy(
 
 export function textMessage(text: string): ProcessorMessage {
   return {part: {text}, role: 'user'};
+}
+
+export function codexWebRtcOfferMessage(sdp: string): ProcessorMessage {
+  if (!sdp.trim()) throw new Error('A oferta SDP do Codex está vazia.');
+  return {
+    mimetype: CODEX_WEBRTC_OFFER_MIMETYPE,
+    part: {text: sdp},
+    role: 'user',
+    substream_name: 'realtime',
+    metadata: {codex_webrtc_offer: true},
+  };
 }
 
 export function audioMessage(data: string, rate: number): ProcessorMessage {

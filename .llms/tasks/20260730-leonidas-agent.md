@@ -110,6 +110,34 @@ privados e não inventar bypass de entitlement. WebSocket fica como transporte
 compatível para `OPENAI_API_KEY`; o realtime ChatGPT deve ter smoke real via
 WebRTC antes de ser marcado verde.
 
+### Requisito adicional: sinalização WebRTC Codex — 2026-08-01
+
+Para cumprir realtime com o login presente em `auth.json`, implementar
+sinalização SDP pelo WebSocket local: oferta do navegador para o backend e
+resposta emitida pelo backend após `thread/realtime/sdp`. Usar envelopes
+tipados `application/x-codex-webrtc-offer`/`application/x-codex-webrtc-answer`,
+com limite de tamanho, estados de conexão, timeout, stop/reset e testes. O
+navegador deve enviar microfone como WebRTC track e reproduzir a track remota,
+sem duplicar PCM pelo WebSocket. Credenciais nunca atravessam a UI e Gemini,
+cascata e WebSocket/API-key permanecem inalterados.
+
+Implementação local concluída: o backend valida e limita o envelope de oferta,
+o processor inicia WebRTC com `v1`, devolve a resposta SDP e evita emitir
+áudio PCM do sideband quando a track remota já está ativa. A WebUI cria
+`RTCPeerConnection`, `oai-events`, microfone e reprodução remota, com timeout,
+erro e cleanup. Typecheck, build, 22 testes Vitest e regressões Python
+passaram. Falta somente o smoke empírico em navegador com o `auth.json` real;
+não marcar realtime ChatGPT como verde antes dessa prova.
+
+Smoke Chromium real executado: `RTCPeerConnection`, microfone fake, data
+channel `oai-events`, oferta SDP e sinalização pelo WebSocket local chegaram ao
+upstream. A conta Codex respondeu `403 Voice session access denied`; a UI agora
+recebe apenas diagnóstico sanitizado, sem URL/request id/headers. O binário
+local `codex-cli 0.144.0` aceita v1/v2, então o default do pipeline foi ajustado
+para v2 no WebSocket e v1 é escolhido automaticamente para WebRTC; v3 segue
+opt-in quando o schema instalado o suportar. O acesso upstream de voz ainda é
+o gate externo antes de declarar realtime ChatGPT funcional.
+
 ## Governança adicional: checkpoints e versões estáveis — 2026-08-01
 
 Commitar cada checkpoint funcional com escopo explícito antes de iniciar a
