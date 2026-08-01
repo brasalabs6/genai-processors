@@ -895,3 +895,36 @@ somente referência de leitura para schemas, eventos e autenticação; o
 Leonidas valida a API do app-server diretamente por JSONL/WebRTC. O target
 gerado foi limpo com `cargo clean`, sem alterar código, auth ou o binário
 instalado. Não usar compilação do CLI como gate futuro.
+
+### Onda de compatibilidade integral com o protocolo Codex — 2026-08-01
+
+O objetivo ativo exige documentar e tornar o adapter integralmente compatível
+com os contratos identificados no checkout mais recente, preservando o uso
+server-side das credenciais de `auth.json`. A leitura dos structs Rust e do
+README do app-server confirmou os seguintes gaps concretos no estado atual:
+
+- `thread/realtime/appendText` aceita compatibilidade legada sem `role`, mas o
+  contrato corrente requer que novos clientes enviem explicitamente `user`,
+  `developer` ou `assistant`;
+- o adapter precisa consumir `thread/realtime/error` e
+  `thread/realtime/closed` durante toda a sessão, encerrando o processor de
+  forma observável em vez de aguardar indefinidamente;
+- deltas e finais de transcrição, áudio, `itemAdded`, SDP e lifecycle devem ter
+  tradução ou tratamento explícito, sem vazar objetos provider-specific;
+- a versão realtime e as vozes devem ser obtidas/validadas contra o app-server
+  executado. O binário local 0.144.0 aceita apenas v1/v2, enquanto o checkout
+  mais recente inclui v3; a capability pública não pode anunciar uma versão
+  como funcional sem negociação ou evidência do runtime;
+- WebRTC continua restrito a v1/v3 e exige oferta SDP real. WebSocket v2 exige
+  API key; login ChatGPT de `auth.json` deve seguir pelo WebRTC sem conversão
+  de tokens;
+- o smoke real deve exercitar `initialize`, `thread/start`, realtime start,
+  lifecycle e stop com o `auth.json` atual. Erro upstream de entitlement deve
+  permanecer distinguível de incompatibilidade local e de credencial inválida.
+
+Ordem desta onda: registrar regressões de contrato; corrigir requests e
+lifecycle; negociar capabilities com `thread/realtime/listVoices` e/ou versão
+do app-server; atualizar SPECS/WORKFLOW/UI_SPECS; executar suites offline;
+repetir `codex_text` e WebRTC reais; registrar cada rota esgotada sem expor
+credenciais. Gemini e cascata local são regressões obrigatórias antes do
+checkpoint.

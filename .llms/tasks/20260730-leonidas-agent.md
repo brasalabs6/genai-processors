@@ -710,3 +710,28 @@ controles existentes nem os contratos do backend. A navegação suporta teclado,
 touch e layout mobile; a inspeção Chromium passou em 1440×1000 e 390×844.
 Typecheck, 24 testes Vitest e build Vite passaram. O backend ainda precisa
 seguir a regressão Python antes do checkpoint ser considerado completo.
+
+## Onda ativa: compatibilidade integral da API Codex — 2026-08-01
+
+Continuar até o adapter Leonidas refletir os contratos observáveis do
+app-server atual e funcionar com o `auth.json` local em todos os transportes
+que essa credencial e a conta autorizarem. O contrato corrente exige:
+
+1. requests JSONL com handshake obrigatório e parâmetros camelCase exatos;
+2. `appendText.role` explícito para novos clientes;
+3. áudio como chunk estruturado (`data`, `sampleRate`, `numChannels`,
+   `samplesPerChannel`, `itemId` opcional);
+4. tratamento terminal de `thread/realtime/error` e
+   `thread/realtime/closed`, além de SDP, started, transcript, item e áudio;
+5. descoberta/validação da versão e das vozes no runtime, sem anunciar v3 como
+   operacional no binário 0.144.0;
+6. WebSocket v2 somente com API key compatível e WebRTC v1/v3 para login
+   ChatGPT, sem converter ou expor tokens de `auth.json`;
+7. testes offline Red-Green-Refactor e smokes reais redigidos de texto e voz.
+
+Critério de conclusão: nenhuma divergência conhecida entre requests,
+notifications, versões, vozes, lifecycle e autenticação; suites relevantes e
+smoke textual verdes; smoke realtime verde ou evidência conclusiva de que a
+única falha restante é autorização upstream da conta, depois de esgotar as
+rotas suportadas sem hacks. Preservar Gemini 2.5/3.1 e a cascata local em todos
+os checkpoints.
