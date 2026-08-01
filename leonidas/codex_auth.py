@@ -68,16 +68,14 @@ def validate_auth_file(
     raise CodexAuthError(
         'Codex authentication tokens are expired; sign in with Codex again'
     )
-  if require_api_key and not isinstance(document.get('OPENAI_API_KEY'), str):
+  api_key = document.get('OPENAI_API_KEY')
+  has_api_key = isinstance(api_key, str) and bool(api_key.strip())
+  if require_api_key and (not has_api_key):
     raise CodexAuthError(
         'Codex realtime requires an OPENAI_API_KEY in auth.json; '
         'ChatGPT login tokens are not accepted by this backend'
     )
-  if (
-      not require_api_key
-      and not isinstance(tokens, dict)
-      and not document.get('OPENAI_API_KEY')
-  ):
+  if not require_api_key and not isinstance(tokens, dict) and not has_api_key:
     raise CodexAuthError('Codex authentication file contains no usable login')
   return target
 
@@ -96,8 +94,9 @@ def subprocess_environment(
   # Keep the configured home path rather than resolving symlinks. This allows
   # tests and managed installations to expose auth.json without duplicating it.
   environment['CODEX_HOME'] = str((codex_home or target.parent).resolve())
-  if isinstance(document.get('OPENAI_API_KEY'), str):
-    environment['OPENAI_API_KEY'] = document['OPENAI_API_KEY']
+  api_key = document.get('OPENAI_API_KEY')
+  if isinstance(api_key, str) and api_key.strip():
+    environment['OPENAI_API_KEY'] = api_key
   elif not require_api_key:
     environment.pop('OPENAI_API_KEY', None)
   return environment

@@ -64,6 +64,41 @@ smoke real opt-in que verifique handshake/lifecycle, reportando somente estado,
 versão e latência. JSON inválido, ausência ou expiração devem falhar de modo
 seguro e não afetar as pipelines Gemini/Groq.
 
+### Reconciliação do requisito de autenticação Codex — 2026-08-01
+
+O usuário determinou que `codex_realtime` deve usar as credenciais Codex de
+`.codex/auth.json` e solicitou análise de `~/github/codex`. A exigência
+anterior de `OPENAI_API_KEY` separada deixa de ser uma conclusão: deve ser
+confirmada ou substituída pela API mais recente. Preservar o arquivo somente
+no servidor, não converter tokens, não expor segredos e cobrir o fluxo real de
+`CODEX_HOME`/`auth.json` com testes e smoke opt-in redigido.
+
+### Resultado da análise do checkout Codex — 2026-08-01
+
+Foi analisado `/home/guilherme/github/codex`, branch
+`feature/turn-pinning-validation`, commit `33bf318bd7`, além do binário local
+`codex-cli 0.144.0`. O schema `AuthDotJson` em
+`codex-rs/login/src/auth/storage.rs` confirma `auth_mode`,
+`OPENAI_API_KEY` e `tokens` de login. Porém, em
+`codex-rs/core/src/realtime_conversation.rs`, `realtime_api_key()` só aceita
+API key do provider, `experimental_bearer_token` configurado no provider,
+API key do Codex ou `OPENAI_API_KEY` do ambiente; tokens ChatGPT de
+`auth.json` não são convertidos nem aceitos diretamente. O realtime prepara
+o provider com `AuthMode::ApiKey` e devolve
+`realtime conversation requires API key auth` quando não encontra material
+compatível.
+
+Decisão: o adapter sempre deve encaminhar o `auth.json` server-side por meio
+de `CODEX_HOME` e aceitar `OPENAI_API_KEY` quando esse campo existe. Um login
+ChatGPT válido no mesmo arquivo continua suficiente para `codex_text`, mas
+não é suficiente para o WebSocket `codex_realtime` no checkout atual. Não
+converter `access_token`/`id_token`, não fazer replay de cookies ou tokens
+privados e não inventar um bypass de entitlement. O realtime deve emitir um
+erro acionável diferenciando credencial inválida de credencial de login válida
+sem API key para o transporte solicitado. Só um smoke com API key compatível
+deve ser marcado como realtime verde; essa limitação é externa ao pipeline
+Gemini/Groq/local.
+
 ## Governança adicional: checkpoints e versões estáveis — 2026-08-01
 
 Commitar cada checkpoint funcional com escopo explícito antes de iniciar a

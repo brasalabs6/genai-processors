@@ -43,6 +43,18 @@ class CodexAuthTest(unittest.TestCase):
       )
       self.assertNotIn('OPENAI_API_KEY', environment)
 
+  def test_realtime_rejects_empty_api_key(self):
+    with tempfile.TemporaryDirectory() as temp_dir:
+      path = Path(temp_dir) / 'auth.json'
+      path.write_text(
+          json.dumps({'auth_mode': 'apikey', 'OPENAI_API_KEY': '  '}),
+          encoding='utf-8',
+      )
+      with self.assertRaisesRegex(
+          codex_auth.CodexAuthError, 'requires an OPENAI_API_KEY'
+      ):
+        codex_auth.validate_auth_file(path, require_api_key=True)
+
   def test_expired_jwt_tokens_are_rejected_without_logging_claims(self):
     def jwt(payload):
       encoded = (

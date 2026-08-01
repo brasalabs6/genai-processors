@@ -84,6 +84,51 @@ opt-in, validar apenas handshake/lifecycle e relatar somente versão, estado e
 latência; ausência, JSON inválido ou credencial expirada devem produzir erro
 acionável sem quebrar Gemini/Groq.
 
+### Reconciliação do requisito de autenticação Codex — 2026-08-01
+
+O usuário esclareceu que o realtime deve usar as credenciais Codex presentes
+em `.codex/auth.json`, e pediu uma análise de `~/github/codex` antes de novas
+alterações. A hipótese histórica de exigir uma `OPENAI_API_KEY` separada fica
+em revisão: não converter tokens de login, não inventar um fluxo OAuth e não
+copiar segredos para o ambiente/UI. A implementação deve seguir o mecanismo
+de autenticação confirmado pelo checkout mais recente e pelo documento de
+engenharia reversa, com teste offline do encaminhamento de `CODEX_HOME`/
+`auth.json` e smoke real redigido.
+
+### Resultado da análise do checkout Codex — 2026-08-01
+
+A análise foi feita no checkout `/home/guilherme/github/codex`, branch
+`feature/turn-pinning-validation`, commit `33bf318bd7`, com o binário local
+`codex-cli 0.144.0`. O checkout mais novo confirma que `auth.json` pode
+conter `auth_mode`, `OPENAI_API_KEY` e/ou `tokens` (`id_token`,
+`access_token`, `refresh_token` e `account_id`), mas esses materiais não têm
+o mesmo significado para todos os serviços.
+
+O ponto decisivo está em `codex-rs/core/src/realtime_conversation.rs`:
+`realtime_api_key()` procura a API key do provider, o
+`experimental_bearer_token` configurado no provider, a API key carregada pelo
+Codex ou `OPENAI_API_KEY` do ambiente. Ele não transforma tokens de login
+ChatGPT armazenados em `auth.json` em API key. Quando nenhum caminho existe,
+retorna `realtime conversation requires API key auth`; o provider realtime é
+preparado com `AuthMode::ApiKey`. O schema de `AuthDotJson` foi confirmado em
+`codex-rs/login/src/auth/storage.rs`.
+
+Conclusão operacional: o Leonidas deve sempre carregar o `auth.json` no
+servidor via `CODEX_HOME`, e pode usar um `OPENAI_API_KEY` presente nele. Um
+`auth.json` somente com login ChatGPT autentica o app-server e o pipeline
+`codex_text`, mas não torna o WebSocket realtime funcional no Codex atual.
+Não será feita conversão de `access_token`/`id_token`, replay de cookie,
+injeção de bearer privado ou alteração do provider para contornar essa
+restrição. O `codex_realtime` deve falhar cedo com mensagem acionável que
+distinga “auth.json ausente/inválido” de “login válido, mas este transporte
+realtime exige API key”.
+
+O suporte realtime continua válido quando o `auth.json` contém uma API key
+compatível, e esse é o único caso que pode ser chamado de smoke realtime
+verde. O suporte textual com login ChatGPT permanece separado e validado.
+Essa divergência é um bloqueio externo do transporte realtime atual, não uma
+falha das pipelines Gemini/Groq/locais.
+
 ## Governança de checkpoints e versões estáveis — 2026-08-01
 
 Cada checkpoint funcional deve ser commitado com mensagem detalhada antes de
