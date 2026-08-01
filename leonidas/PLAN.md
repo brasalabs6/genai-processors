@@ -879,11 +879,19 @@ foi usado para inspeção em 1440×1000 e 390×844; typecheck, 24 testes Vitest 
 build Vite passaram. A tela também exibiu corretamente erro de API offline,
 sem impedir o carregamento do shell.
 
-Verificação do binário Codex — 2026-08-01: tentou-se compilar
-`codex-cli` diretamente do checkout `~/github/codex` (`Cargo.toml` versão
-0.146.0) para validar v3 contra o executável mais recente. A compilação não
-chegou ao link final porque o filesystem `/tmp` atingiu 100% durante o build;
-o target gerado consumiu 33,9 GiB. Foram removidos somente os artefatos
-ignorados desse target com `cargo clean`; código, auth e binário instalado não
-foram alterados. O contrato permanece coberto por fonte do checkout e testes
-offline do adapter, mas o smoke com o executável v3 continua pendente.
+Regressão real pós-UI — 2026-08-01: `LEONIDAS_RUN_CODEX_TEXT_E2E=1 ...
+codex_text_smoke --turns 2` passou com dois turnos e resposta não vazia
+(10,77 s); o smoke Gemini 2.5/3.1 passou (`unittest`, 33,83 s). Duas
+tentativas de `cascade_smoke --device cuda --turns 3` foram interrompidas
+corretamente pelo guard do XTTS antes do load, primeiro com 5050 MiB e depois
+com 4005 MiB disponíveis para um mínimo de 5120 MiB. A cascata não deve ser
+declarada verde até repetir com memória/swap suficientes; não foi reduzido o
+limite e nenhum processo do usuário foi encerrado.
+
+Correção de método — 2026-08-01: uma tentativa de compilar
+`codex-cli` diretamente do checkout `~/github/codex` foi interrompida por
+falta de espaço e não faz parte da validação do produto. O checkout deve ser
+somente referência de leitura para schemas, eventos e autenticação; o
+Leonidas valida a API do app-server diretamente por JSONL/WebRTC. O target
+gerado foi limpo com `cargo clean`, sem alterar código, auth ou o binário
+instalado. Não usar compilação do CLI como gate futuro.
