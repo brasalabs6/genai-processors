@@ -19,6 +19,12 @@ class CodexAuthTest(unittest.TestCase):
       environment = codex_auth.subprocess_environment(path)
       self.assertEqual(environment['CODEX_HOME'], str(path.parent.resolve()))
       self.assertEqual(environment['OPENAI_API_KEY'], 'do-not-leak')
+      isolated = codex_auth.subprocess_environment(
+          path, codex_home=Path(temp_dir) / 'isolated'
+      )
+      self.assertEqual(
+          isolated['CODEX_HOME'], str((Path(temp_dir) / 'isolated').resolve())
+      )
 
   def test_missing_auth_is_actionable(self):
     with self.assertRaisesRegex(codex_auth.CodexAuthError, 'missing'):

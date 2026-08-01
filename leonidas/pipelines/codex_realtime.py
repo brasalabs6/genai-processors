@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+from pathlib import Path
+import tempfile
 from typing import Any
 
 from genai_processors import processor
@@ -18,7 +20,19 @@ async def _open_client() -> tuple[
     Any,
 ]:
   command = os.environ.get('LEONIDAS_CODEX_BIN', 'codex')
-  environment = codex_auth.subprocess_environment()
+  source_auth = codex_auth.validate_auth_file(require_api_key=True)
+  configured_home = os.environ.get('LEONIDAS_CODEX_HOME')
+  temporary_home: tempfile.TemporaryDirectory[str] | None = None
+  if configured_home:
+    codex_home = Path(configured_home).expanduser()
+    codex_home.mkdir(mode=0o700, parents=True, exist_ok=True)
+  else:
+    temporary_home = tempfile.TemporaryDirectory(prefix='leonidas-codex-')
+    codex_home = Path(temporary_home.name)
+    (codex_home / 'auth.json').symlink_to(source_auth)
+  environment = codex_auth.subprocess_environment(
+      source_auth, codex_home=codex_home
+  )
   process = await asyncio.create_subprocess_exec(
       command,
       'app-server',
@@ -61,6 +75,8 @@ async def _open_client() -> tuple[
       except asyncio.TimeoutError:
         process.kill()
         await process.wait()
+    if temporary_home is not None:
+      temporary_home.cleanup()
 
   return client, cleanup
 

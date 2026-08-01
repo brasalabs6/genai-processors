@@ -105,6 +105,10 @@ falhou sem vazar segredo: o arquivo está em `auth_mode=chatgpt`, sem
 `OPENAI_API_KEY`, e o app-server exige API key para realtime. Repetir o smoke
 é obrigatório depois de configurar uma credencial compatível.
 
+O subprocesso não depende mais do `~/.codex/config.toml` global: usa um
+`CODEX_HOME` temporário com link para o auth original. O smoke atual falha
+antes do spawn, de forma segura, quando a API key compatível não está presente.
+
 ## Reconciliação da troca de executor 2026-07-31
 
 O usuário solicitou a continuidade pelo executor Luna e exigiu um commit do

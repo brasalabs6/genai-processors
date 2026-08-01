@@ -133,6 +133,11 @@ contém tokens ChatGPT (`auth_mode=chatgpt`) e o app-server respondeu que realti
 exige API key. Não houve exposição de valores secretos. O smoke poderá ser
 repetido assim que `auth.json` tiver uma API key compatível.
 
+Para não depender do `~/.codex/config.toml` inválido observado nesta máquina,
+o subprocesso agora usa `CODEX_HOME` temporário com link para o `auth.json`
+original e configuração limpa; a execução real é bloqueada antes do spawn
+quando a API key não existe.
+
 ## Reconciliação da troca de executor 2026-07-31
 
 O usuário pediu continuidade sob o executor Luna e determinou que o estado
