@@ -109,6 +109,10 @@ O subprocesso não depende mais do `~/.codex/config.toml` global: usa um
 `CODEX_HOME` temporário com link para o auth original. O smoke atual falha
 antes do spawn, de forma segura, quando a API key compatível não está presente.
 
+O recurso opcional de diarização também aparece no snapshot/API/UI como
+`unavailable` ou `unloaded`, sem degradar a prontidão STT/TTS. A suíte completa
+Leonidas/E2E passou com 139 testes, 2 skips e 9 subtests.
+
 ## Reconciliação da troca de executor 2026-07-31
 
 O usuário solicitou a continuidade pelo executor Luna e exigiu um commit do
