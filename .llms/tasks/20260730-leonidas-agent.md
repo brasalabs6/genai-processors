@@ -528,6 +528,12 @@ smoke real da diarização depende também de login/aceite de modelo no Hugging
 Face, além da instalação compatível; nenhum token foi solicitado, lido ou
 registrado pelo Leonidas.
 
+Auditoria final desta rodada: a suíte completa do repositório passou com 716
+testes, 2 skips e 27 subtests em 144,5 s; Pyink dos arquivos alterados,
+Flake8 restrito e `git diff --check` também passaram. Nenhuma tag estável nova
+foi criada porque o smoke real Pyannote e o Codex realtime nativo permanecem
+gates externos não verdes.
+
 Validação pós-diarização: o standalone em `web_port=8081` e
 `websocket_port=8876` aceitou a origem local não padrão, anunciou quatro
 pipelines e três componentes e entregou os dois envelopes iniciais pelo
