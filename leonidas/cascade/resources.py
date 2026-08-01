@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 from leonidas.cascade import device as device_selection
 from leonidas.cascade import diarization
+from leonidas.cascade import diarization_process
 from leonidas.cascade import parakeet_process
 from leonidas.cascade import xtts_process
 
@@ -28,7 +29,9 @@ class CascadeResources:
       synthesizer_factory: Callable[..., Any] = (
           xtts_process.XttsWorkerSynthesizer
       ),
-      diarizer_factory: Callable[..., Any] = diarization.PyannoteDiarizer,
+      diarizer_factory: Callable[..., Any] = (
+          diarization_process.PyannoteWorkerDiarizer
+      ),
       listener_timeout: float = 1.0,
   ):
     if listener_timeout <= 0:

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-import importlib.util
+import os
+from pathlib import Path
 from typing import Any, Protocol
 
 
@@ -120,15 +121,21 @@ class PyannoteDiarizer:
 
 def availability() -> dict[str, Any]:
   """Returns browser-safe installation status without loading model weights."""
-  try:
-    installed = importlib.util.find_spec('pyannote.audio') is not None
-  except ModuleNotFoundError:
-    installed = False
+  repository = Path(__file__).resolve().parents[2]
+  configured = os.environ.get('LEONIDAS_DIARIZATION_PYTHON')
+  runtime = Path(
+      configured or repository / '.venv-diarization' / 'bin' / 'python'
+  )
+  package_roots = runtime.parent.parent.glob(
+      'lib/python*/site-packages/pyannote/audio'
+  )
+  installed = runtime.is_file() and any(path.is_dir() for path in package_roots)
   return {
       'id': 'diarization',
       'state': 'available' if installed else 'unavailable',
       'model_id': 'pyannote/speaker-diarization-community-1',
       'device': None,
       'weights_loaded': False,
-      'optional_dependency': 'pyannote.audio',
+      'optional_dependency': 'pyannote.audio (isolated runtime)',
+      'runtime_configured': installed,
   }

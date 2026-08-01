@@ -8,7 +8,7 @@ import os
 import struct
 import time
 
-from leonidas.cascade import diarization
+from leonidas.cascade import diarization_process
 
 
 def _synthetic_two_speaker_pcm(sample_rate: int = 16000) -> bytes:
@@ -29,7 +29,7 @@ def _synthetic_two_speaker_pcm(sample_rate: int = 16000) -> bytes:
 
 async def run() -> None:
   started = time.perf_counter()
-  adapter = diarization.PyannoteDiarizer(
+  adapter = diarization_process.PyannoteWorkerDiarizer(
       device=os.environ.get('LEONIDAS_DIARIZATION_DEVICE', 'auto')
   )
   segments = await adapter.diarize(

@@ -541,3 +541,20 @@ WebSocket. Gemini 2.5/3.1 passou novamente em 34,4 s. O smoke CUDA local passou
 em três turnos reais (`6,06 s`, `6,07 s` e `4,39 s` de PCM); o validador foi
 ajustado para exigir somente STT/TTS prontos e aceitar o componente opcional de
 diarização.
+
+### Decisão de isolamento do worker de diarização
+
+Para não substituir o Torch validado do Parakeet, o adapter Pyannote deve
+rodar em um processo/runtime opcional próprio, selecionado por
+`LEONIDAS_DIARIZATION_PYTHON`. O servidor principal mantém apenas o contrato
+JSONL e `ProcessorPart`; o worker é responsável por carregar Pipeline, CUDA,
+pesos e converter os segmentos. Ausência do executável ou falha do worker
+permanece um erro de recurso observável e não altera Gemini nem a cascata sem
+diarização.
+
+Implementação do isolamento: `diarization_process.py` e
+`diarization_worker.py` agora usam o mesmo protocolo JSONL dos workers locais,
+com `LEONIDAS_DIARIZATION_PYTHON` configurável, progresso de load, segmentos
+validados e shutdown. A suíte Leonidas/E2E passou com 148 testes, 2 skips e 9
+subtests. O smoke real continua bloqueado somente pela ausência do runtime
+opcional/pesos Hugging Face.
