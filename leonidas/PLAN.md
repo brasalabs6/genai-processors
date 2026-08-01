@@ -658,6 +658,12 @@ O smoke real do Codex textual foi ampliado para dois turnos no mesmo thread:
 13,22 s. Isso confirma persistência de conversa no app-server com o login
 ChatGPT local, além do contrato offline de lifecycle.
 
+O acesso anônimo aos manifests de `pyannote/speaker-diarization-community-1`
+e `pyannote/speaker-diarization-3.1` retornou HTTP 401 neste host. Portanto o
+smoke real da diarização depende também de login/aceite de modelo no Hugging
+Face, além da instalação compatível; nenhum token foi solicitado, lido ou
+registrado pelo Leonidas.
+
 Validação pós-diarização: o standalone em `web_port=8081` e
 `websocket_port=8876` aceitou a origem local não padrão, anunciou quatro
 pipelines e três componentes e entregou os dois envelopes iniciais pelo
