@@ -1,14 +1,73 @@
 """Contract tests for the server-side Codex app-server adapter."""
 
 import asyncio
+import os
 import unittest
+from unittest import mock
 
 from genai_processors import content_api
 
 from leonidas import codex_app_server
+from leonidas import capabilities
+from leonidas import config
+from leonidas.pipelines import codex_realtime
 
 
 class JsonRpcClientTest(unittest.IsolatedAsyncioTestCase):
+
+  async def test_realtime_voice_discovery_preserves_version_sets(self):
+    client, _sent, server = codex_app_server.testing_pair()
+    discovery = asyncio.create_task(client.list_voices())
+    request = await server.next_request()
+    self.assertEqual(request['method'], 'thread/realtime/listVoices')
+    await server.respond(
+        request,
+        {
+            'voices': {
+                'v1': ['juniper', 'cove'],
+                'v2': ['marin', 'cedar'],
+                'defaultV1': 'cove',
+                'defaultV2': 'marin',
+            }
+        },
+    )
+    voices = await discovery
+    self.assertEqual(voices['v1'], ('juniper', 'cove'))
+    self.assertEqual(voices['v2'], ('marin', 'cedar'))
+    self.assertEqual(voices['default_v1'], 'cove')
+    self.assertEqual(voices['default_v2'], 'marin')
+    await client.close()
+
+  async def test_realtime_rejects_voice_outside_selected_protocol(self):
+    client, _sent, server = codex_app_server.testing_pair()
+    discovery = asyncio.create_task(client.list_voices())
+    request = await server.next_request()
+    await server.respond(
+        request,
+        {
+            'voices': {
+                'v1': ['cove'],
+                'v2': ['marin'],
+                'defaultV1': 'cove',
+                'defaultV2': 'marin',
+            }
+        },
+    )
+    await discovery
+
+    with self.assertRaisesRegex(
+        codex_app_server.CodexProtocolError, 'voice.*v2'
+    ):
+      await client.start_realtime(
+          objective='Ajude o usuário.', voice='cove', version='v2'
+      )
+    await client.close()
+
+  async def test_realtime_rejects_unknown_protocol_before_creating_thread(self):
+    client, _sent, _server = codex_app_server.testing_pair()
+    with self.assertRaisesRegex(ValueError, 'version'):
+      await client.start_realtime(objective='Ajude o usuário.', version='v4')
+    await client.close()
 
   def test_provider_access_errors_are_redacted_for_public_diagnostics(self):
     error = codex_app_server.CodexProtocolError(
@@ -112,7 +171,10 @@ class JsonRpcClientTest(unittest.IsolatedAsyncioTestCase):
     append = asyncio.create_task(client.append_text('olá'))
     request = await server.next_request()
     self.assertEqual(request['method'], 'thread/realtime/appendText')
-    self.assertEqual(request['params'], {'threadId': 'thread-1', 'text': 'olá'})
+    self.assertEqual(
+        request['params'],
+        {'threadId': 'thread-1', 'text': 'olá', 'role': 'user'},
+    )
     await server.respond(request, {})
     await append
 
@@ -123,6 +185,29 @@ class JsonRpcClientTest(unittest.IsolatedAsyncioTestCase):
     await stop
     await client.close()
     self.assertTrue(sent)
+
+  async def test_realtime_start_fails_when_transport_closes_before_started(
+      self,
+  ):
+    client, _sent, server = codex_app_server.testing_pair()
+    start = asyncio.create_task(
+        client.start_realtime(objective='Ajude o usuário.', version='v2')
+    )
+    request = await server.next_request()
+    await server.respond(request, {'thread': {'id': 'thread-closed'}})
+    request = await server.next_request()
+    self.assertEqual(request['method'], 'thread/realtime/start')
+    await server.respond(request, {})
+    await server.notify(
+        'thread/realtime/closed',
+        {'threadId': 'thread-closed', 'reason': 'upstream disconnected'},
+    )
+
+    with self.assertRaisesRegex(
+        codex_app_server.CodexProtocolError, 'upstream disconnected'
+    ):
+      await asyncio.wait_for(start, timeout=1)
+    await client.close()
 
   async def test_server_request_is_rejected_without_deadlocking_pending_call(
       self,
@@ -197,6 +282,19 @@ class JsonRpcClientTest(unittest.IsolatedAsyncioTestCase):
 
 class CodexEventMappingTest(unittest.TestCase):
 
+  def test_v3_composition_uses_runtime_default_frameless_model(self):
+    agent_config = config.AgentConfig.from_dict(
+        {
+            'pipeline_id': capabilities.PIPELINE_CODEX,
+            'model_id': capabilities.CODEX_REALTIME_MODEL,
+            'voice_name': 'cove',
+        }
+    )
+    with mock.patch.dict(os.environ, {'LEONIDAS_CODEX_REALTIME_VERSION': 'v3'}):
+      live = codex_realtime.create(agent_config)
+    self.assertEqual(live._version, 'v3')
+    self.assertIsNone(live._model)
+
   def test_notifications_become_processor_parts(self):
     parts = list(
         codex_app_server.notification_parts(
@@ -247,6 +345,60 @@ class CodexEventMappingTest(unittest.TestCase):
 
 
 class CodexProcessorWebRtcTest(unittest.IsolatedAsyncioTestCase):
+
+  async def test_runtime_error_notification_terminates_active_processor(self):
+    class FakeRpc:
+
+      async def next_notification(self):
+        return {
+            'method': 'thread/realtime/error',
+            'params': {'threadId': 'thread-1', 'message': 'upstream failed'},
+        }
+
+    class FakeClient:
+
+      def __init__(self):
+        self._rpc = FakeRpc()
+        self.stopped = False
+
+      async def start_realtime(self, **kwargs):
+        del kwargs
+        return None
+
+      async def append_text(self, value):
+        del value
+
+      async def append_audio(self, data, *, sample_rate, num_channels):
+        del data, sample_rate, num_channels
+
+      async def stop_realtime(self):
+        self.stopped = True
+
+      def terminal_notification_error(self, notification):
+        params = notification.get('params') or {}
+        if notification.get('method') == 'thread/realtime/error':
+          return codex_app_server.CodexProtocolError(
+              str(params.get('message', 'realtime error'))
+          )
+        return None
+
+    client = FakeClient()
+    live = codex_app_server.CodexRealtimeProcessor(
+        client, objective='Ajude o usuário.', version='v2'
+    )
+
+    async def content():
+      yield content_api.ProcessorPart('olá')
+      await asyncio.Future()
+
+    with self.assertRaisesRegex(
+        codex_app_server.CodexProtocolError, 'upstream failed'
+    ):
+      await asyncio.wait_for(
+          anext(aiter(live(content()))),
+          timeout=1,
+      )
+    self.assertTrue(client.stopped)
 
   async def test_offer_is_consumed_and_answer_is_emitted_without_pcm_forwarding(
       self,

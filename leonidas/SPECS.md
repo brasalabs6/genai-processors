@@ -280,8 +280,18 @@ servidor, executa `initialize` com `capabilities.experimentalApi=true`, envia
 `initialized`, cria um thread efêmero e usa os métodos confirmados
 `thread/realtime/start`, `appendText`, `appendAudio` e `stop`. O checkout
 `~/github/codex` é a referência mais recente: ele confirma v3, enquanto o
-binário instalado pode anunciar apenas v1/v2; a versão é configurável, v2 é o
-default compatível com `codex-cli 0.144.0` e v3 é opt-in quando disponível.
+binário instalado anuncia apenas v1/v2. O capability document distingue
+`realtime_versions` confirmadas (`v2`, `v1`) de
+`experimental_realtime_versions` (`v3`) e publica a matriz de transportes.
+V3 só pode ser selecionada por opt-in quando o app-server executado publicar
+esse schema; não é anunciada como operacional no `codex-cli 0.144.0`.
+
+Após o handshake, o adapter chama `thread/realtime/listVoices` e valida a voz
+contra o conjunto da versão: v1/v3 usam as vozes V1 e v2 usa as vozes V2.
+`appendText` sempre inclui `role`; `appendAudio` usa o objeto estruturado
+`data`, `sampleRate`, `numChannels`, `samplesPerChannel` e `itemId` opcional.
+`thread/realtime/error` e `thread/realtime/closed` são terminais em startup e
+runtime e precisam cancelar inputs/tasks sem deixar a UI presa.
 
 O browser nunca recebe JSON-RPC, request IDs, `auth.json` ou tokens. WebSocket
 realtime exige `OPENAI_API_KEY` compatível; para login ChatGPT, o browser cria
@@ -295,6 +305,14 @@ local, sem alterar Gemini ou a cascata. Para WebSocket, áudio vira
 `ProcessorPart` no substream `realtime` com MIME explícito. Um erro `403 Voice
 session access denied` significa falta de entitlement upstream e é sanitizado,
 não mascarado como falha de autenticação local.
+
+O smoke de áudio usa corpus privado gerado pelo Gemini em
+`leonidas/.runtime/e2e/codex_audio/`. Cada WAV é validado como PCM16 mono
+24 kHz, convertido para PCM16 mono 16 kHz e enviado em chunks de 100 ms com
+pacing e silêncio final, por no mínimo dois turnos. O manifesto persiste apenas
+metadados técnicos e hash. WebSocket V2 é testado quando há API key; WebRTC V1
+usa Chromium e track de microfone alimentada pelo WAV. Áudio, transcripts,
+respostas e credenciais nunca entram no Git ou nos relatórios.
 
 ### Codex Text fallback
 

@@ -127,7 +127,7 @@ class GeneratedAssets:
   image_source: str
 
 
-def _write_atomic(path: Path, data: bytes) -> None:
+def write_atomic(path: Path, data: bytes) -> None:
   path.parent.mkdir(parents=True, exist_ok=True)
   temp = path.with_suffix(path.suffix + '.tmp')
   with temp.open('wb') as output:
@@ -150,11 +150,11 @@ async def generate_scenario(
   audio_path = root / f'{scenario.id}.wav'
   image_path = root / f'{scenario.id}.png'
   if force or not audio_path.is_file():
-    _write_atomic(
+    write_atomic(
         audio_path, await audio_generator.generate(scenario.audio_script)
     )
   if force or not image_path.is_file():
-    _write_atomic(
+    write_atomic(
         image_path, await image_generator.generate(scenario.image_prompt)
     )
   try:

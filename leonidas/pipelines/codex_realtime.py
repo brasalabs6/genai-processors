@@ -89,6 +89,7 @@ async def _open_client() -> tuple[
   )
   try:
     await client.initialize(client_name='leonidas', client_version='0.1.0')
+    await client.list_voices()
   except BaseException:
     await cleanup()
     raise
@@ -110,12 +111,18 @@ def create(agent_config: config.AgentConfig) -> processor.Processor:
   agent_config.validate()
   if agent_config.pipeline_id != 'codex_realtime':
     raise ValueError('Codex pipeline received an incompatible configuration')
+  version = os.environ.get('LEONIDAS_CODEX_REALTIME_VERSION', 'v2')
+  if version not in {'v1', 'v2', 'v3'}:
+    raise ValueError('LEONIDAS_CODEX_REALTIME_VERSION must be v1, v2, or v3')
   return codex_app_server.CodexRealtimeProcessor(
       objective=agent_config.objective,
-      model=agent_config.model_id,
+      # Frameless V3 has a distinct model family. The current public config is
+      # the V1/V2 model, so let a V3-capable app-server select its own current
+      # default instead of sending an incompatible model identifier.
+      model=None if version == 'v3' else agent_config.model_id,
       voice=agent_config.voice_name,
       # codex-cli 0.144.0 in the supported local setup accepts v1/v2;
       # installations with the newer v3 schema can opt in explicitly.
-      version=os.environ.get('LEONIDAS_CODEX_REALTIME_VERSION', 'v2'),
+      version=version,
       client_factory=_open_client,
   )

@@ -183,11 +183,16 @@ def public_capabilities() -> dict[str, Any]:
                   {
                       'id': CODEX_REALTIME_MODEL,
                       'label': 'GPT Realtime 1.5',
-                      'version': 'v3',
+                      'version': 'v2',
                       'experimental': True,
                   }
               ],
-              'realtime_versions': ['v3', 'v2'],
+              'realtime_versions': ['v2', 'v1'],
+              'experimental_realtime_versions': ['v3'],
+              'transports': {
+                  'websocket': ['v2', 'v1'],
+                  'webrtc': ['v1'],
+              },
               'requires_local_codex': True,
           },
           {

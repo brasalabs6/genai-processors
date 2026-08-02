@@ -45,10 +45,16 @@ class CapabilitiesTest(unittest.TestCase):
         if item['id'] == capabilities.PIPELINE_CODEX
     )
     self.assertTrue(codex['implemented'])
-    self.assertIn('v3', codex['realtime_versions'])
+    self.assertEqual(codex['realtime_versions'], ['v2', 'v1'])
+    self.assertEqual(codex['experimental_realtime_versions'], ['v3'])
+    self.assertEqual(
+        codex['transports'],
+        {'websocket': ['v2', 'v1'], 'webrtc': ['v1']},
+    )
     self.assertEqual(
         codex['models'][0]['id'], capabilities.CODEX_REALTIME_MODEL
     )
+    self.assertEqual(codex['models'][0]['version'], 'v2')
     self.assertIn(codex['voices'][0], capabilities.CODEX_WEBRTC_V1_VOICES)
 
   def test_codex_text_is_an_explicit_non_realtime_fallback(self):

@@ -735,3 +735,45 @@ smoke textual verdes; smoke realtime verde ou evidência conclusiva de que a
 única falha restante é autorização upstream da conta, depois de esgotar as
 rotas suportadas sem hacks. Preservar Gemini 2.5/3.1 e a cascata local em todos
 os checkpoints.
+
+### Extensão empírica: áudio Gemini simulando microfone
+
+Criar um corpus privado em `leonidas/.runtime/e2e/codex_audio/` usando Gemini
+TTS, com pelo menos duas falas PT-BR e manifesto técnico redigido. Implementar
+runner opt-in que converta as fixtures para PCM16 mono, envie chunks com pacing
+de microfone em múltiplos turnos e verifique lifecycle, transcrição, saída de
+áudio/resposta, stop e cleanup. Exercitar WebSocket/`appendAudio` quando houver
+API key compatível e WebRTC com track alimentada pelo corpus quando o login
+ChatGPT tiver entitlement. Não versionar áudio, transcript, resposta, token ou
+payload; bloqueios upstream devem ser reportados como evidência real, não
+mascarados por mocks.
+
+### Evidência da onda de compatibilidade Codex
+
+- corpus Gemini privado: dois WAVs, 9,36 s totais, manifesto técnico redigido;
+- `listVoices` real no app-server 0.144.0: 9 vozes V1, 10 V2 e defaults
+  consistentes;
+- áudio WebSocket V1/V2: bloqueado antes de mídia por `api_key_required`;
+- áudio WebSocket V3: bloqueado pelo schema 0.144.0 como
+  `protocol_version_unsupported`;
+- WebRTC V1 em Chromium com WAV como microfone: oferta SDP real chegou ao
+  upstream e falhou antes da mídia com `voice_entitlement_denied`;
+- Codex Text com o mesmo `auth.json`: 2 turnos verdes em 12,17 s;
+- regressões: 168 testes Python + 9 subtests, 24 Vitest, typecheck e build;
+- baseline preservado: cascata CUDA 3 turnos verde em 46,45 s, sem workers
+  órfãos; Gemini Live 2.5/3.1 verde em 43,97 s.
+
+O adapter agora envia `appendText.role`, valida vozes descobertas por versão,
+trata `error`/`closed` como terminal, rejeita versões desconhecidas e não envia
+o modelo V1/V2 ao protocolo V3. O código local não possui outra rota
+autorizada para atravessar os gates upstream atuais sem API key ou entitlement;
+não converter tokens nem chamar endpoints privados fora do app-server.
+
+### Gate adicional: Parakeet + XTTS + Pyannote simultâneos
+
+Validar empiricamente os três workers no mesmo host/GPU antes de afirmar que a
+diarização cabe na RTX 2060 de 6 GiB. Pico recente medido: Parakeet 1.358 MiB e
+XTTS 2.034 MiB, total 3.392 MiB e margem nominal próxima de 2,5 GiB. A margem
+não inclui pesos Pyannote, buffers temporários, contexto CUDA ou fragmentação.
+Critério: load/warm-up conjunto, diarização real, três turnos completos, sem
+OOM e com cleanup. Sem acesso ao modelo gated, classificar como não provado.

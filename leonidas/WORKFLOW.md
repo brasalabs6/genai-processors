@@ -90,8 +90,10 @@ sequenceDiagram
   Leonidas->>Codex: spawn stdio + CODEX_HOME
   Leonidas->>Codex: initialize(experimentalApi=true)
   Leonidas->>Codex: initialized
+  Leonidas->>Codex: thread/realtime/listVoices
+  Codex-->>Leonidas: vozes V1/V2 + defaults
   Leonidas->>Codex: thread/start(ephemeral, safe policy)
-  Leonidas->>Codex: thread/realtime/start(v2 default; v3 opt-in)
+  Leonidas->>Codex: thread/realtime/start(versão/transporte validados)
   Codex->>Model: sessão autenticada server-side
   Model-->>Codex: started/transcript/audio/error/closed
   Codex-->>Leonidas: JSONL multiplexado
@@ -119,9 +121,26 @@ stateDiagram-v2
   error --> auth_ready: nova tentativa explícita
 ```
 
-Tokens de login ChatGPT não satisfazem o requisito de API key do realtime
-observado no app-server atual; o smoke real deve permanecer bloqueado e
-explícito até uma credencial compatível existir.
+Tokens de login ChatGPT não satisfazem o requisito de API key do transporte
+WebSocket observado no app-server atual. Para esse login, WebRTC é a rota
+correta, mas ainda depende do entitlement de voz da conta. `error` e `closed`
+são transições terminais tanto antes quanto depois de `started`.
+
+```mermaid
+sequenceDiagram
+  participant Corpus as WAV Gemini privado
+  participant Runner
+  participant Codex
+  Corpus->>Runner: validar PCM16 mono 24 kHz + hash
+  Runner->>Runner: converter 16 kHz e dividir em 100 ms
+  loop dois ou mais turnos
+    Runner->>Codex: appendAudio(chunks com pacing)
+    Runner->>Codex: silêncio de endpointing
+    Codex-->>Runner: transcript/audio ou erro terminal
+  end
+  Runner->>Codex: realtime/stop
+  Runner->>Runner: cleanup e relatório redigido
+```
 
 Para instalações com esse login, a UI pode selecionar explicitamente
 `codex_text`. Essa composição mantém um thread efêmero e executa turnos

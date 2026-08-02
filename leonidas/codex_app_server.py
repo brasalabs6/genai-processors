@@ -181,10 +181,30 @@ class CodexRealtimeClient:
     self._audio_mimetype = audio_mimetype
     self._thread_id: str | None = None
     self._started = False
+    self._voices: dict[str, tuple[str, ...] | str] | None = None
 
   async def request(self, method: str, params: dict[str, Any]) -> Any:
     """Expose a constrained server-side request seam for diagnostics/tests."""
     return await self._rpc.request(method, params)
+
+  async def next_notification(self) -> dict[str, Any]:
+    """Return the next app-server event without exposing the RPC transport."""
+    return await self._rpc.next_notification()
+
+  def terminal_notification_error(
+      self, notification: dict[str, Any]
+  ) -> CodexProtocolError | None:
+    """Translate terminal realtime notifications and update lifecycle state."""
+    method = notification.get('method')
+    params = notification.get('params') or {}
+    if method == 'thread/realtime/error':
+      self._started = False
+      return CodexProtocolError(str(params.get('message', 'realtime error')))
+    if method == 'thread/realtime/closed':
+      self._started = False
+      reason = str(params.get('reason') or 'transport closed')
+      return CodexProtocolError(f'Codex realtime closed: {reason}')
+    return None
 
   async def initialize(self, *, client_name: str, client_version: str) -> Any:
     result = await self._rpc.request(
@@ -201,6 +221,35 @@ class CodexRealtimeClient:
     await self._rpc.notify('initialized')
     return result
 
+  async def list_voices(self) -> dict[str, tuple[str, ...] | str]:
+    """Read the app-server's versioned realtime voice contract."""
+    result = await self._rpc.request('thread/realtime/listVoices', {})
+    voices = result.get('voices') if isinstance(result, dict) else None
+    if not isinstance(voices, dict):
+      raise CodexProtocolError('listVoices returned no voices contract')
+    v1 = voices.get('v1')
+    v2 = voices.get('v2')
+    default_v1 = voices.get('defaultV1')
+    default_v2 = voices.get('defaultV2')
+    if not (
+        isinstance(v1, list)
+        and all(isinstance(value, str) and value for value in v1)
+        and isinstance(v2, list)
+        and all(isinstance(value, str) and value for value in v2)
+        and isinstance(default_v1, str)
+        and default_v1 in v1
+        and isinstance(default_v2, str)
+        and default_v2 in v2
+    ):
+      raise CodexProtocolError('listVoices returned an invalid voices contract')
+    self._voices = {
+        'v1': tuple(v1),
+        'v2': tuple(v2),
+        'default_v1': default_v1,
+        'default_v2': default_v2,
+    }
+    return dict(self._voices)
+
   async def start_realtime(
       self,
       *,
@@ -210,11 +259,20 @@ class CodexRealtimeClient:
       version: str = 'v3',
       sdp_offer: str | None = None,
   ) -> str | None:
+    if version not in {'v1', 'v2', 'v3'}:
+      raise ValueError('Codex realtime version must be v1, v2, or v3')
     if sdp_offer is not None:
       if not sdp_offer.strip():
         raise ValueError('sdp_offer must not be empty')
       if version not in {'v1', 'v3'}:
         raise ValueError('Codex WebRTC realtime requires version v1 or v3')
+    if voice is not None and self._voices is not None:
+      voice_version = 'v1' if version in {'v1', 'v3'} else 'v2'
+      supported = self._voices[voice_version]
+      if not isinstance(supported, tuple) or voice not in supported:
+        raise CodexProtocolError(
+            f'Codex realtime voice {voice!r} is not supported by {version}'
+        )
     result = await self._rpc.request(
         'thread/start',
         {
@@ -255,17 +313,17 @@ class CodexRealtimeClient:
       if notification.get('method') == 'thread/realtime/started':
         self._started = True
         return remote_sdp
-      if notification.get('method') == 'thread/realtime/error':
-        raise CodexProtocolError(
-            str(notification.get('params', {}).get('message', 'realtime error'))
-        )
+      if terminal_error := self.terminal_notification_error(notification):
+        raise terminal_error
 
-  async def append_text(self, text: str) -> None:
+  async def append_text(self, text: str, *, role: str = 'user') -> None:
     if not self._thread_id or not self._started:
       raise CodexProtocolError('Codex realtime session is not started')
+    if role not in {'user', 'developer', 'assistant'}:
+      raise ValueError('role must be user, developer, or assistant')
     await self._rpc.request(
         'thread/realtime/appendText',
-        {'threadId': self._thread_id, 'text': text},
+        {'threadId': self._thread_id, 'text': text, 'role': role},
     )
 
   async def append_audio(
@@ -513,6 +571,10 @@ class CodexRealtimeProcessor(processor.Processor):
           input_task = asyncio.create_task(anext(input_iterator))
         if event_task in done:
           message = event_task.result()
+          if terminal_error := self._client.terminal_notification_error(
+              message
+          ):
+            raise terminal_error
           for output in notification_parts(
               message, include_audio=sdp_offer is None
           ):

@@ -928,3 +928,60 @@ do app-server; atualizar SPECS/WORKFLOW/UI_SPECS; executar suites offline;
 repetir `codex_text` e WebRTC reais; registrar cada rota esgotada sem expor
 credenciais. Gemini e cascata local são regressões obrigatórias antes do
 checkpoint.
+
+### Requisito empírico: corpus de microfone e múltiplos turnos Codex
+
+Gerar com a API Gemini um pequeno corpus privado de falas PT-BR e armazená-lo
+somente em `leonidas/.runtime/e2e/codex_audio/`, já ignorado pelo Git. Cada
+fixture deve possuir manifesto redigido com duração, sample rate, canais,
+sample width e hash, sem persistir transcrição privada em relatórios. O runner
+deve validar WAV/PCM, converter para PCM16 mono na taxa exigida pelo protocolo
+e enviar chunks com pacing equivalente a microfone em pelo menos dois turnos.
+
+O teste deve cobrir separadamente:
+
+- WebSocket app-server com `appendAudio`, quando o `auth.json` fornecer API key
+  compatível;
+- WebRTC com track de áudio real/fake alimentada pelo corpus, quando a conta
+  ChatGPT do `auth.json` possuir entitlement de voz;
+- lifecycle por turno, transcrição, resposta/áudio, stop e ausência de tasks ou
+  processos órfãos;
+- falha explícita e redigida quando a credencial/entitlement não autorizar a
+  rota, sem substituir o teste real por mock.
+
+Assets gerados, áudio capturado e respostas permanecem fora do Git. Testes de
+contrato usam fixtures sintéticas pequenas; o corpus Gemini é exclusivamente
+um smoke real opt-in.
+
+Evidência desta onda: o Gemini TTS gerou dois WAVs privados válidos, total de
+9,36 s, em `.runtime/e2e/codex_audio`; o manifesto contém somente propriedades
+técnicas e SHA-256. O binário 0.144.0 respondeu ao `listVoices` real com nove
+vozes V1, dez V2 e defaults válidos. Os runners de áudio V1/V2 WebSocket
+falharam antes do primeiro chunk com `api_key_required`; V3 falhou com
+`protocol_version_unsupported`. Chromium real usou o primeiro WAV como
+microfone fake, criou `RTCPeerConnection`/SDP V1 e alcançou o backend, que
+respondeu `voice_entitlement_denied` antes do transporte de mídia
+(`audioIn=0`, `audioOut=0`). Portanto o corpus e os dois caminhos de envio
+estão implementados, mas múltiplos turnos pagos não podem atravessar a criação
+da sessão com esta credencial/conta.
+
+Compatibilidade corrigida tests-first: `appendText` envia `role=user`, versões
+desconhecidas são rejeitadas antes de criar thread, vozes são descobertas e
+validadas por versão, `closed`/`error` encerram startup e runtime, V3 não envia
+o modelo V1/V2 incompatível e a capability separa versões confirmadas de V3
+experimental. Validação: 168 testes Python passaram, 2 foram ignorados e 9
+subtests passaram; WebUI teve 24 testes, typecheck e build verdes. O smoke
+Codex Text passou em dois turnos (12,17 s), a cascata CUDA passou em três
+turnos (46,45 s) com cleanup sem workers órfãos, e Gemini 2.5/3.1 passou no
+smoke real conjunto (43,97 s).
+
+### Gate de coexistência CUDA com diarização
+
+Antes de habilitar diarização por padrão, medir Parakeet, XTTS e Pyannote
+carregados simultaneamente na RTX 2060 de 6 GiB e medir também RSS/RAM do host.
+O último smoke observou aproximadamente 1.358 MiB para Parakeet e 2.034 MiB
+para XTTS, totalizando 3.392 MiB de VRAM. Isso deixa margem nominal de cerca de
+2,5 GiB, mas ainda não prova que Pyannote, kernels temporários e fragmentação
+caibam juntos. O aceite exige load/warm-up simultâneo, uma diarização real e
+três turnos STT/LLM/TTS sem OOM, com cleanup. Se não couber, a política deve
+usar scheduling/offload explícito; não reduzir guards nem mascarar OOM.

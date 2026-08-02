@@ -122,7 +122,9 @@ mudança de configuração que exige Apply/Start e nunca altera Gemini.
 
 Quando `codex_realtime` estiver selecionado, a UI mostra o badge “Codex
 experimental”, o modelo `gpt-realtime-1.5`, a versão realtime negociada e as
-vozes anunciadas pelo capability document. No transporte WebRTC v1, deve
+vozes anunciadas pelo capability document. Versões confirmadas e experimentais
+devem ser apresentadas separadamente; V3 não pode aparecer como operacional no
+runtime 0.144.0. No transporte WebRTC v1, deve
 priorizar as vozes compatíveis (`juniper`, `maple`, `spruce`, `ember`, `vale`,
 `breeze`, `arbor`, `sol`, `cove`) e enviar a oferta SDP somente pelo WebSocket
 de sinalização local; o microfone não deve ser duplicado como PCM. Erros de
@@ -135,6 +137,11 @@ voz nem controles de áudio e deixa explícito que é o fallback textual do
 app-server. A UI nunca troca automaticamente entre `codex_realtime` e
 `codex_text`; a escolha é do usuário e o erro de autenticação do realtime deve
 ser acionável.
+
+`thread/realtime/error` ou `closed` deve encerrar imediatamente os estados
+`conectando`, `ouvindo` ou `falando`, parar a track, limpar o SDP pendente e
+mostrar o diagnóstico sanitizado. A UI não tenta reconectar uma sessão de voz
+negada por entitlement sem nova ação do usuário.
 
 O erro de runtime XTTS deve distinguir ambiente ausente, referência de voz
 ausente e termos CPML ainda não aceitos. A UI nunca oferece um botão que aceite

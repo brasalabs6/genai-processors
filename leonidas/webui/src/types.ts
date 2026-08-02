@@ -99,6 +99,11 @@ export interface CodexPipelineCapability {
   voices: string[];
   models: ModelCapability[];
   realtime_versions: string[];
+  experimental_realtime_versions: string[];
+  transports: {
+    websocket: string[];
+    webrtc: string[];
+  };
   requires_local_codex: boolean;
 }
 
