@@ -40,6 +40,12 @@ diretos, 174 Leonidas/E2E (2 skips, 9 subtests), 24 Vitest, typecheck/build e
 Gemini Live 2.5/3.1 real em 39,97 s. A cascata CUDA continua bloqueada pelo
 guard de RAM do host, apesar de 5.914 MiB de VRAM livre.
 
+Validação ampla: 744 testes do repositório passaram, com 2 skips e 27 subtests
+em 174,64 s. Standalone 8081/8876 e Chromium desktop/mobile passaram; viewport
+500 px teve `scrollWidth=485`, três espaços acessíveis e API/WS online. Restam
+como gates externos imediatos o acesso ao modelo gated Pyannote e memória
+disponível/swap para o load simultâneo Parakeet + XTTS.
+
 ## Requisito adicional: interrupção tardia de áudio local 2026-08-01
 
 O usuário informou que a pipeline local funciona parcialmente e depois para

@@ -50,6 +50,14 @@ Vitest, typecheck e build. Gemini 2.5/3.1 passou no smoke pago em 39,97 s. A
 cascata CUDA foi tentada duas vezes e o guard XTTS bloqueou com 2.179/3.558 MiB
 de RAM disponível; a GPU estava saudável com 5.914 MiB livres.
 
+Validação ampliada do checkpoint: a suíte completa do repositório passou com
+744 testes, 2 skips e 27 subtests em 174,64 s. O standalone temporário em
+8081/8876 respondeu REST e WebSocket; Chromium gerou capturas em 1440×1000 e
+390×844. Em viewport headless de 500 px, `scrollWidth=485`, sem overflow, e os
+três espaços Operação/Configuração/Diagnóstico estavam presentes com API/WS
+online. A suíte global emitiu warnings históricos de depreciação e um warning
+de coroutine em `genai_processors/core/realtime.py`; nenhum teste falhou.
+
 Primeira revalidação E2E desta fase: CUDA estava saudável e a GPU possuía
 5.914 MiB livres, mas o guard XTTS interrompeu corretamente o load porque o
 host tinha somente 2.179 MiB de RAM disponível, abaixo dos 5.120 MiB exigidos.
