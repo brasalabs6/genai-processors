@@ -781,6 +781,18 @@ integração continua 0.144.0; portanto o smoke usa V1, voz retornada por
 Codex como substituto do produto: ele é fonte de contrato; a validação real é
 feita exclusivamente pelo adapter Leonidas contra a API do app-server.
 
+Correção da auditoria de escopo: JSONL com `codex app-server` não substitui o
+transporte direto solicitado pelo usuário. Implementar no Leonidas um cliente
+server-side para o backend HTTP/WebRTC confirmado em `~/github/codex`, usando
+somente as credenciais de `auth.json`, com autenticação, account header,
+multipart/SDP, sideband, timeout, cancelamento, refresh/expiração, sanitização e
+testes de contrato próprios. O checkout Codex permanece read-only e nunca deve
+ser compilado/executado para validar Leonidas. Preservar o adapter app-server
+como capability separada até o transporte direto passar smoke real. O release
+oficial isolado 0.146.0 confirmou texto em dois turnos; V1 continuou bloqueado
+por entitlement e V3 repetiu timeout, portanto atualização de binário não
+resolveu a autorização da conta.
+
 ### Gate adicional: Parakeet + XTTS + Pyannote simultâneos
 
 Validar empiricamente os três workers no mesmo host/GPU antes de afirmar que a

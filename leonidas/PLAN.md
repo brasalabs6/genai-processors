@@ -978,6 +978,28 @@ permanece `codex-cli 0.144.0`. Assim, modelo, voz descoberta, versão instalada,
 sinalização e autenticação foram confrontados; o gate restante continua sendo
 autorização upstream de voz, não um fallback ou bypass a implementar.
 
+### Correção de escopo: transporte direto do backend Codex — 2026-08-01
+
+A auditoria do objetivo identificou que o adapter atual usa JSONL com o
+processo `codex app-server`. Isso valida os contratos do app-server, mas não
+cumpre sozinho a instrução de integrar a API do backend diretamente no código
+Leonidas e usar `~/github/codex` somente como fonte de protocolo. Adicionar um
+transporte HTTP/WebRTC server-side próprio, atrás de uma capability explícita,
+que carregue `access_token` e `account_id` de `auth.json`, reproduza apenas os
+headers, query, multipart/JSON e lifecycle confirmados pelo código oficial e
+nunca envie credenciais à WebUI. Manter o transporte app-server como opção de
+compatibilidade até o direto possuir testes de contrato e smoke real.
+
+Esta onda deve começar pela extração integral dos contratos de autenticação,
+URL, headers, criação da chamada, resposta SDP, sideband, refresh/expiração e
+erros. Fixtures usam tokens sintéticos; o smoke real relata apenas código de
+resultado e latência. Não usar endpoints descobertos por tentativa cega, não
+persistir SDP/token e não declarar voz funcional enquanto a conta continuar
+respondendo `voice_entitlement_denied`. Evidência atual: no release oficial
+0.146.0 isolado, Codex Text passou em dois turnos, WebRTC V1 repetiu o 403 de
+entitlement e WebRTC V3 repetiu timeout de sinalização; o `auth.json` possui
+login ChatGPT/access token/account id e não possui `OPENAI_API_KEY`.
+
 Compatibilidade corrigida tests-first: `appendText` envia `role=user`, versões
 desconhecidas são rejeitadas antes de criar thread, vozes são descobertas e
 validadas por versão, `closed`/`error` encerram startup e runtime, V3 não envia
