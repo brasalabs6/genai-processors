@@ -965,6 +965,19 @@ respondeu `voice_entitlement_denied` antes do transporte de mídia
 estão implementados, mas múltiplos turnos pagos não podem atravessar a criação
 da sessão com esta credencial/conta.
 
+Automação do smoke WebRTC — 2026-08-01: o procedimento manual foi convertido
+em `python -m leonidas.e2e.codex_webrtc_smoke`. O runner combina os dois WAVs
+Gemini com silêncio de endpointing, inicia Leonidas e Chromium headless em
+portas/perfis temporários, aguarda os handshakes REST e WebSocket da WebUI,
+aciona a sessão e classifica somente resultados redigidos. A execução real com
+o `auth.json` atual comprovou novamente `voice_entitlement_denied`, agora por
+um caminho reproduzível e sem persistir conversa, SDP ou erro upstream. O
+checkout Codex em `91f3c3824` continua confirmando `gpt-realtime-1.5`, WebRTC
+AVAS e os headers ChatGPT encaminhados pelo app-server; o binário executado
+permanece `codex-cli 0.144.0`. Assim, modelo, voz descoberta, versão instalada,
+sinalização e autenticação foram confrontados; o gate restante continua sendo
+autorização upstream de voz, não um fallback ou bypass a implementar.
+
 Compatibilidade corrigida tests-first: `appendText` envia `role=user`, versões
 desconhecidas são rejeitadas antes de criar thread, vozes são descobertas e
 validadas por versão, `closed`/`error` encerram startup e runtime, V3 não envia

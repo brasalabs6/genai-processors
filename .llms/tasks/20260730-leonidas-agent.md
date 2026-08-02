@@ -758,6 +758,9 @@ mascarados por mocks.
   `protocol_version_unsupported`;
 - WebRTC V1 em Chromium com WAV como microfone: oferta SDP real chegou ao
   upstream e falhou antes da mídia com `voice_entitlement_denied`;
+- smoke WebRTC automatizado: os dois WAVs são combinados com silêncio de
+  endpointing, Chromium aguarda REST/WebSocket prontos e reproduz o mesmo
+  `voice_entitlement_denied` sem registrar SDP, resposta ou credencial;
 - Codex Text com o mesmo `auth.json`: 2 turnos verdes em 12,17 s;
 - regressões: 168 testes Python + 9 subtests, 24 Vitest, typecheck e build;
 - baseline preservado: cascata CUDA 3 turnos verde em 46,45 s, sem workers
@@ -768,6 +771,15 @@ trata `error`/`closed` como terminal, rejeita versões desconhecidas e não envi
 o modelo V1/V2 ao protocolo V3. O código local não possui outra rota
 autorizada para atravessar os gates upstream atuais sem API key ou entitlement;
 não converter tokens nem chamar endpoints privados fora do app-server.
+
+Revalidação de fonte em 2026-08-01: o checkout
+`/home/guilherme/github/codex` está em `91f3c3824` e confirma no contrato/teste
+do app-server o modelo `gpt-realtime-1.5`, POST WebRTC AVAS, headers derivados
+do login ChatGPT e resposta `thread/realtime/sdp`. O binário disponível para a
+integração continua 0.144.0; portanto o smoke usa V1, voz retornada por
+`listVoices` e o app-server instalado. Não compilar nem executar o checkout
+Codex como substituto do produto: ele é fonte de contrato; a validação real é
+feita exclusivamente pelo adapter Leonidas contra a API do app-server.
 
 ### Gate adicional: Parakeet + XTTS + Pyannote simultâneos
 
