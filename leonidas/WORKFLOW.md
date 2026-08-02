@@ -252,6 +252,13 @@ sequenceDiagram
   Parent-->>Browser: generation_complete
 ```
 
+Quando a diarização é habilitada, o resource supervisor prepara
+`Parakeet → Pyannote → XTTS`. Se Pyannote falhar por runtime, peso ou acesso
+gated, o XTTS não é carregado e todos os candidatos são encerrados. Depois dos
+três estados `ready`, o smoke de coexistência mantém os workers residentes,
+diariza o corpus humano, executa três turnos e coleta RAM/swap/VRAM antes do
+cleanup obrigatório.
+
 Um `start_of_speech` só existe após confirmação híbrida. Isso preserva
 barge-in de fala curta, mas impede que ruído de microfone cancele Groq/XTTS.
 Utterances abaixo dos mínimos de voz são descartadas antes do Parakeet.

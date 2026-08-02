@@ -94,6 +94,10 @@ LEONIDAS_RUN_DIARIZATION_E2E=1 \
   LEONIDAS_DIARIZATION_PYTHON=.venv-diarization/bin/python \
   LEONIDAS_DIARIZATION_DEVICE=cuda \
   .venv/bin/python -m leonidas.e2e.diarization_smoke
+
+# Gate final: três workers residentes, diarização real e três turnos locais.
+LEONIDAS_DIARIZATION_PYTHON=.venv-diarization/bin/python \
+  .venv/bin/python -m leonidas.e2e.coexistence_smoke --device cuda
 ```
 
 O WAV e o manifesto técnico ficam em
@@ -106,3 +110,9 @@ Sem runtime, pesos ou acesso ao modelo, a API expõe `diarization` como
 `unavailable` e a cascata Parakeet → Groq → XTTS continua funcionando com a
 diarização desativada. A UI exibe o comando de instalação e não habilita o
 checkbox automaticamente.
+
+O smoke de coexistência exige que STT, diarização e TTS alcancem `ready`,
+identifica pelo menos dois speakers no corpus humano e mantém os três workers
+residentes durante três turnos Parakeet → Groq → XTTS. Ele registra somente
+RAM/swap/VRAM técnicas e sempre encerra os workers. Falha de acesso ao modelo
+gated, memória insuficiente ou OOM reprova o gate; não há fallback sintético.

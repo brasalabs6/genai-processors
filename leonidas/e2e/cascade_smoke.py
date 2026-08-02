@@ -61,8 +61,32 @@ async def run(
   synthesizer = pool.synthesizer(capabilities.XTTS_V2_MODEL, device)
   started = time.perf_counter()
   try:
-    for turn in range(1, turns + 1):
-      reasoner = groq_reasoning.GroqReasoner(api_key=api_key)
+    await run_prepared(pool, pcm, device, turns)
+  finally:
+    await pool.close()
+  print(
+      'cascade_ok=true '
+      f'device={synthesizer.device} '
+      f'turns={turns} '
+      f'elapsed_seconds={time.perf_counter() - started:.2f}'
+  )
+
+
+async def run_prepared(
+    pool: resources.CascadeResources,
+    pcm: bytes,
+    device: str,
+    turns: int,
+    diarizer=None,
+) -> None:
+  """Runs validated turns while caller-owned model workers stay resident."""
+  transcriber = pool.transcriber(capabilities.PARAKEET_V3_MODEL, device)
+  synthesizer = pool.synthesizer(capabilities.XTTS_V2_MODEL, device)
+  for turn in range(1, turns + 1):
+    reasoner = groq_reasoning.GroqReasoner(
+        api_key=os.environ.get('GROQ_API_KEY', '')
+    )
+    try:
       cascade = pipeline.CascadeProcessor(
           transcriber=transcriber,
           reasoner=reasoner,
@@ -71,6 +95,7 @@ async def run(
           model_id=capabilities.GROQ_GPT_OSS_20B,
           reasoning_effort='low',
           voice_id='leonidas',
+          diarizer=diarizer,
       )
 
       async def inputs():
@@ -101,14 +126,8 @@ async def run(
           f'cascade_turn={turn} transcript_chars={len(transcript)} '
           f'response_chars={len(response)} audio_seconds={duration:.2f}'
       )
-  finally:
-    await pool.close()
-  print(
-      'cascade_ok=true '
-      f'device={synthesizer.device} '
-      f'turns={turns} '
-      f'elapsed_seconds={time.perf_counter() - started:.2f}'
-  )
+    finally:
+      await reasoner.close()
 
 
 def main(argv: list[str] | None = None) -> int:

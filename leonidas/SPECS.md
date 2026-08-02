@@ -105,6 +105,13 @@ browser PCM 16 kHz -> WebRTC VAD/endpointing -> Parakeet TDT 0.6B v3
   alinhamento palavra-tempo, resultado vazio, erro ou timeout preservam o texto
   original e incrementam métricas de fallback/erro; identidades nunca são
   inventadas. Gemini Live não usa Pyannote.
+- Com diarização habilitada, o preparo usa a ordem STT → Pyannote → XTTS. Isso
+  garante que acesso/peso inválido do componente opcional falhe antes do load
+  caro do sintetizador; depois de `ready`, os três workers permanecem
+  residentes e a inferência STT/diarização do turno continua concorrente.
+- O gate empírico de coexistência exige dois speakers reais no corpus Gemini,
+  três turnos completos, métricas de RAM/swap/VRAM por fase e zero workers
+  órfãos no cleanup. Smokes individuais não comprovam coexistência.
 
 ### Lifecycle e readiness dos modelos locais
 

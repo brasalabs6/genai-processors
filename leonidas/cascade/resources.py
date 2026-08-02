@@ -315,12 +315,6 @@ class CascadeResources:
           transcriber,
           getattr(transcriber, 'device', device),
       )
-      await self._load_component(
-          'tts',
-          tts_model_id,
-          synthesizer,
-          getattr(synthesizer, 'device', device),
-      )
       if diarizer is not None:
         await self._load_component(
             'diarization',
@@ -328,6 +322,12 @@ class CascadeResources:
             diarizer,
             getattr(diarizer, 'device', device),
         )
+      await self._load_component(
+          'tts',
+          tts_model_id,
+          synthesizer,
+          getattr(synthesizer, 'device', device),
+      )
     except BaseException:
       await self._discard_candidate(
           stt_key, tts_key, transcriber, synthesizer, diarizer

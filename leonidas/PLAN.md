@@ -1083,3 +1083,44 @@ para XTTS, totalizando 3.392 MiB de VRAM. Isso deixa margem nominal de cerca de
 caibam juntos. O aceite exige load/warm-up simultâneo, uma diarização real e
 três turnos STT/LLM/TTS sem OOM, com cleanup. Se não couber, a política deve
 usar scheduling/offload explícito; não reduzir guards nem mascarar OOM.
+
+### Onda ativa: runner empírico de coexistência — 2026-08-01
+
+O runtime isolado continua saudável (`torch 2.6.0+cu124`, Pyannote 3.4.0 e
+CUDA disponível), mas `hf auth list` confirmou que não existe token local. O
+exit code de `hf auth whoami` sem token não deve ser usado como prova de
+autenticação. O worker alcança `loading_weights` e falha de forma redigida
+porque `pyannote/speaker-diarization-community-1` é gated. O host também está
+sem swap e tinha 4,5 GiB de RAM disponível nesta retomada, abaixo do guard
+XTTS de 5 GiB, embora a RTX 2060 estivesse saudável com 5.914 MiB livres.
+
+Criar um runner opt-in único que mantenha Parakeet, XTTS e Pyannote residentes,
+registre memória do sistema e VRAM por fase, execute a diarização humana real e
+três turnos completos da cascata, e encerre todos os workers mesmo em falha ou
+cancelamento. O resultado só pode ser `PASS` depois de provar os três modelos
+simultâneos; ausência de token, aceite, RAM ou swap deve ser classificada como
+gate ambiental explícito. Não iniciar Groq nem XTTS quando o load Pyannote já
+falhar, e não reduzir o guard de memória para forçar a prova.
+
+Checkpoint de implementação: o supervisor passou a preparar STT → Pyannote →
+XTTS quando a opção está ativa, com regressão garantindo que uma falha gated
+não inicia o load TTS e fecha todos os candidatos. O runner
+`leonidas.e2e.coexistence_smoke` mede RAM/swap/VRAM, exige os três componentes
+`ready`, dois speakers e três turnos usando o mesmo pool, fechando recursos em
+`finally`. Foram aprovados 40 testes direcionados (1 live skip), Pyink, Flake8
+E9/F63/F7/F82 e diff check. Na execução real sem token, ele falhou em
+`DiarizationWorkerError`, não carregou XTTS e deixou zero workers órfãos; essa
+é evidência de cleanup/fail-fast, não de coexistência aprovada.
+
+Regressão ampliada deste checkpoint: 178 testes Leonidas/E2E passaram, 2 foram
+ignorados e 9 subtests passaram; a WebUI manteve 24 Vitest, typecheck e build
+verdes. Gemini Live 2.5/3.1 passou novamente no smoke real conjunto em 35,70 s.
+A cascata CUDA sem diarização foi tentada em três turnos, mas depois do load
+Parakeet havia 2.513 MiB de RAM disponível para o mínimo XTTS de 5.120 MiB; o
+guard abortou e o cleanup deixou zero workers. O código não deve tratar esse
+gate ambiental como regressão dos modelos locais já comprovados anteriormente.
+
+A suíte completa do repositório passou com 749 testes, 2 skips e 27 subtests
+em 163,62 s. Permanecem os warnings históricos de depreciação e o warning de
+coroutine do teste direto de `core.realtime`, já isolado em validações
+anteriores e não introduzido por esta onda.

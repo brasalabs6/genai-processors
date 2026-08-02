@@ -847,3 +847,43 @@ XTTS 2.034 MiB, total 3.392 MiB e margem nominal próxima de 2,5 GiB. A margem
 não inclui pesos Pyannote, buffers temporários, contexto CUDA ou fragmentação.
 Critério: load/warm-up conjunto, diarização real, três turnos completos, sem
 OOM e com cleanup. Sem acesso ao modelo gated, classificar como não provado.
+
+### Execução ativa do gate de coexistência — 2026-08-01
+
+A retomada confirmou CUDA funcional tanto no ambiente principal quanto em
+`.venv-diarization`, com 5.914 MiB de VRAM livre. O Hugging Face CLI não possui
+token armazenado (`hf auth list`), apesar de `hf auth whoami` terminar com
+status zero; portanto somente a listagem/token efetivo e o load do pipeline
+podem comprovar autenticação. O worker Pyannote chegou a `loading_weights` e
+retornou o erro redigido esperado para modelo gated. O host tinha 4,5 GiB de
+RAM disponível e nenhum swap, insuficiente para atravessar o guard XTTS.
+
+Implementar tests-first um runner opt-in de coexistência que: carrega e aquece
+Pyannote, mantém os três workers residentes; mede RAM, swap e VRAM antes/depois
+de cada fase; diariza o corpus Gemini humano; executa três turnos reais
+Parakeet → Groq → XTTS; valida segmentos, PCM e cleanup; e retorna falha
+acionável quando token/aceite, memória ou modelo não estiverem disponíveis.
+Esse runner não pode converter um smoke individual em evidência de
+coexistência e não deve iniciar componentes caros depois de um gate anterior
+já ter falhado.
+
+Implementação concluída para a infraestrutura do gate: o resource supervisor
+carrega STT → Pyannote → XTTS quando a diarização está ativa; falha Pyannote
+impede o load TTS e fecha todos os candidatos. O novo
+`leonidas.e2e.coexistence_smoke` exige três componentes `ready`, dois speakers
+reais, três turnos e registra RAM/swap/VRAM por fase com cleanup em `finally`.
+Validação direcionada: 40 testes passaram, 1 live foi ignorado, com Pyink,
+Flake8 crítico e diff check verdes. O smoke real sem token falhou de forma
+acionável antes do XTTS e deixou zero workers; o PASS simultâneo continua
+dependente de token/aceite Hugging Face e RAM suficiente.
+
+Regressão da onda: 178 testes Leonidas/E2E, 2 skips e 9 subtests passaram;
+WebUI teve 24 testes, typecheck e build verdes. Gemini Live 2.5/3.1 passou em
+35,70 s. A tentativa de três turnos locais sem diarização chegou ao load XTTS,
+mas o guard encontrou 2.513 MiB disponíveis para 5.120 MiB requeridos depois
+do Parakeet; abortou sem OOM e sem workers órfãos. Liberar RAM ou prover swap
+continua necessário antes dos smokes locais completos e simultâneos.
+
+Suíte global: 749 testes, 2 skips e 27 subtests passaram em 163,62 s. Os
+warnings históricos de depreciação e de teardown do teste direto de
+`core.realtime` continuam sem falha e não foram alterados nesta onda.

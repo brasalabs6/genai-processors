@@ -621,15 +621,63 @@ class CascadeResourcesTest(unittest.IsolatedAsyncioTestCase):
         [
             'stt:start',
             'stt:ready',
-            'tts:start',
-            'tts:ready',
             'diarization:start',
             'diarization:ready',
+            'tts:start',
+            'tts:ready',
         ],
     )
     self.assertEqual(
         [item['state'] for item in snapshot['components']],
         ['ready', 'ready', 'ready'],
+    )
+    await pool.close()
+
+  async def test_failed_diarizer_prevents_tts_load_and_closes_candidates(self):
+    events = []
+
+    class Resource:
+
+      def __init__(self, name, *, fails=False):
+        self.name = name
+        self.fails = fails
+        self.device = 'cuda'
+
+      async def load(self, progress=None):
+        del progress
+        events.append(f'{self.name}:load')
+        if self.fails:
+          raise RuntimeError('gated model')
+        return {'device': self.device}
+
+      async def close(self):
+        events.append(f'{self.name}:close')
+
+    pool = resources.CascadeResources(
+        voices={},
+        device_resolver=lambda _requested: 'cuda',
+        transcriber_factory=lambda **_kwargs: Resource('stt'),
+        synthesizer_factory=lambda **_kwargs: Resource('tts'),
+        diarizer_factory=lambda **_kwargs: Resource('diarization', fails=True),
+    )
+
+    with self.assertRaisesRegex(RuntimeError, 'gated model'):
+      await pool.ensure_ready(
+          'stt-model',
+          'tts-model',
+          'cuda',
+          diarization_enabled=True,
+      )
+
+    self.assertEqual(
+        events,
+        [
+            'stt:load',
+            'diarization:load',
+            'stt:close',
+            'tts:close',
+            'diarization:close',
+        ],
     )
     await pool.close()
 
