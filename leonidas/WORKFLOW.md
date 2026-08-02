@@ -1,5 +1,9 @@
 # Leonidas — Workflows e máquinas de estado
 
+> Escopo ativo (2026-08-01): os fluxos Codex abaixo são históricos e não são
+> gates do goal atual. A operação validada deve se concentrar em Gemini Live e
+> na cascata local com diarização opcional.
+
 ## Componentes
 
 ```mermaid
@@ -78,7 +82,7 @@ Invariantes:
 - `stop` pode ser repetido sem erro;
 - nenhuma transição automática sai de `error`.
 
-## Codex app-server e autenticação
+## Codex app-server e autenticação (histórico, fora do escopo ativo)
 
 ```mermaid
 sequenceDiagram

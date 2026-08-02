@@ -1,5 +1,15 @@
 # Implementar e validar o agente Leonidas
 
+## Escopo ativo após decisão do usuário — 2026-08-01
+
+Codex foi explicitamente removido do objetivo. As seções Codex deste arquivo
+permanecem somente como histórico e não são acceptance criteria, blockers ou
+trabalho futuro deste goal. Não modificar a integração Codex existente. A
+conclusão deve provar Gemini Live 2.5/3.1, Parakeet v3 → Groq → XTTS v2,
+diarização Pyannote opcional, coexistência CUDA, cleanup, observabilidade,
+API/WebSocket, WebUI responsiva e E2E com mídia demo. Reconciliar qualquer item
+posterior que ainda cite Codex como gate segundo esta decisão mais recente.
+
 ## Requisito adicional: interrupção tardia de áudio local 2026-08-01
 
 O usuário informou que a pipeline local funciona parcialmente e depois para

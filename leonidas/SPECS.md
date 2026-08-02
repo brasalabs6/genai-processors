@@ -1,5 +1,10 @@
 # Leonidas — Especificação Canônica
 
+> Escopo ativo (2026-08-01): Codex foi retirado do produto-alvo por decisão do
+> usuário. As subseções Codex são documentação histórica da capability já
+> existente e não são requisito de conclusão. Não ampliar esse caminho durante
+> a estabilização de Gemini, cascata local, diarização e UI.
+
 ## 1. Status e precedência
 
 Este documento é a fonte de verdade de produto e arquitetura do Leonidas. Ele
@@ -273,7 +278,7 @@ nunca traceback, prompt ou credencial. Os identificadores de componente são
 `stt`, `tts` e, quando configurado, `diarization`; campos privados do worker,
 como request `id` e `type`, nunca entram nesse contrato.
 
-### Codex Realtime experimental
+### Codex Realtime experimental (histórico, fora do escopo ativo)
 
 `pipeline_id=codex_realtime` inicia `codex app-server --listen stdio://` no
 servidor, executa `initialize` com `capabilities.experimentalApi=true`, envia
@@ -314,7 +319,7 @@ metadados técnicos e hash. WebSocket V2 é testado quando há API key; WebRTC V
 usa Chromium e track de microfone alimentada pelo WAV. Áudio, transcripts,
 respostas e credenciais nunca entram no Git ou nos relatórios.
 
-### Codex Text fallback
+### Codex Text fallback (histórico, fora do escopo ativo)
 
 `pipeline_id=codex_text` é uma capacidade separada para instalações cujo
 `auth.json` contém login ChatGPT, mas não `OPENAI_API_KEY`. Ela usa somente

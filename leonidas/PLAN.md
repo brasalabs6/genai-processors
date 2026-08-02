@@ -2,6 +2,17 @@
 
 Versão: 20260730-0041
 
+## Escopo ativo após decisão do usuário — 2026-08-01
+
+A integração Codex foi retirada do objetivo por decisão explícita do usuário.
+Todas as seções Codex abaixo são registro histórico de trabalho já commitado,
+não constituem gate, requisito pendente ou frente autorizada. Não ampliar,
+corrigir ou validar Codex durante este goal. O escopo ativo passa a ser:
+Gemini Live 2.5/3.1, cascata Parakeet v3 → Groq → XTTS v2, diarização Pyannote,
+coexistência CUDA, observabilidade, API/WebSocket, WebUI desktop/mobile,
+documentação e testes E2E. O código Codex existente permanece isolado e sem
+fallback implícito; sua eventual remoção é uma decisão separada.
+
 ## Incidente de continuidade de áudio local — 2026-08-01
 
 O usuário relatou que a pipeline local reproduz voz inicialmente, mas deixa
@@ -728,11 +739,12 @@ Parakeet, `GROQ_API_KEY`, pesos XTTS, formatos PCM e tempo de cancelamento.
 
 ## Stop condition
 
-Parar somente quando os milestones Gemini e cascata estiverem implementados e
-validados empiricamente, com o milestone Gemini commitado/tagueado, ou quando
-todo trabalho restante depender da mesma credencial/capacidade externa
-indisponível. Nesse caso, manter a suíte e comandos prontos, registrar a
-evidência offline e declarar exatamente o que falta para o smoke real.
+Parar somente quando Gemini, cascata local, diarização, coexistência CUDA,
+API/WebSocket, observabilidade e WebUI estiverem implementados e validados
+empiricamente. Codex não participa da conclusão. Se um recurso externo bloquear
+Pyannote, continuar todos os requisitos independentes; somente considerar
+impasse quando não existir outra frente ativa segura e o critério de bloqueio
+do goal tiver sido satisfeito.
 
 ## Próxima onda de continuidade — diarização configurável e smoke real
 
@@ -821,7 +833,7 @@ dessa instalação.
 
 ### Próxima frente: reescrita da WebUI inspirada em `resources/ui_002` — 2026-08-01
 
-Após fechar e validar os gates atuais de backend, workers, diarização e Codex,
+Após fechar e validar os gates atuais de backend, workers e diarização,
 a WebUI do Leonidas deverá ser reescrita integralmente usando
 `resources/ui_002/` como referência visual e de interação. A implementação
 deve continuar sendo Vite + TypeScript direta, sem trocar o contrato atual da
@@ -831,8 +843,8 @@ os endpoints existentes e atualizar `UI_SPECS.md` com os contratos derivados.
 
 Requisitos obrigatórios dessa frente:
 
-- preservar Gemini 2.5/3.1, cascata local, Codex text/realtime explícito,
-  configuração, lifecycle, logs, métricas, readiness e diarização opcional;
+- preservar Gemini 2.5/3.1, cascata local, configuração, lifecycle, logs,
+  métricas, readiness e diarização opcional;
 - suporte mobile real, incluindo layout responsivo, controles touch,
   captura/preview adaptados, teclado virtual, orientação estreita e estados
   de permissão/erro sem overflow horizontal;

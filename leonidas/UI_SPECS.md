@@ -1,5 +1,9 @@
 # Leonidas — Especificação da Web UI
 
+> Escopo ativo (2026-08-01): controles Codex existentes são legados isolados e
+> não serão ampliados neste goal. A UI deve ser validada para Gemini 2.5/3.1,
+> cascata local, diarização, diagnóstico e layouts desktop/mobile.
+
 ## 1. Princípios
 
 - Standalone, local-first, sem dependência de AI Studio.
