@@ -74,7 +74,7 @@ class CascadeProcessor(processor.Processor):
     speaker_id = next(iter(speakers))
     if speaker_id not in self._speaker_numbers:
       self._speaker_numbers[speaker_id] = len(self._speaker_numbers) + 1
-    return f'Speaker {self._speaker_numbers[speaker_id]} falou: {transcript}'
+    return f'speak{self._speaker_numbers[speaker_id]} falou: {transcript}'
 
   @staticmethod
   def _state(value: str) -> content_api.ProcessorPart:

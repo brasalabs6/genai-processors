@@ -29,7 +29,7 @@ transcrição Parakeet e não bloqueia reasoning/TTS.
 
 Contrato de contexto para reasoning: quando a diarização local produzir um
 speaker válido, o texto enviado ao Groq deve ser prefixado como
-`Speaker 1 falou: <transcrição>` (e correspondentemente `Speaker 2`, etc.). O
+`speak1 falou: <transcrição>` (e correspondentemente `speak2`, etc.). O
 prefixo pertence somente ao prompt interno do reasoning; a transcrição original
 permanece inalterada nos substreams/UI. Segmentos devem ser associados às
 palavras/turnos por timestamps reais; não atribuir uma transcrição inteira a um

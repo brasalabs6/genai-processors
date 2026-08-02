@@ -126,7 +126,7 @@ mudança de configuração que exige Apply/Start e nunca altera Gemini.
 
 O controle de diarização aparece somente para `cascade_local`; Gemini Live não
 carrega Pyannote e não exibe esse controle como aplicável. Prefixos
-`Speaker N falou:` são contexto interno do reasoning e não devem contaminar a
+`speakN falou:` são contexto interno do reasoning e não devem contaminar a
 transcrição mostrada ao usuário.
 
 Quando `codex_realtime` estiver selecionado, a UI mostra o badge “Codex

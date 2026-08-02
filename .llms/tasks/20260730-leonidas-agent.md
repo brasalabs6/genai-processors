@@ -23,7 +23,7 @@ somente 2.179 MiB de RAM; o guard XTTS recusou o load abaixo do mínimo de
 5.120 MiB. Manter o guard e repetir após liberar RAM ou configurar swap.
 
 Ao obter diarização, construir o input interno do Groq como
-`Speaker N falou: <transcrição>` usando associação temporal real entre segmentos
+`speakN falou: <transcrição>` usando associação temporal real entre segmentos
 e texto. Não alterar o texto exibido na UI. Sem speaker confiável, preservar a
 transcrição original e sinalizar fallback; nunca inventar identidade. Cobrir
 speaker único, múltiplos speakers, ausência, atraso e erro com testes.

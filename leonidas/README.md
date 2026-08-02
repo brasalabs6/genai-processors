@@ -100,7 +100,7 @@ O WAV e o manifesto técnico ficam em
 `leonidas/.runtime/e2e/diarization_audio/`, ignorado pelo Git. O smoke exige
 dois speakers reais; erro, timeout ou resultado ambíguo preserva a transcrição
 Parakeet. Quando um speaker é confiável, somente o prompt interno do Groq recebe
-`Speaker N falou:`, sem alterar a conversa exibida.
+`speakN falou:`, sem alterar a conversa exibida.
 
 Sem runtime, pesos ou acesso ao modelo, a API expõe `diarization` como
 `unavailable` e a cascata Parakeet → Groq → XTTS continua funcionando com a

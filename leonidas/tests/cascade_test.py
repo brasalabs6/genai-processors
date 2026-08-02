@@ -1024,7 +1024,7 @@ class CascadeProcessorTest(unittest.IsolatedAsyncioTestCase):
 
     self.assertEqual(
         reasoner.prompt,
-        'Speaker 1 falou: precisamos revisar o projeto',
+        'speak1 falou: precisamos revisar o projeto',
     )
     transcripts = [
         part.text

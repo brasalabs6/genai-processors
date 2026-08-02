@@ -238,7 +238,7 @@ sequenceDiagram
   VAD->>Pyannote: mesmo utterance PCM (somente cascata local)
   Parakeet-->>Browser: final transcription
   alt um speaker confiável
-    Pyannote-->>Groq: Speaker N falou: + transcrição
+    Pyannote-->>Groq: speakN falou: + transcrição
   else indisponível, ambíguo, timeout ou erro
     Parakeet->>Groq: transcrição original
   end
