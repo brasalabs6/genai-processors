@@ -1124,3 +1124,13 @@ A suíte completa do repositório passou com 749 testes, 2 skips e 27 subtests
 em 163,62 s. Permanecem os warnings históricos de depreciação e o warning de
 coroutine do teste direto de `core.realtime`, já isolado em validações
 anteriores e não introduzido por esta onda.
+
+Auditoria de continuidade não encontrou outra frente não-Codex independente
+sem esses recursos externos. Condição exata de desbloqueio: aceitar os termos
+de `pyannote/speaker-diarization-community-1`, executar
+`.venv-diarization/bin/hf auth login` e comprovar uma credencial com `hf auth
+list`; depois liberar RAM ou configurar swap para que o host preserve ao menos
+5.120 MiB no início do XTTS após Parakeet/Pyannote. Só então repetir
+`leonidas.e2e.coexistence_smoke --device cuda`, o caminho `--device cpu` e a
+regressão local de três turnos. Nenhuma tag estável nova deve ser criada antes
+dessas provas.

@@ -887,3 +887,12 @@ continua necessário antes dos smokes locais completos e simultâneos.
 Suíte global: 749 testes, 2 skips e 27 subtests passaram em 163,62 s. Os
 warnings históricos de depreciação e de teardown do teste direto de
 `core.realtime` continuam sem falha e não foram alterados nesta onda.
+
+Auditoria dos requisitos não-Codex restantes: não há frente independente
+executável sem os dois gates ambientais reproduzidos. O desbloqueio exige
+aceite do modelo `pyannote/speaker-diarization-community-1`, login por
+`.venv-diarization/bin/hf auth login` confirmado por `hf auth list`, e RAM/swap
+suficiente para manter pelo menos 5.120 MiB disponíveis ao iniciar XTTS depois
+dos demais workers. Depois disso, executar o smoke de coexistência CUDA, seu
+fallback CPU e a cascata de três turnos; somente resultados reais verdes
+autorizam nova tag estável e conclusão do goal.

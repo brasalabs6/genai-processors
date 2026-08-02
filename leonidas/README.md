@@ -116,3 +116,17 @@ identifica pelo menos dois speakers no corpus humano e mantém os três workers
 residentes durante três turnos Parakeet → Groq → XTTS. Ele registra somente
 RAM/swap/VRAM técnicas e sempre encerra os workers. Falha de acesso ao modelo
 gated, memória insuficiente ou OOM reprova o gate; não há fallback sintético.
+
+Para liberar os pesos gated, aceite os termos de
+`pyannote/speaker-diarization-community-1` na sua conta Hugging Face e faça o
+login interativo local, sem enviar o token para a UI ou para logs:
+
+```bash
+.venv-diarization/bin/hf auth login
+.venv-diarization/bin/hf auth list
+```
+
+O segundo comando deve listar uma credencial; o exit code de `hf auth whoami`
+sozinho não comprova login nesta versão do CLI. Antes do smoke CUDA conjunto,
+o host também precisa de RAM/swap suficiente para manter pelo menos o guard de
+5.120 MiB disponível no momento em que o XTTS iniciar.
