@@ -85,12 +85,22 @@ em `.venv-diarization`; `cpu` e `cuda` também podem ser passados
 explicitamente. O modelo
 `pyannote/speaker-diarization-community-1` requer acesso Hugging Face e seus
 termos próprios. Configure o login no ambiente do usuário, sem colocar token
-no repositório, e valide sem substituir o resultado do STT:
+no repositório. Gere o corpus privado com duas vozes humanas Gemini e execute o
+smoke sem substituir o resultado do STT:
 
 ```bash
+.venv/bin/python -m leonidas.e2e.diarization_corpus
 LEONIDAS_RUN_DIARIZATION_E2E=1 \
+  LEONIDAS_DIARIZATION_PYTHON=.venv-diarization/bin/python \
+  LEONIDAS_DIARIZATION_DEVICE=cuda \
   .venv/bin/python -m leonidas.e2e.diarization_smoke
 ```
+
+O WAV e o manifesto técnico ficam em
+`leonidas/.runtime/e2e/diarization_audio/`, ignorado pelo Git. O smoke exige
+dois speakers reais; erro, timeout ou resultado ambíguo preserva a transcrição
+Parakeet. Quando um speaker é confiável, somente o prompt interno do Groq recebe
+`Speaker N falou:`, sem alterar a conversa exibida.
 
 Sem runtime, pesos ou acesso ao modelo, a API expõe `diarization` como
 `unavailable` e a cascata Parakeet → Groq → XTTS continua funcionando com a

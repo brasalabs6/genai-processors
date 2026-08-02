@@ -10,6 +10,36 @@ diarização Pyannote opcional, coexistência CUDA, cleanup, observabilidade,
 API/WebSocket, WebUI responsiva e E2E com mídia demo. Reconciliar qualquer item
 posterior que ainda cite Codex como gate segundo esta decisão mais recente.
 
+Prioridade operacional reafirmada: não executar mais testes ou trabalho Codex.
+Começar pelos E2E de diarização e cascata local, depois Gemini, API/WebSocket,
+observabilidade e UI. Ausência de login/token Hugging Face bloqueia somente o
+load dos pesos Pyannote; deve produzir erro acionável e não interromper as
+demais validações.
+
+Diarização fica restrita à cascata local. Não inserir Pyannote em Gemini Live.
+Na cascata, falha/timeout da diarização deve preservar Parakeet → Groq → XTTS.
+A primeira repetição do E2E encontrou GPU saudável com 5.914 MiB livres, mas
+somente 2.179 MiB de RAM; o guard XTTS recusou o load abaixo do mínimo de
+5.120 MiB. Manter o guard e repetir após liberar RAM ou configurar swap.
+
+Ao obter diarização, construir o input interno do Groq como
+`Speaker N falou: <transcrição>` usando associação temporal real entre segmentos
+e texto. Não alterar o texto exibido na UI. Sem speaker confiável, preservar a
+transcrição original e sinalizar fallback; nunca inventar identidade. Cobrir
+speaker único, múltiplos speakers, ausência, atraso e erro com testes.
+
+O fixture anterior de tons foi substituído por um corpus privado Gemini TTS
+com vozes Kore/Puck, 10,44 s e silêncio de endpointing. O corpus passou os
+contratos de WAV/manifesto; a execução Pyannote continua bloqueada apenas pelo
+acesso gated do Hugging Face.
+
+Checkpoint de speaker context: STT/Pyannote rodam concorrentemente; speaker
+único prefixa somente o prompt Groq, ambiguidade/erro/timeout mantém a
+transcrição original, com numeração estável e métricas. Evidência: 42 testes
+diretos, 174 Leonidas/E2E (2 skips, 9 subtests), 24 Vitest, typecheck/build e
+Gemini Live 2.5/3.1 real em 39,97 s. A cascata CUDA continua bloqueada pelo
+guard de RAM do host, apesar de 5.914 MiB de VRAM livre.
+
 ## Requisito adicional: interrupção tardia de áudio local 2026-08-01
 
 O usuário informou que a pipeline local funciona parcialmente e depois para

@@ -898,7 +898,8 @@ class CascadeProcessorTest(unittest.IsolatedAsyncioTestCase):
 
     class Reasoner:
 
-      async def respond(self, **_kwargs):
+      async def respond(self, **kwargs):
+        self.prompt = kwargs['prompt']
         return 'Entendi as duas vozes.'
 
     class Synthesizer:
@@ -935,9 +936,10 @@ class CascadeProcessorTest(unittest.IsolatedAsyncioTestCase):
       )
 
     synthetic = SyntheticDiarizer()
+    reasoner = Reasoner()
     cascade = pipeline.CascadeProcessor(
         transcriber=Transcriber(),
-        reasoner=Reasoner(),
+        reasoner=reasoner,
         synthesizer=Synthesizer(),
         objective='Ajude.',
         model_id='openai/gpt-oss-20b',
@@ -966,6 +968,70 @@ class CascadeProcessorTest(unittest.IsolatedAsyncioTestCase):
     self.assertGreater(segments[0]['end'], segments[0]['start'])
     self.assertEqual(segments[1]['start'], segments[0]['end'])
     self.assertGreater(segments[1]['end'], segments[1]['start'])
+    self.assertEqual(reasoner.prompt, 'duas pessoas falando')
+
+  async def test_single_diarized_speaker_is_added_only_to_reasoning_prompt(
+      self,
+  ):
+    class Transcriber:
+
+      async def transcribe(self, _audio):
+        return 'precisamos revisar o projeto'
+
+    class Reasoner:
+
+      async def respond(self, **kwargs):
+        self.prompt = kwargs['prompt']
+        return 'Vamos revisar.'
+
+    class Synthesizer:
+
+      async def synthesize(self, _text, **_kwargs):
+        return b'\x00\x00' * 1200
+
+    class SingleSpeakerDiarizer:
+
+      async def diarize(self, audio, *, sample_rate):
+        duration = len(audio) / (sample_rate * 2)
+        return [diarization.SpeakerSegment('SPEAKER_00', 0.0, duration, 0.95)]
+
+    endpoint = vad.EndpointDetector(
+        is_speech=lambda frame: bool(frame.strip(b'\x00')),
+        start_frames=1,
+        end_frames=1,
+        pre_roll_frames=0,
+    )
+
+    async def inputs():
+      yield content_api.ProcessorPart(
+          b'\x01\x00' * 480 + b'\x00\x00' * 480,
+          mimetype='audio/pcm;rate=16000',
+      )
+
+    reasoner = Reasoner()
+    cascade = pipeline.CascadeProcessor(
+        transcriber=Transcriber(),
+        reasoner=reasoner,
+        synthesizer=Synthesizer(),
+        objective='Ajude.',
+        model_id='openai/gpt-oss-20b',
+        reasoning_effort='medium',
+        voice_id='leonidas',
+        endpoint_detector=endpoint,
+        diarizer=SingleSpeakerDiarizer(),
+    )
+    output = [part async for part in cascade(inputs())]
+
+    self.assertEqual(
+        reasoner.prompt,
+        'Speaker 1 falou: precisamos revisar o projeto',
+    )
+    transcripts = [
+        part.text
+        for part in output
+        if part.substream_name == 'input_transcription'
+    ]
+    self.assertEqual(transcripts, ['precisamos revisar o projeto'])
 
   async def test_audio_frames_are_reassembled_across_websocket_chunks(self):
     utterance = b'\x01\x00' * 480

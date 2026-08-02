@@ -34,6 +34,7 @@ class CascadeProcessor(processor.Processor):
       context_target_tokens: int | None = None,
       metrics: telemetry.MetricsStore | None = None,
       diarizer: diarization.Diarizer | None = None,
+      diarization_timeout: float = 30.0,
   ):
     super().__init__()
     self._transcriber = transcriber
@@ -57,6 +58,23 @@ class CascadeProcessor(processor.Processor):
     self._history: list[tuple[str, str]] = []
     self._metrics = metrics or telemetry.MetricsStore()
     self._diarizer = diarizer or diarization.NullDiarizer()
+    if diarization_timeout <= 0:
+      raise ValueError('diarization_timeout must be positive')
+    self._diarization_timeout = diarization_timeout
+    self._speaker_numbers: dict[str, int] = {}
+
+  def _reasoning_prompt(
+      self,
+      transcript: str,
+      segments: list[diarization.SpeakerSegment],
+  ) -> str:
+    speakers = {segment.speaker_id for segment in segments}
+    if len(speakers) != 1:
+      return transcript
+    speaker_id = next(iter(speakers))
+    if speaker_id not in self._speaker_numbers:
+      self._speaker_numbers[speaker_id] = len(self._speaker_numbers) + 1
+    return f'Speaker {self._speaker_numbers[speaker_id]} falou: {transcript}'
 
   @staticmethod
   def _state(value: str) -> content_api.ProcessorPart:
@@ -130,7 +148,6 @@ class CascadeProcessor(processor.Processor):
         asyncio.Queue(64)
     )
     response_task: asyncio.Task[None] | None = None
-    diarization_tasks: set[asyncio.Task[None]] = set()
 
     async def produce_turn(prompt: str) -> None:
       try:
@@ -166,9 +183,18 @@ class CascadeProcessor(processor.Processor):
       await interrupt()
       response_task = asyncio.create_task(produce_turn(prompt))
 
-    async def produce_diarization(audio: bytes) -> None:
+    async def diarize_turn(
+        audio: bytes,
+    ) -> list[diarization.SpeakerSegment]:
+      started = time.perf_counter()
       try:
-        segments = await self._diarizer.diarize(audio, sample_rate=16000)
+        segments = await asyncio.wait_for(
+            self._diarizer.diarize(audio, sample_rate=16000),
+            timeout=self._diarization_timeout,
+        )
+        self._metrics.observe(
+            'diarization_ms', (time.perf_counter() - started) * 1000
+        )
         if segments:
           await output.put(
               content_api.ProcessorPart(
@@ -182,15 +208,15 @@ class CascadeProcessor(processor.Processor):
                   },
               )
           )
+          return segments
+        if not isinstance(self._diarizer, diarization.NullDiarizer):
+          self._metrics.increment('diarization_fallbacks')
+        return []
       except asyncio.CancelledError:
         raise
-      except Exception:
+      except (Exception, TimeoutError):
         self._metrics.increment('diarization_errors')
-
-    def schedule_diarization(audio: bytes) -> None:
-      task = asyncio.create_task(produce_diarization(audio))
-      diarization_tasks.add(task)
-      task.add_done_callback(diarization_tasks.discard)
+        return []
 
     async def handle_event(event: vad.EndpointEvent) -> None:
       if event.kind == 'start':
@@ -202,13 +228,19 @@ class CascadeProcessor(processor.Processor):
         return
       if event.kind != 'utterance':
         return
-      schedule_diarization(event.audio)
       await output.put(self._state('transcribing'))
+      diarization_task = asyncio.create_task(diarize_turn(event.audio))
       started = time.perf_counter()
-      transcript = await self._transcriber.transcribe(event.audio)
+      try:
+        transcript = await self._transcriber.transcribe(event.audio)
+      except BaseException:
+        diarization_task.cancel()
+        await asyncio.gather(diarization_task, return_exceptions=True)
+        raise
       self._metrics.observe(
           'local_stt_ms', (time.perf_counter() - started) * 1000
       )
+      segments = await diarization_task
       duration = len(event.audio) / (16000 * 2)
       if transcript_filter.is_probable_short_artifact(
           transcript,
@@ -229,7 +261,7 @@ class CascadeProcessor(processor.Processor):
               metadata={'is_final': True},
           )
       )
-      await start_turn(transcript)
+      await start_turn(self._reasoning_prompt(transcript, segments))
 
     async def consume() -> None:
       try:
@@ -256,8 +288,6 @@ class CascadeProcessor(processor.Processor):
         if response_task is not None:
           await response_task
       finally:
-        if diarization_tasks:
-          await asyncio.gather(*diarization_tasks, return_exceptions=True)
         await output.put(None)
 
     consumer = asyncio.create_task(consume())
@@ -278,7 +308,6 @@ class CascadeProcessor(processor.Processor):
         response_task.cancel()
       if response_task is not None:
         tasks.append(response_task)
-      tasks.extend(diarization_tasks)
       await asyncio.gather(*tasks, return_exceptions=True)
       close = getattr(self._reasoner, 'close', None)
       if close is not None:

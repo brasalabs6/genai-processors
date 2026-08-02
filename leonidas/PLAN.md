@@ -13,6 +13,49 @@ coexistência CUDA, observabilidade, API/WebSocket, WebUI desktop/mobile,
 documentação e testes E2E. O código Codex existente permanece isolado e sem
 fallback implícito; sua eventual remoção é uma decisão separada.
 
+Prioridade reafirmada pelo usuário: Codex está adiado e não deve consumir mais
+trabalho, inclusive testes. A execução deve atacar diretamente todo o restante
+com validação end-to-end, começando por diarização e pela coexistência da
+cascata local. Enquanto a autorização Hugging Face estiver ausente, comprovar
+o comportamento offline/erro acionável da diarização e continuar Gemini,
+Parakeet, Groq, XTTS, API, UI e cleanup; não usar Codex como regressão.
+
+Fronteira de diarização confirmada pelo usuário: Pyannote pertence somente à
+pipeline local nesta fase. Gemini Live 2.5/3.1 permanece sem diarização externa
+e não pode ter seu transporte, VAD ou áudio alterado por esse componente. A
+cascata local aplica diarização opcional depois do endpointing/STT e antes de
+montar o contexto do Groq; indisponibilidade ou atraso da diarização preserva a
+transcrição Parakeet e não bloqueia reasoning/TTS.
+
+Contrato de contexto para reasoning: quando a diarização local produzir um
+speaker válido, o texto enviado ao Groq deve ser prefixado como
+`Speaker 1 falou: <transcrição>` (e correspondentemente `Speaker 2`, etc.). O
+prefixo pertence somente ao prompt interno do reasoning; a transcrição original
+permanece inalterada nos substreams/UI. Segmentos devem ser associados às
+palavras/turnos por timestamps reais; não atribuir uma transcrição inteira a um
+speaker arbitrário. Sem resultado de diarização, enviar a transcrição normal e
+registrar o fallback observável.
+
+O corpus E2E de diarização agora usa duas vozes humanas Gemini (`Kore` e
+`Puck`), 10,44 s no total, com silêncio entre falantes e manifesto redigido. A
+validação de assets passou; o Pyannote ainda falha antes da inferência por falta
+de autorização Hugging Face, confirmando que mídia/formato não são o blocker.
+
+Implementação tests-first concluída para o contexto de speaker: STT e
+diarização executam em paralelo por utterance; um único speaker recebe número
+estável e prefixa somente o prompt Groq; múltiplos speakers ambíguos preservam
+o texto; erro/timeout gera fallback e métrica. Foram aprovados 42 testes
+diretamente relacionados, 174 testes Leonidas/E2E (2 skips, 9 subtests), 24
+Vitest, typecheck e build. Gemini 2.5/3.1 passou no smoke pago em 39,97 s. A
+cascata CUDA foi tentada duas vezes e o guard XTTS bloqueou com 2.179/3.558 MiB
+de RAM disponível; a GPU estava saudável com 5.914 MiB livres.
+
+Primeira revalidação E2E desta fase: CUDA estava saudável e a GPU possuía
+5.914 MiB livres, mas o guard XTTS interrompeu corretamente o load porque o
+host tinha somente 2.179 MiB de RAM disponível, abaixo dos 5.120 MiB exigidos.
+Isso é um gate ambiental de RAM, não falta de VRAM. Não reduzir o guard; liberar
+memória ou prover swap antes de repetir os três turnos e a coexistência.
+
 ## Incidente de continuidade de áudio local — 2026-08-01
 
 O usuário relatou que a pipeline local reproduz voz inicialmente, mas deixa

@@ -3,39 +3,26 @@
 from __future__ import annotations
 
 import asyncio
-import math
+import argparse
 import os
-import struct
+from pathlib import Path
 import time
 
 from leonidas.cascade import diarization_process
+from leonidas.e2e import assets
+from leonidas.e2e import diarization_corpus
 
 
-def _synthetic_two_speaker_pcm(sample_rate: int = 16000) -> bytes:
-  """Builds two non-overlapping voiced tone regions without external assets."""
-  samples: list[int] = []
-  for frequency in (180.0, 240.0):
-    for index in range(sample_rate):
-      envelope = min(1.0, index / (sample_rate * 0.05))
-      envelope *= min(1.0, (sample_rate - index) / (sample_rate * 0.05))
-      value = int(
-          9000
-          * envelope
-          * math.sin(2 * math.pi * frequency * index / sample_rate)
-      )
-      samples.append(value)
-  return struct.pack(f'<{len(samples)}h', *samples)
-
-
-async def run() -> None:
+async def run(audio_path: Path) -> None:
   started = time.perf_counter()
+  pcm = assets.audio_as_pcm16_16khz(audio_path, max_duration_seconds=30.0)
   adapter = diarization_process.PyannoteWorkerDiarizer(
       device=os.environ.get('LEONIDAS_DIARIZATION_DEVICE', 'auto')
   )
-  segments = await adapter.diarize(
-      _synthetic_two_speaker_pcm(), sample_rate=16000
-  )
+  segments = await adapter.diarize(pcm, sample_rate=16000)
   speakers = sorted({segment.speaker_id for segment in segments})
+  if len(speakers) < 2:
+    raise RuntimeError('Pyannote did not identify both corpus speakers')
   print(
       'diarization_smoke_ok=true'
       f' segments={len(segments)} speakers={len(speakers)}'
@@ -43,7 +30,14 @@ async def run() -> None:
   )
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+  parser = argparse.ArgumentParser(description=__doc__)
+  parser.add_argument(
+      '--audio',
+      type=Path,
+      default=diarization_corpus.DEFAULT_ROOT / 'two-speaker.wav',
+  )
+  args = parser.parse_args(argv)
   if os.environ.get('LEONIDAS_RUN_DIARIZATION_E2E') != '1':
     print(
         'diarization_smoke_skipped=true '
@@ -51,7 +45,7 @@ def main() -> int:
     )
     return 0
   try:
-    asyncio.run(run())
+    asyncio.run(run(args.audio))
   except Exception as exc:
     print(f'diarization_smoke_failed=true error_type={type(exc).__name__}')
     return 2

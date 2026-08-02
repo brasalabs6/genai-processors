@@ -206,7 +206,8 @@ stateDiagram-v2
   [*] --> idle
   idle --> listening: PCM recebido
   listening --> transcribing: VAD end of speech
-  transcribing --> thinking: Parakeet final
+  transcribing --> diarizing: Parakeet final + Pyannote opcional
+  diarizing --> thinking: speaker context ou fallback
   thinking --> speaking: Groq response
   speaking --> idle: XTTS complete
   speaking --> interrupted: VAD start of speech
@@ -222,6 +223,7 @@ sequenceDiagram
   participant Browser
   participant VAD
   participant Parakeet
+  participant Pyannote
   participant Groq
   participant Parent
   participant XTTS
@@ -233,8 +235,13 @@ sequenceDiagram
     VAD-->>Browser: start_of_speech
   end
   VAD->>Parakeet: utterance final <= 30 s
+  VAD->>Pyannote: mesmo utterance PCM (somente cascata local)
   Parakeet-->>Browser: final transcription
-  Parakeet->>Groq: objective + bounded history + user text
+  alt um speaker confiável
+    Pyannote-->>Groq: Speaker N falou: + transcrição
+  else indisponível, ambíguo, timeout ou erro
+    Parakeet->>Groq: transcrição original
+  end
   Groq-->>Browser: response text
   Groq->>Parent: response
   Parent->>XTTS: JSONL em subprocesso .venv-xtts

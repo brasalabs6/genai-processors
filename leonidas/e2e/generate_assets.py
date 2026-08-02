@@ -42,10 +42,12 @@ class GeminiAudioGenerator:
       api_key: str,
       *,
       model: str = DEFAULT_AUDIO_MODEL,
+      voice: str = 'Kore',
       client=None,
   ):
     self._client = client or genai.Client(api_key=api_key)
     self._model = model
+    self._voice = voice
 
   async def generate(self, script: str) -> bytes:
     interaction = await asyncio.to_thread(
@@ -53,7 +55,7 @@ class GeminiAudioGenerator:
         model=self._model,
         input=f'Leia exatamente este texto em português, sem adicionar nada: {script}',
         response_format={'type': 'audio'},
-        generation_config={'speech_config': [{'voice': 'Kore'}]},
+        generation_config={'speech_config': [{'voice': self._voice}]},
     )
     output_audio = getattr(interaction, 'output_audio', None)
     data = getattr(output_audio, 'data', None)

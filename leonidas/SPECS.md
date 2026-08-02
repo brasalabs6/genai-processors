@@ -65,6 +65,7 @@ cancelamento antes de aparecer na UI.
 
 ```text
 browser PCM 16 kHz -> WebRTC VAD/endpointing -> Parakeet TDT 0.6B v3
+                   -> Pyannote opcional -> contexto `Speaker N falou:`
                    -> Groq GPT-OSS reasoning -> XTTS v2 -> PCM 24 kHz chunks
 ```
 
@@ -96,6 +97,14 @@ browser PCM 16 kHz -> WebRTC VAD/endpointing -> Parakeet TDT 0.6B v3
 - A pipeline cascata v0.2 declara `vision=false`: o catálogo Groq disponível
   nesta conta não oferece modelo visual. A UI desabilita câmera/tela e explica
   a limitação; visão nunca é descartada silenciosamente.
+- Diarização é exclusiva da cascata local nesta fase. Ela roda em paralelo ao
+  Parakeet depois do endpointing. Quando o turno possui exatamente um speaker
+  confiável, somente o prompt interno do Groq recebe
+  `Speaker N falou: <transcrição>`; o substream `input_transcription` mantém o
+  texto original. Numeração é estável durante a sessão. Múltiplos speakers sem
+  alinhamento palavra-tempo, resultado vazio, erro ou timeout preservam o texto
+  original e incrementam métricas de fallback/erro; identidades nunca são
+  inventadas. Gemini Live não usa Pyannote.
 
 ### Lifecycle e readiness dos modelos locais
 
