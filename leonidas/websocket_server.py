@@ -11,9 +11,9 @@ from websockets.asyncio.server import ServerConnection
 from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
+from leonidas import codex_app_server
 from leonidas import runtime
 from leonidas import telemetry
-from leonidas import codex_app_server
 
 
 _ALLOWED_CLIENT_METRICS = frozenset({'playback_flush_ms'})
@@ -144,8 +144,6 @@ async def run(
           part.mimetype == 'application/x-state'
           and part.get_metadata('agent_state') == 'transcribing'
       ):
-        # The local VAD has emitted a complete utterance. STT, reasoning and
-        # synthesis are all correctly included in the resulting TTFA.
         latency.mark_turn_boundary()
       if content_api.is_audio(part.mimetype):
         metrics.increment('audio_chunks_sent')
@@ -169,6 +167,14 @@ async def run(
       sequence += 1
       await send_part(_resource_part(state, sequence))
 
+    async def forward(part: content_api.ProcessorPart) -> bool:
+      try:
+        await manager.send(part)
+      except runtime.InputBackpressureError:
+        await websocket.close(1013, 'Input pipeline is overloaded')
+        return False
+      return True
+
     try:
       await manager.attach_media(send_part)
     except runtime.MediaAlreadyConnectedError:
@@ -191,20 +197,20 @@ async def run(
           _record_client_metric(part, metrics)
         elif part.mimetype == 'application/x-mic-off':
           latency.mark_turn_boundary()
-          await manager.send(
+          if not await forward(
               content_api.ProcessorPart(
                   '',
                   role='user',
                   substream_name='realtime',
                   metadata={'audio_stream_end': True},
               )
-          )
+          ):
+            return
         else:
-          # Continuous microphone chunks are transport activity, not a turn
-          # boundary. Text submission is a complete user turn immediately.
           if content_api.is_text(part.mimetype):
             latency.mark_turn_boundary()
-          await manager.send(part)
+          if not await forward(part):
+            return
     except ConnectionClosed:
       pass
     finally:
