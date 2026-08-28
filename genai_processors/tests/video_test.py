@@ -78,7 +78,7 @@ class VideoInTest(parameterized.TestCase, unittest.IsolatedAsyncioTestCase):
       self.assertEqual(output[1].mimetype, 'image/jpeg')
       self.assertEqual(output[1].substream_name, substream_name)
       self.assertEqual(output[1].role, 'user')
-      self.assertIsInstance(output[1].part.inline_data.data, bytes)
+      self.assertIsInstance(output[1].part.inline_data.data, bytes)  # pyrefly: ignore[missing-attribute]
       self.assertGreater(len(output[1].part.inline_data.data), 500)
 
   async def test_video_in_with_exception(self):
@@ -161,7 +161,7 @@ class VideoExtractTest(
         self.assertLess(image_data[0][0][2], 10)
       if mime_types.is_audio(part.mimetype):
         # Audio track is a constant 42.
-        audio_data = np.frombuffer(part.bytes, dtype=np.int16)
+        audio_data = np.frombuffer(part.bytes, dtype=np.int16)  # pyrefly: ignore[no-matching-overload]
         self.assertEqual(audio_data[1000], 42)
 
 

@@ -47,7 +47,7 @@ async def _add_timestamps(
     if content_api.is_image(part.mimetype):
       yield content_api.ProcessorPart(
           to_timestamp(time.perf_counter() - start, with_ms=with_ms),
-          substream_name=substream_name,
+          substream_name=substream_name,  # pyrefly: ignore[bad-argument-type]
           # Do not trigger a model generate call when the timestamp is added.
           metadata={'turn_complete': False},
       )

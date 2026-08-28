@@ -108,11 +108,11 @@ class RateLimitAudio(processor.Processor):
           # them, we don't have to wait too long before interrupting.
           if (
               part.part.inline_data is not None
-              and _audio_duration(part.bytes, self._sample_rate)
+              and _audio_duration(part.bytes, self._sample_rate)  # pyrefly: ignore[bad-argument-type]
               > 2 * MAX_AUDIO_PART_SEC
           ):
             for sub_part in split_audio(
-                part.part.inline_data.data, self._sample_rate
+                part.part.inline_data.data, self._sample_rate  # pyrefly: ignore[bad-argument-type]
             ):
               audio_queue.put_nowait(
                   ProcessorPart(sub_part, mimetype=part.mimetype)
@@ -152,7 +152,7 @@ class RateLimitAudio(processor.Processor):
           await output_queue.put(part)
           await asyncio.sleep(0)  # Allow `yield` from output_queue to run
           start_playing_time += _audio_duration(
-              part.part.inline_data.data, self._sample_rate
+              part.part.inline_data.data, self._sample_rate  # pyrefly: ignore[missing-attribute]
           )
         else:
           # Wait for the audio to be played out before passing on to the next

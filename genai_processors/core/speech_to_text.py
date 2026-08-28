@@ -408,7 +408,7 @@ class SpeechToText(processor.Processor):
           or DEFAULT_SAMPLE_RATE_HZ
       )
       self._processor = (
-          AddSilentPartMaybe(
+          AddSilentPartMaybe(  # pyrefly: ignore[unsupported-operation]
               silent_part_duration_sec=_SILENT_AUDIO_DELAY_SECONDS,
               sample_rate=sample_rate,
           )

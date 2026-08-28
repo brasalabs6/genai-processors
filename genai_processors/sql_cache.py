@@ -148,7 +148,15 @@ class SqlCache(cache_base.CacheBase):
       *,
       key: str | None = None,
   ) -> content_api.ProcessorContent | cache_base.CacheMissT:
-    query_key = key if key is not None else self._hash_fn(query)
+    if key is not None:
+      query_key = key
+    elif query is not None:
+      query_key = self._hash_fn(query)
+    else:
+      return cache_base.CacheMiss
+
+    if query_key is None:
+      return cache_base.CacheMiss
 
     async with self._lock:
       item = await self._session.get(_ContentCacheEntry, query_key)
@@ -167,7 +175,7 @@ class SqlCache(cache_base.CacheBase):
           return cache_base.CacheMiss
 
       try:
-        return _deserialize_content(item.value)
+        return _deserialize_content(item.value)  # pyrefly: ignore[bad-argument-type]
       except Exception:  # pylint: disable=broad-exception-caught
         await self._remove_by_string_key(query_key)
         return cache_base.CacheMiss
@@ -180,7 +188,15 @@ class SqlCache(cache_base.CacheBase):
       key: str | None = None,
       value: content_api.ProcessorContentTypes,
   ) -> None:
-    query_key = key if key is not None else self._hash_fn(query)
+    if key is not None:
+      query_key = key
+    elif query is not None:
+      query_key = self._hash_fn(query)
+    else:
+      return
+
+    if query_key is None:
+      return
 
     data_to_cache_bytes = _serialize_content(
         content_api.ProcessorContent(value)
@@ -191,9 +207,9 @@ class SqlCache(cache_base.CacheBase):
       expires_at = datetime.datetime.now(datetime.timezone.utc) + self._ttl
 
     item = _ContentCacheEntry()
-    item.key = query_key
-    item.value = data_to_cache_bytes
-    item.expires_at = expires_at
+    item.key = query_key  # pyrefly: ignore[bad-assignment]
+    item.value = data_to_cache_bytes  # pyrefly: ignore[bad-assignment]
+    item.expires_at = expires_at  # pyrefly: ignore[bad-assignment]
     async with self._lock:
       await self._session.merge(item)
       await self._cleanup_expired()

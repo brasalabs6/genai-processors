@@ -76,8 +76,8 @@ class LangChainModel(processor.Processor):
   async def call(
       self, content: processor.ProcessorStream
   ) -> AsyncIterable[content_api.ProcessorPartTypes]:
-    content = self._system_instruction + await content.gather()
-    msgs = self._convert_to_langchain_messages(content.all_parts)
+    content = self._system_instruction + await content.gather()  # pyrefly: ignore[bad-assignment]
+    msgs = self._convert_to_langchain_messages(content.all_parts)  # pyrefly: ignore[missing-attribute]
 
     payload = (
         {'input': self._prompt_template.format(messages=msgs)}
@@ -85,7 +85,7 @@ class LangChainModel(processor.Processor):
         else msgs
     )
 
-    async for chunk in self._model.astream(payload):
+    async for chunk in self._model.astream(payload):  # pyrefly: ignore[bad-argument-type]
       if not isinstance(chunk.content, str):
         raise NotImplementedError(
             'Multimodal content output is not implemented yet.'
@@ -124,7 +124,7 @@ class LangChainModel(processor.Processor):
         cls = {
             'system': langchain_messages.SystemMessage,
             'model': langchain_messages.AIMessage,
-        }.get(last_role, langchain_messages.HumanMessage)
+        }.get(last_role, langchain_messages.HumanMessage)  # pyrefly: ignore[no-matching-overload]
         if len(content_parts) == 1 and content_parts[0].get('type') == 'text':
           content = content_parts[0]['text']
         else:

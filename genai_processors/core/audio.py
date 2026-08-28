@@ -101,7 +101,7 @@ class AudioToWav(processor.Processor):
           async for flushed_part in self._flush():
             yield flushed_part
 
-        self._buffer.append(part.bytes)
+        self._buffer.append(part.bytes)  # pyrefly: ignore[bad-argument-type]
         self._mimetype = part.mimetype
       else:
         async for flushed_part in self._flush():

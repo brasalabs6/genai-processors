@@ -212,7 +212,7 @@ class GenaiModel(processor.Processor):
     # If schema is present and the user has not opted for raw JSON streaming,
     # set up the JSON decoding processor.
     if schema and not stream_json:
-      self._parser = constrained_decoding.StructuredOutputParser(schema)
+      self._parser = constrained_decoding.StructuredOutputParser(schema)  # pyrefly: ignore[bad-argument-type]
 
   async def _generate_from_api(
       self, content: content_api.ContentStream
@@ -300,9 +300,9 @@ class ImagePreprocess(processor.PartProcessor):
     """Deletes all the images uploaded by the client."""
     while file := await self._files.get():
       await asyncio.sleep(
-          max(0, file.creation_time_sec + self._ttl_secs - time.time())
+          max(0, file.creation_time_sec + self._ttl_secs - time.time())  # pyrefly: ignore[unsupported-operation]
       )
-      await asyncio.to_thread(self._client.files.delete, name=file.file.name)
+      await asyncio.to_thread(self._client.files.delete, name=file.file.name)  # pyrefly: ignore[bad-argument-type]
 
   def match(self, part: content_api.ProcessorPart) -> bool:
     return content_api.is_image(part.mimetype)
@@ -310,7 +310,7 @@ class ImagePreprocess(processor.PartProcessor):
   async def call(
       self, part: content_api.ProcessorPart
   ) -> AsyncIterable[content_api.ProcessorPartTypes]:
-    image_bytes = io.BytesIO(part.bytes)
+    image_bytes = io.BytesIO(part.bytes)  # pyrefly: ignore[bad-argument-type]
     file_part = await asyncio.to_thread(
         self._client.files.upload,
         file=image_bytes,

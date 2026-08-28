@@ -55,7 +55,7 @@ async def run_tts() -> None:
   """Runs speech-to-text in a CLI environment."""
 
   pya = pyaudio.PyAudio()
-  tts_processor = text_to_speech.TextToSpeech(
+  tts_processor = text_to_speech.TextToSpeech(  # pyrefly: ignore[unsupported-operation]
       project_id=GOOGLE_PROJECT_ID
   ) + audio_io.PyAudioOut(pya)
 

@@ -117,7 +117,7 @@ async def unwrap_function_response(
             fn_part.inline_data.data,
             mimetype=fn_part.inline_data.mime_type,
             role='tool',
-            substream_name=part.function_response.name,
+            substream_name=part.function_response.name,  # pyrefly: ignore[bad-argument-type]
             metadata=part.metadata,
         )
       else:
@@ -126,10 +126,10 @@ async def unwrap_function_response(
         )
     return
 
-  if 'result' in part.function_response.response:
-    part_content = part.function_response.response['result']
-  elif 'output' in part.function_response.response:
-    part_content = part.function_response.response['output']
+  if 'result' in part.function_response.response:  # pyrefly: ignore[not-iterable]
+    part_content = part.function_response.response['result']  # pyrefly: ignore[unsupported-operation]
+  elif 'output' in part.function_response.response:  # pyrefly: ignore[not-iterable]
+    part_content = part.function_response.response['output']  # pyrefly: ignore[unsupported-operation]
   else:
     part_content = str(part.function_response.response)
   yield content_api.ProcessorPart(
@@ -235,7 +235,7 @@ class ImageGenerator:
       yield content_api.ProcessorPart.from_function_response(
           name='create_concept_art`',
           response=f'\nGenerating concept art for [{name}]...\n',
-          scheduling='SILENT',
+          scheduling='SILENT',  # pyrefly: ignore[bad-argument-type]
           role='model',
       )
 
@@ -294,7 +294,7 @@ class ImageGenerator:
             f'Generating image from description: {description} using concept'
             f' arts: {concept_arts}'
         ),
-        scheduling='SILENT',
+        scheduling='SILENT',  # pyrefly: ignore[bad-argument-type]
         role='model',
     )
 
@@ -323,7 +323,7 @@ class ImageGenerator:
       yield content_api.ProcessorPart.from_function_response(
           name='create_image_from_description',
           response=part,
-          scheduling='SILENT',
+          scheduling='SILENT',  # pyrefly: ignore[bad-argument-type]
           role='model',
       )
 
@@ -394,7 +394,7 @@ def create_live_illustrator(
       is_bidi_model=True,
   )
   return (
-      end_of_turns_scheduler
+      end_of_turns_scheduler  # pyrefly: ignore[unsupported-operation]
       + fc_processor
       + unwrap_function_response
       + hide_uninteresting_parts
