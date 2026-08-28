@@ -279,16 +279,26 @@ class CascadeResources:
       self,
       stt_key: tuple[str, str],
       tts_key: tuple[str, str],
-      transcriber: Any,
-      synthesizer: Any,
+      transcriber: Any | None,
+      synthesizer: Any | None,
       diarizer: Any | None,
+      owned_ids: set[int],
   ) -> None:
+    """Closes only resources created by the failed candidate generation."""
     candidates: list[Any] = []
-    if self._transcribers.get(stt_key) is transcriber:
+    if (
+        transcriber is not None
+        and id(transcriber) in owned_ids
+        and self._transcribers.get(stt_key) is transcriber
+    ):
       candidates.append(self._transcribers.pop(stt_key))
-    if self._synthesizers.get(tts_key) is synthesizer:
+    if (
+        synthesizer is not None
+        and id(synthesizer) in owned_ids
+        and self._synthesizers.get(tts_key) is synthesizer
+    ):
       candidates.append(self._synthesizers.pop(tts_key))
-    if diarizer is not None:
+    if diarizer is not None and id(diarizer) in owned_ids:
       for key, value in tuple(self._diarizers.items()):
         if value is diarizer:
           candidates.append(self._diarizers.pop(key))
@@ -303,12 +313,22 @@ class CascadeResources:
   ) -> None:
     stt_key = (stt_model_id, device)
     tts_key = (tts_model_id, device)
-    transcriber = self.transcriber(stt_model_id, device)
-    synthesizer = self.synthesizer(tts_model_id, device)
-    diarizer = self.diarizer(device) if diarization_enabled else None
-    if diarizer is None:
-      self._status['diarization'] = self._diarization_status()
+    owned_ids: set[int] = set()
+    transcriber = self._transcribers.get(stt_key)
+    synthesizer = self._synthesizers.get(tts_key)
+    diarizer = self._diarizers.get(device) if diarization_enabled else None
     try:
+      if transcriber is None:
+        transcriber = self.transcriber(stt_model_id, device)
+        owned_ids.add(id(transcriber))
+      if synthesizer is None:
+        synthesizer = self.synthesizer(tts_model_id, device)
+        owned_ids.add(id(synthesizer))
+      if diarization_enabled and diarizer is None:
+        diarizer = self.diarizer(device)
+        owned_ids.add(id(diarizer))
+      if diarizer is None:
+        self._status['diarization'] = self._diarization_status()
       await self._load_component(
           'stt',
           stt_model_id,
@@ -330,7 +350,12 @@ class CascadeResources:
       )
     except BaseException:
       await self._discard_candidate(
-          stt_key, tts_key, transcriber, synthesizer, diarizer
+          stt_key,
+          tts_key,
+          transcriber,
+          synthesizer,
+          diarizer,
+          owned_ids,
       )
       if self._ready_status is not None:
         self._status = copy.deepcopy(self._ready_status)
