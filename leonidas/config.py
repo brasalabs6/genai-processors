@@ -173,7 +173,72 @@ class AgentConfig:
     result.validate()
     return result
 
+  def _validate_types(self) -> None:
+    integer_fields = (
+        ('media.frame_interval_ms', self.media.frame_interval_ms),
+        ('media.max_width', self.media.max_width),
+        ('media.max_height', self.media.max_height),
+    )
+    for name, value in integer_fields:
+      if type(value) is not int:
+        raise ConfigValidationError(f'{name} must be an integer')
+
+    optional_integer_fields = (
+        ('vad.prefix_padding_ms', self.vad.prefix_padding_ms),
+        ('vad.silence_duration_ms', self.vad.silence_duration_ms),
+        ('generation.thinking_budget', self.generation.thinking_budget),
+        (
+            'generation.context_trigger_tokens',
+            self.generation.context_trigger_tokens,
+        ),
+        (
+            'generation.context_target_tokens',
+            self.generation.context_target_tokens,
+        ),
+    )
+    for name, value in optional_integer_fields:
+      if value is not None and type(value) is not int:
+        raise ConfigValidationError(f'{name} must be an integer or null')
+
+    numeric_fields = (
+        ('media.jpeg_quality', self.media.jpeg_quality),
+        ('generation.temperature', self.generation.temperature),
+    )
+    for name, value in numeric_fields:
+      if value is not None and (
+          isinstance(value, bool) or not isinstance(value, (int, float))
+      ):
+        raise ConfigValidationError(f'{name} must be numeric or null')
+
+    string_fields = (
+        ('media.model_resolution', self.media.model_resolution),
+        ('cascade.stt_model_id', self.cascade.stt_model_id),
+        ('cascade.llm_model_id', self.cascade.llm_model_id),
+        ('cascade.tts_model_id', self.cascade.tts_model_id),
+        ('cascade.reasoning_effort', self.cascade.reasoning_effort),
+        ('cascade.language', self.cascade.language),
+        ('cascade.device', self.cascade.device),
+        ('cascade.voice_id', self.cascade.voice_id),
+    )
+    for name, value in string_fields:
+      if not isinstance(value, str):
+        raise ConfigValidationError(f'{name} must be a string')
+
+    optional_string_fields = (
+        ('voice_name', self.voice_name),
+        ('vad.start_sensitivity', self.vad.start_sensitivity),
+        ('vad.end_sensitivity', self.vad.end_sensitivity),
+        ('generation.thinking_level', self.generation.thinking_level),
+    )
+    for name, value in optional_string_fields:
+      if value is not None and not isinstance(value, str):
+        raise ConfigValidationError(f'{name} must be a string or null')
+
+    if type(self.cascade.diarization_enabled) is not bool:
+      raise ConfigValidationError('cascade.diarization_enabled must be boolean')
+
   def validate(self) -> None:
+    self._validate_types()
     if self.schema_version != 1:
       raise ConfigValidationError('schema_version must be 1')
     if self.pipeline_id not in (
