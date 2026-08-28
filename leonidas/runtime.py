@@ -337,9 +337,7 @@ class SessionManager:
       self._metrics.increment('frames_dropped_backpressure')
       return
     try:
-      await asyncio.wait_for(
-          queue.put(part), timeout=self._input_queue_timeout
-      )
+      await asyncio.wait_for(queue.put(part), timeout=self._input_queue_timeout)
     except TimeoutError as exc:
       self._metrics.increment('input_backpressure_timeouts')
       raise InputBackpressureError(
