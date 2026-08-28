@@ -15,6 +15,7 @@ dist/
 # VENV.
 .venv
 .venv-diarization
+.venv-xtts
 venv
 
 # Test files.
