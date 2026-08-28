@@ -43,6 +43,7 @@ dependencies = [
     "shortuuid>=1.0.0",
     "xxhash>=3.0.0",
     "mcp>=1.26.0",
+    "sqlalchemy>=2.0.0",
     # `genai_processors.core.vad` is part of the maintained core surface and
     # imports the `webrtcvad` module directly. This maintained wheel provides
     # that module on supported CPython versions without the legacy
@@ -84,8 +85,8 @@ dev = [
     "pyink==25.12.0",
     "pylint>=2.6.0",
     "pytest",
+    "pytest-asyncio",
     "pytest-xdist",
-    "SQLAlchemy>=2.0",
     "torch",
     "transformers",
     "typing_extensions",
