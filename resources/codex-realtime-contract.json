@@ -1,0 +1,485 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codex App Server Realtime Integration Contract (observed)",
+  "documentVersion": "1.0.0",
+  "baseline": {
+    "date": "2026-07-29",
+    "repository": "openai/codex",
+    "branch": "main",
+    "status": "experimental",
+    "rule": "Generate schemas from the installed app-server binary before integration; this file is a curated compatibility map, not the authoritative generated bundle."
+  },
+  "wireProtocol": {
+    "style": "JSON-RPC 2.0 without the jsonrpc member",
+    "request": {
+      "id": "number|string",
+      "method": "string",
+      "params": "object, usually required by method"
+    },
+    "notification": {
+      "method": "string",
+      "params": "object"
+    },
+    "response": {
+      "id": "same as request",
+      "result": "value",
+      "error": {
+        "code": "integer",
+        "message": "string",
+        "data": "optional"
+      }
+    }
+  },
+  "transports": {
+    "stdio": {
+      "listen": "stdio://",
+      "framing": "one JSON object per line (JSONL)",
+      "recommended": true
+    },
+    "websocket": {
+      "listen": "ws://IP:PORT",
+      "framing": "one JSON-RPC message per text frame",
+      "status": "experimental/unsupported",
+      "browserDirect": false,
+      "browserDirectReason": "the listener rejects any HTTP request carrying Origin with 403"
+    },
+    "unix": {
+      "listen": "unix:// or unix://PATH",
+      "framing": "WebSocket Upgrade and frames over a Unix domain socket"
+    },
+    "off": {
+      "listen": "off"
+    }
+  },
+  "handshake": {
+    "sequence": [
+      {
+        "direction": "client->server",
+        "method": "initialize",
+        "id": 0,
+        "params": {
+          "clientInfo": {
+            "name": "string",
+            "title": "string",
+            "version": "string"
+          },
+          "capabilities": {
+            "experimentalApi": true
+          }
+        }
+      },
+      {
+        "direction": "server->client",
+        "responseTo": 0,
+        "result": "InitializeResponse"
+      },
+      {
+        "direction": "client->server",
+        "method": "initialized",
+        "params": {}
+      }
+    ],
+    "invariants": [
+      "Exactly one initialize request per connection",
+      "No normal method before initialize succeeds",
+      "Realtime methods require experimentalApi opt-in"
+    ]
+  },
+  "realtime": {
+    "featureGate": "Feature::RealtimeConversation must be enabled on the loaded thread",
+    "methods": {
+      "thread/realtime/listVoices": {
+        "params": {
+          "type": "object",
+          "additionalProperties": false
+        },
+        "result": {
+          "voices": "RealtimeVoicesList"
+        }
+      },
+      "thread/realtime/start": {
+        "params": {
+          "required": [
+            "threadId",
+            "outputModality"
+          ],
+          "properties": {
+            "threadId": {
+              "type": "string"
+            },
+            "clientManagedHandoffs": {
+              "type": [
+                "boolean",
+                "null"
+              ],
+              "default": false
+            },
+            "flushTranscriptTailOnSessionEnd": {
+              "type": [
+                "boolean",
+                "null"
+              ],
+              "default": false
+            },
+            "codexResponsesAsItems": {
+              "type": [
+                "boolean",
+                "null"
+              ],
+              "default": false
+            },
+            "codexResponseItemPrefix": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "codexResponseHandoffMode": {
+              "enum": [
+                "thinking",
+                "commentary",
+                "bemTags",
+                null
+              ],
+              "default": "thinking",
+              "v3Only": true
+            },
+            "codexResponseHandoffChannelPrefixes": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "keys": [
+                "analysis",
+                "commentary",
+                "final"
+              ],
+              "values": "string[]"
+            },
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "outputModality": {
+              "enum": [
+                "text",
+                "audio"
+              ]
+            },
+            "includeStartupContext": {
+              "type": [
+                "boolean",
+                "null"
+              ],
+              "default": true
+            },
+            "initialItems": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "role": {
+                  "enum": [
+                    "user",
+                    "developer",
+                    "assistant"
+                  ]
+                },
+                "text": "string"
+              },
+              "constraints": {
+                "version": "v3",
+                "maxItems": 128,
+                "maxEstimatedTokensPerItem": 8192,
+                "maxEstimatedTokensTotal": 8192
+              }
+            },
+            "prompt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "triState": {
+                "omitted": "use configured/default backend prompt",
+                "nullOrEmpty": "remove default backend prompt",
+                "string": "replace with provided prompt"
+              }
+            },
+            "realtimeSessionId": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "meaning": "upstream Realtime API session identifier"
+            },
+            "transport": {
+              "oneOf": [
+                {
+                  "type": "websocket"
+                },
+                {
+                  "type": "webrtc",
+                  "sdp": "offer SDP string"
+                }
+              ],
+              "default": {
+                "type": "websocket"
+              }
+            },
+            "version": {
+              "enum": [
+                "v1",
+                "v2",
+                "v3",
+                null
+              ]
+            },
+            "voice": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "result": {},
+        "asynchronousCompletion": "Wait for thread/realtime/started; for WebRTC wait for thread/realtime/sdp and apply it as answer."
+      },
+      "thread/realtime/appendAudio": {
+        "params": {
+          "required": [
+            "threadId",
+            "audio"
+          ],
+          "properties": {
+            "threadId": "string",
+            "audio": {
+              "data": "base64 string",
+              "sampleRate": "u32",
+              "numChannels": "u16",
+              "samplesPerChannel": "u32?",
+              "itemId": "string?"
+            }
+          }
+        },
+        "result": {}
+      },
+      "thread/realtime/appendText": {
+        "params": {
+          "required": [
+            "threadId",
+            "text"
+          ],
+          "properties": {
+            "threadId": "string",
+            "text": "string",
+            "role": {
+              "enum": [
+                "user",
+                "developer",
+                "assistant"
+              ],
+              "default": "user"
+            }
+          }
+        },
+        "result": {}
+      },
+      "thread/realtime/appendSpeech": {
+        "params": {
+          "required": [
+            "threadId",
+            "text"
+          ],
+          "properties": {
+            "threadId": "string",
+            "text": "string"
+          }
+        },
+        "result": {}
+      },
+      "thread/realtime/stop": {
+        "params": {
+          "required": [
+            "threadId"
+          ],
+          "properties": {
+            "threadId": "string"
+          }
+        },
+        "result": {}
+      }
+    },
+    "notifications": {
+      "thread/realtime/started": {
+        "threadId": "string",
+        "realtimeSessionId": "string?",
+        "version": "v1|v2|v3"
+      },
+      "thread/realtime/itemAdded": {
+        "threadId": "string",
+        "item": "opaque backend JSON"
+      },
+      "thread/realtime/transcript/delta": {
+        "threadId": "string",
+        "role": "string",
+        "delta": "string"
+      },
+      "thread/realtime/transcript/done": {
+        "threadId": "string",
+        "role": "string",
+        "text": "string"
+      },
+      "thread/realtime/outputAudio/delta": {
+        "threadId": "string",
+        "audio": "ThreadRealtimeAudioChunk"
+      },
+      "thread/realtime/sdp": {
+        "threadId": "string",
+        "sdp": "answer SDP string"
+      },
+      "thread/realtime/error": {
+        "threadId": "string",
+        "message": "string"
+      },
+      "thread/realtime/closed": {
+        "threadId": "string",
+        "reason": "string?"
+      }
+    },
+    "versions": {
+      "v1": {
+        "name": "Legacy Bidi",
+        "handoffEvents": "conversation.handoff.*",
+        "webrtc": true
+      },
+      "v2": {
+        "name": "Realtime Voice API",
+        "handoffEvents": "Realtime conversation events",
+        "webrtc": false,
+        "websocket": true,
+        "interruption": "conversation.item.truncate"
+      },
+      "v3": {
+        "name": "Frameless Bidi",
+        "handoffEvents": "delegation.*",
+        "webrtc": true,
+        "supportsInitialItems": true,
+        "supportsHandoffModes": true
+      }
+    },
+    "transportMatrix": {
+      "websocket": {
+        "v1": true,
+        "v2": true,
+        "v3": true
+      },
+      "webrtc": {
+        "v1": true,
+        "v2": false,
+        "v3": true
+      }
+    },
+    "observedDefaults": {
+      "websocketRealtimeModel": "gpt-realtime-1.5",
+      "framelessRealtimeModel": "gpt-live-1-boulder-alpha",
+      "note": "Internal defaults are implementation details and may be overridden by installed config/rollout."
+    },
+    "limits": {
+      "audioInputQueue": 256,
+      "textInputQueue": 64,
+      "handoffInputQueue": 64,
+      "outputEventQueue": 256,
+      "startupContextBudgetEstimatedTokens": 5300,
+      "assistantOutputBudgetEstimatedTokens": 1000,
+      "handoffFlushIntervalMs": 200,
+      "initialItemsMax": 128,
+      "initialItemsMaxEstimatedTokens": 8192
+    },
+    "audioWarning": "The app-server audio DTO declares base64 bytes and timing metadata but not a sample encoding enum. For browser integrations prefer WebRTC. For appendAudio, generate and inspect the exact installed schema/config and verify encoding empirically before production."
+  },
+  "serverInitiatedRequests": {
+    "why": "Agent execution can block until the client responds.",
+    "common": {
+      "item/commandExecution/requestApproval": {
+        "responseExamples": [
+          {
+            "decision": "accept"
+          },
+          {
+            "decision": "acceptForSession"
+          },
+          {
+            "decision": "decline"
+          },
+          {
+            "decision": "cancel"
+          }
+        ]
+      },
+      "item/fileChange/requestApproval": {
+        "responseExamples": [
+          {
+            "decision": "accept"
+          },
+          {
+            "decision": "acceptForSession"
+          },
+          {
+            "decision": "decline"
+          },
+          {
+            "decision": "cancel"
+          }
+        ]
+      },
+      "item/permissions/requestApproval": {
+        "response": "method-specific decision payload"
+      },
+      "item/tool/requestUserInput": {
+        "response": "method-specific structured answer"
+      },
+      "mcpServer/elicitation/request": {
+        "response": {
+          "action": "accept|decline|cancel",
+          "content": "method-specific"
+        }
+      },
+      "currentTime/read": {
+        "response": {
+          "currentTimeAt": "Unix seconds integer"
+        }
+      }
+    },
+    "resolvedNotification": "serverRequest/resolved"
+  },
+  "errors": {
+    "overload": {
+      "code": -32001,
+      "message": "Server overloaded; retry later.",
+      "retry": "exponential backoff with jitter"
+    },
+    "commonIntegrationFailures": [
+      "Not initialized",
+      "Already initialized",
+      "experimental API not enabled",
+      "thread not loaded or realtime feature disabled",
+      "WebRTC version v2 rejected",
+      "realtime API key auth required for some websocket paths",
+      "SDP negotiation failure",
+      "upstream entitlement/routing failure"
+    ]
+  },
+  "security": {
+    "rules": [
+      "Bind bridge and app-server listeners to loopback unless an authenticated transport is added",
+      "Do not expose raw app-server JSON-RPC to the public internet",
+      "Do not extract or replay private ChatGPT credentials or bypass entitlements",
+      "Treat thread/shellCommand and process/spawn as host-level dangerous capabilities",
+      "Preserve approval prompts and least-privilege sandbox settings"
+    ]
+  }
+}
