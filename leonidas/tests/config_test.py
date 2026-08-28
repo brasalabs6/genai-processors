@@ -42,6 +42,33 @@ class AgentConfigTest(unittest.TestCase):
     with self.assertRaisesRegex(config.ConfigValidationError, 'voice_name'):
       config.AgentConfig.from_dict(value)
 
+  def test_rejects_malformed_media_type(self):
+    value = config.AgentConfig.default().to_dict()
+    value['media']['frame_interval_ms'] = '1000'
+
+    with self.assertRaisesRegex(
+        config.ConfigValidationError, 'media.frame_interval_ms'
+    ):
+      config.AgentConfig.from_dict(value)
+
+  def test_rejects_string_diarization_boolean(self):
+    value = config.AgentConfig.default().to_dict()
+    value['cascade']['diarization_enabled'] = 'false'
+
+    with self.assertRaisesRegex(
+        config.ConfigValidationError, 'cascade.diarization_enabled'
+    ):
+      config.AgentConfig.from_dict(value)
+
+  def test_rejects_malformed_generation_token_type(self):
+    value = config.AgentConfig.default().to_dict()
+    value['generation']['context_trigger_tokens'] = '6000'
+
+    with self.assertRaisesRegex(
+        config.ConfigValidationError, 'generation.context_trigger_tokens'
+    ):
+      config.AgentConfig.from_dict(value)
+
   def test_cascade_configuration_is_explicit_and_validated(self):
     value = config.AgentConfig.default().with_updates(
         {
