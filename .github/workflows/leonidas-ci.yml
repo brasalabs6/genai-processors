@@ -45,15 +45,15 @@ jobs:
       matrix:
         python-version: ['3.11', '3.12', '3.13']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Install project and CPU-only test tools
         run: |
           python -m pip install -e .
-          python -m pip install aiosqlite av flake8 pyink pytest pytest-xdist 'SQLAlchemy>=2.0' 'webrtcvad-wheels==2.0.14'
+          python -m pip install aiosqlite av flake8 'pyink==25.12.0' pytest pytest-xdist 'SQLAlchemy>=2.0' 'webrtcvad-wheels==2.0.14'
       - name: Verify dependency graph
         run: |
           python -m pip check
@@ -79,8 +79,8 @@ jobs:
       run:
         working-directory: leonidas/webui
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -101,8 +101,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
@@ -122,8 +122,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
@@ -151,17 +151,21 @@ jobs:
     timeout-minutes: 45
     environment: leonidas-live
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install project and cascade dependencies
         run: python -m pip install -e '.[dev,cascade]'
       - name: Validate private runtime prerequisites without printing secrets
         run: python -m leonidas.cascade.preflight --device cuda
       - name: Run opt-in cascade live tests
         env:
-          LEONIDAS_RUN_LIVE_CASCADE: '1'
+          LEONIDAS_RUN_CASCADE_E2E: '1'
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         run: python -m unittest -v leonidas.e2e.tests.cascade_live_test
+      - name: Run Parakeet, Pyannote and XTTS coexistence gate
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: python -m leonidas.e2e.coexistence_smoke --device cuda
       - name: Run Gemini live regressions
         env:
           LEONIDAS_RUN_LIVE: '1'
