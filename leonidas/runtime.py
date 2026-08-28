@@ -31,6 +31,10 @@ class MediaAlreadyConnectedError(RuntimeError):
   """Raised when a second media owner attempts to attach."""
 
 
+class InputBackpressureError(RuntimeError):
+  """Raised when non-droppable realtime input cannot be queued in time."""
+
+
 OutputSender = Callable[[content_api.ProcessorPart], Any]
 PipelineFactory = Callable[[config.AgentConfig], processor.Processor]
 PipelinePreparer = Callable[[config.AgentConfig], Awaitable[Any]]
@@ -49,16 +53,22 @@ class SessionManager:
       metrics: telemetry.MetricsStore | None = None,
       stop_timeout: float = 3.0,
       state_listener_timeout: float = 1.0,
+      input_queue_timeout: float = 1.0,
       pipeline_preparer: PipelinePreparer | None = None,
       requires_preparation: PreparationSelector | None = None,
   ):
-    if stop_timeout <= 0 or state_listener_timeout <= 0:
+    if (
+        stop_timeout <= 0
+        or state_listener_timeout <= 0
+        or input_queue_timeout <= 0
+    ):
       raise ValueError('Session timeouts must be positive')
     self._config_store = config_store
     self._pipeline_factory = pipeline_factory
     self._metrics = metrics or telemetry.MetricsStore()
     self._stop_timeout = stop_timeout
     self._state_listener_timeout = state_listener_timeout
+    self._input_queue_timeout = input_queue_timeout
     self._pipeline_preparer = pipeline_preparer
     self._requires_preparation = requires_preparation or (lambda _config: False)
     self._state = SessionState.STOPPED
@@ -74,6 +84,7 @@ class SessionManager:
     self._last_error: str | None = None
     self._last_error_detail: str | None = None
     self._lock = asyncio.Lock()
+    self._operation_lock = asyncio.Lock()
     self._state_listeners: set[StateListener] = set()
 
   async def attach_media(self, sender: OutputSender) -> None:
@@ -107,7 +118,7 @@ class SessionManager:
             self._call(listener, dict(snapshot)),
             timeout=self._state_listener_timeout,
         )
-      except Exception as exc:  # Broken or stalled sockets cannot poison state.
+      except Exception as exc:
         self._state_listeners.discard(listener)
         logging.warning(
             'Leonidas state listener removed error_type=%s',
@@ -147,6 +158,10 @@ class SessionManager:
       await self._call(sender, part)
 
   async def start(self) -> dict[str, Any]:
+    async with self._operation_lock:
+      return await self._start()
+
+  async def _start(self) -> dict[str, Any]:
     async with self._lock:
       if self._state in (SessionState.STARTING, SessionState.RUNNING):
         return self.snapshot()
@@ -265,6 +280,10 @@ class SessionManager:
     await self._notify_state(snapshot)
 
   async def stop(self) -> dict[str, Any]:
+    async with self._operation_lock:
+      return await self._stop()
+
+  async def _stop(self) -> dict[str, Any]:
     async with self._lock:
       if self._state == SessionState.STOPPED:
         return self.snapshot()
@@ -314,7 +333,19 @@ class SessionManager:
     queue = self._input_queue
     if self._state != SessionState.RUNNING or queue is None:
       return
-    queue.put_nowait(part)
+    if content_api.is_image(part.mimetype) and queue.full():
+      self._metrics.increment('frames_dropped_backpressure')
+      return
+    try:
+      await asyncio.wait_for(
+          queue.put(part), timeout=self._input_queue_timeout
+      )
+    except TimeoutError as exc:
+      self._metrics.increment('input_backpressure_timeouts')
+      raise InputBackpressureError(
+          'Leonidas input queue remained saturated'
+      ) from exc
+    self._metrics.observe('input_queue_depth', float(queue.qsize()))
     if content_api.is_audio(part.mimetype):
       self._metrics.increment('audio_chunks_received')
     elif content_api.is_image(part.mimetype):
@@ -334,37 +365,33 @@ class SessionManager:
       await asyncio.shield(task)
 
   async def apply_config(self) -> dict[str, Any]:
-    """Applies a draft atomically from the caller's point of view.
+    """Applies a draft atomically from the caller's point of view."""
+    async with self._operation_lock:
+      was_running = self._state in (
+          SessionState.STARTING,
+          SessionState.RUNNING,
+      )
+      previous, _ = self._config_store.promote_draft()
+      if not was_running:
+        return self._config_store.snapshot().to_dict()
 
-    A prepared local pipeline settles before success is returned. Any async
-    preparation or activation failure restores the previous active config and
-    restarts the previous session before the original failure is re-raised.
-    """
-    was_running = self._state in (
-        SessionState.STARTING,
-        SessionState.RUNNING,
-    )
-    previous, _ = self._config_store.promote_draft()
-    if not was_running:
-      return self._config_store.snapshot().to_dict()
-
-    await self.stop()
-    try:
-      await self.start()
-      await self._wait_until_started()
-    except Exception:
-      self._config_store.restore_active(previous)
-      await self.stop()
+      await self._stop()
       try:
-        await self.start()
+        await self._start()
         await self._wait_until_started()
-      except Exception as rollback_error:
-        logging.error(
-            'Leonidas config rollback failed error_type=%s',
-            type(rollback_error).__name__,
-        )
-      raise
-    return self._config_store.snapshot().to_dict()
+      except Exception:
+        self._config_store.restore_active(previous)
+        await self._stop()
+        try:
+          await self._start()
+          await self._wait_until_started()
+        except Exception as rollback_error:
+          logging.error(
+              'Leonidas config rollback failed error_type=%s',
+              type(rollback_error).__name__,
+          )
+        raise
+      return self._config_store.snapshot().to_dict()
 
   @staticmethod
   def _public_error_detail(exception: BaseException) -> str | None:
