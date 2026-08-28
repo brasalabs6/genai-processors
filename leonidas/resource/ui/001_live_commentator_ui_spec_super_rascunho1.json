@@ -1,0 +1,2028 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schema_version": "1.0.0",
+  "artifact_type": "ui_design_specification",
+  "artifact_name": "Live Commentator — Workstation UI Specification",
+  "language": "pt-BR",
+  "generated_from": {
+    "source_type": "single_reference_screenshot",
+    "source_file": "image(5).png",
+    "source_dimensions_px": {
+      "width": 1600,
+      "height": 900
+    },
+    "inspection_method": "visual/manual",
+    "measurement_precision": "aproximada",
+    "disclaimer": "As medidas, cores e fontes foram inferidas visualmente a partir da imagem. Os valores são especificações de reconstrução fiéis, não extrações do arquivo-fonte original."
+  },
+  "product": {
+    "name": "Live Commentator",
+    "version_displayed": "v1.2.0",
+    "descriptor": "AI Copilot Workstation",
+    "primary_purpose": "Interface desktop para observação visual, conversa multimodal em tempo real, controle de dispositivos, métricas, logs e ações rápidas.",
+    "audience": [
+      "operadores de agentes multimodais",
+      "desenvolvedores",
+      "analistas",
+      "criadores que utilizam comentários em tempo real"
+    ],
+    "experience_attributes": [
+      "técnica",
+      "operacional",
+      "densa",
+      "precisa",
+      "alta legibilidade",
+      "alto contraste",
+      "brutalismo tecnológico refinado"
+    ]
+  },
+  "design_intent": {
+    "summary": "Workstation profissional de IA com estética escura, grade técnica, tipografia condensada, painéis modulares e acento amarelo-lima.",
+    "keywords": [
+      "dark workstation",
+      "tactical dashboard",
+      "AI operations",
+      "HUD discreto",
+      "neon lime",
+      "grid técnico",
+      "monochrome",
+      "condensed typography",
+      "dense information"
+    ],
+    "principles": [
+      {
+        "name": "Hierarquia operacional",
+        "description": "Estados críticos, ações primárias e dados de saúde devem ser percebidos antes de elementos decorativos."
+      },
+      {
+        "name": "Contraste funcional",
+        "description": "O amarelo-lima é reservado para seleção, confirmação, destaque semântico e ação primária."
+      },
+      {
+        "name": "Densidade controlada",
+        "description": "A interface apresenta muitos dados, mas mantém alinhamento rígido, agrupamento por painéis e espaços internos consistentes."
+      },
+      {
+        "name": "Geometria técnica",
+        "description": "Bordas finas, cantos pequenos, divisores e retículas constroem uma linguagem de instrumento profissional."
+      }
+    ]
+  },
+  "viewport": {
+    "reference": {
+      "width_px": 1600,
+      "height_px": 900,
+      "aspect_ratio": "16:9"
+    },
+    "minimum_desktop_target": {
+      "width_px": 1280,
+      "height_px": 720
+    },
+    "preferred_desktop_target": {
+      "width_px": 1600,
+      "height_px": 900
+    },
+    "coordinate_origin": "top-left",
+    "density_assumption": "1 CSS px por pixel da referência em viewport 1600×900"
+  },
+  "design_system": {
+    "color_tokens": {
+      "background": {
+        "app": "#060806",
+        "header": "#070907",
+        "sidebar": "#090B09",
+        "panel": "#0B0D0B",
+        "panel_elevated": "#101310",
+        "surface": "#121512",
+        "surface_hover": "#171B17",
+        "surface_active": "#1B201A",
+        "input": "#0C0E0C"
+      },
+      "accent": {
+        "primary": "#D9FF00",
+        "primary_hover": "#E5FF45",
+        "primary_pressed": "#B8D900",
+        "primary_muted": "#6F8300",
+        "primary_translucent_08": "rgba(217,255,0,0.08)",
+        "primary_translucent_14": "rgba(217,255,0,0.14)",
+        "primary_translucent_24": "rgba(217,255,0,0.24)"
+      },
+      "text": {
+        "primary": "#F2F4ED",
+        "secondary": "#B4B8AF",
+        "tertiary": "#838980",
+        "disabled": "#555B54",
+        "inverse": "#090B08",
+        "accent": "#D9FF00"
+      },
+      "border": {
+        "subtle": "#1A1E1A",
+        "default": "#30352F",
+        "strong": "#4A5048",
+        "accent": "#B9D900",
+        "focus": "#D9FF00"
+      },
+      "status": {
+        "success": "#B8FF16",
+        "warning": "#FFC857",
+        "error": "#FF5D5D",
+        "info": "#6FCBFF",
+        "neutral": "#7B8279"
+      },
+      "chart": {
+        "line_primary": "#D9FF00",
+        "grid": "#242A23",
+        "axis": "#747A71",
+        "fill": "rgba(217,255,0,0.08)"
+      }
+    },
+    "typography": {
+      "font_families": {
+        "display": {
+          "recommended": [
+            "Barlow Condensed",
+            "Roboto Condensed",
+            "Arial Narrow",
+            "sans-serif"
+          ],
+          "usage": "títulos, headers de painéis, botões e labels em caixa alta"
+        },
+        "body": {
+          "recommended": [
+            "Inter",
+            "IBM Plex Sans",
+            "Arial",
+            "sans-serif"
+          ],
+          "usage": "mensagens, descrições, valores e navegação"
+        },
+        "mono": {
+          "recommended": [
+            "IBM Plex Mono",
+            "JetBrains Mono",
+            "SFMono-Regular",
+            "monospace"
+          ],
+          "usage": "timestamps, IDs, métricas, logs, atalhos e dados técnicos"
+        }
+      },
+      "scale": {
+        "display_lg": {
+          "font_size_px": 28,
+          "line_height_px": 32,
+          "font_weight": 800,
+          "letter_spacing_em": -0.02
+        },
+        "title_md": {
+          "font_size_px": 18,
+          "line_height_px": 22,
+          "font_weight": 700,
+          "letter_spacing_em": 0.015
+        },
+        "panel_title": {
+          "font_size_px": 14,
+          "line_height_px": 18,
+          "font_weight": 700,
+          "letter_spacing_em": 0.035,
+          "text_transform": "uppercase"
+        },
+        "section_label": {
+          "font_size_px": 12,
+          "line_height_px": 16,
+          "font_weight": 700,
+          "letter_spacing_em": 0.05,
+          "text_transform": "uppercase"
+        },
+        "body_md": {
+          "font_size_px": 13,
+          "line_height_px": 20,
+          "font_weight": 400
+        },
+        "body_sm": {
+          "font_size_px": 11,
+          "line_height_px": 16,
+          "font_weight": 400
+        },
+        "mono_sm": {
+          "font_size_px": 10,
+          "line_height_px": 15,
+          "font_weight": 500
+        },
+        "metric_lg": {
+          "font_size_px": 24,
+          "line_height_px": 26,
+          "font_weight": 700
+        },
+        "button": {
+          "font_size_px": 11,
+          "line_height_px": 14,
+          "font_weight": 700,
+          "letter_spacing_em": 0.03
+        }
+      },
+      "case_rules": {
+        "navigation": "uppercase",
+        "panel_headers": "uppercase",
+        "primary_actions": "uppercase",
+        "body_copy": "sentence case",
+        "technical_values": "preservar capitalização original"
+      }
+    },
+    "spacing": {
+      "base_unit_px": 4,
+      "scale_px": [
+        2,
+        4,
+        6,
+        8,
+        10,
+        12,
+        16,
+        20,
+        24,
+        32,
+        40,
+        48
+      ],
+      "panel_padding_default_px": 14,
+      "panel_gap_default_px": 12,
+      "section_gap_px": 10,
+      "control_gap_px": 8,
+      "inline_gap_px": 6
+    },
+    "radii": {
+      "none": 0,
+      "xs": 2,
+      "sm": 3,
+      "md": 5,
+      "lg": 8,
+      "pill": 999
+    },
+    "borders": {
+      "panel": {
+        "width_px": 1,
+        "style": "solid",
+        "color_token": "border.default"
+      },
+      "accent_panel": {
+        "width_px": 1,
+        "style": "solid",
+        "color_token": "border.accent"
+      },
+      "divider": {
+        "width_px": 1,
+        "style": "solid",
+        "color_token": "border.subtle"
+      },
+      "focus_ring": {
+        "width_px": 2,
+        "offset_px": 2,
+        "color_token": "border.focus"
+      }
+    },
+    "shadows": {
+      "panel": "0 1px 0 rgba(255,255,255,0.02), inset 0 0 0 1px rgba(255,255,255,0.01)",
+      "accent_glow": "0 0 18px rgba(217,255,0,0.08)",
+      "button_primary": "0 0 14px rgba(217,255,0,0.12)",
+      "none_by_default": true
+    },
+    "grid_texture": {
+      "enabled": true,
+      "cell_size_px": 32,
+      "minor_line": "rgba(255,255,255,0.025)",
+      "major_line": "rgba(255,255,255,0.045)",
+      "css_recipe": "background-image: linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px); background-size: 32px 32px;"
+    },
+    "iconography": {
+      "style": "outline/monoline",
+      "stroke_width_px": 1.5,
+      "default_size_px": 16,
+      "small_size_px": 13,
+      "large_size_px": 22,
+      "recommended_library": "Lucide Icons",
+      "custom_icons_required": [
+        "LC logo",
+        "HUD reticle",
+        "resource meter",
+        "corner brackets"
+      ]
+    },
+    "motion": {
+      "duration_fast_ms": 100,
+      "duration_default_ms": 160,
+      "duration_slow_ms": 260,
+      "easing_standard": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "live_pulse": {
+        "duration_ms": 1600,
+        "property": "opacity + box-shadow",
+        "range": [
+          0.55,
+          1.0
+        ]
+      },
+      "reduce_motion_behavior": "Desativar pulso, interpolação de gráficos e transições de deslocamento."
+    }
+  },
+  "layout": {
+    "canvas": {
+      "x_px": 0,
+      "y_px": 0,
+      "width_px": 1600,
+      "height_px": 900,
+      "x_percent": 0.0,
+      "y_percent": 0.0,
+      "width_percent": 100.0,
+      "height_percent": 100.0
+    },
+    "regions": {
+      "top_header": {
+        "bounds": {
+          "x_px": 0,
+          "y_px": 0,
+          "width_px": 1600,
+          "height_px": 56,
+          "x_percent": 0.0,
+          "y_percent": 0.0,
+          "width_percent": 100.0,
+          "height_percent": 6.222
+        },
+        "position": "fixed/top",
+        "z_index": 50
+      },
+      "sidebar": {
+        "bounds": {
+          "x_px": 12,
+          "y_px": 68,
+          "width_px": 138,
+          "height_px": 776,
+          "x_percent": 0.75,
+          "y_percent": 7.556,
+          "width_percent": 8.625,
+          "height_percent": 86.222
+        },
+        "position": "fixed/left",
+        "z_index": 30
+      },
+      "workspace": {
+        "bounds": {
+          "x_px": 164,
+          "y_px": 68,
+          "width_px": 1420,
+          "height_px": 776,
+          "x_percent": 10.25,
+          "y_percent": 7.556,
+          "width_percent": 88.75,
+          "height_percent": 86.222
+        },
+        "display": "grid",
+        "grid_template_columns": "824px 584px",
+        "column_gap_px": 12
+      },
+      "left_workspace_column": {
+        "bounds": {
+          "x_px": 164,
+          "y_px": 68,
+          "width_px": 824,
+          "height_px": 776,
+          "x_percent": 10.25,
+          "y_percent": 7.556,
+          "width_percent": 51.5,
+          "height_percent": 86.222
+        },
+        "display": "grid",
+        "grid_template_rows": "397px 110px 247px",
+        "row_gap_px": 11
+      },
+      "right_workspace_column": {
+        "bounds": {
+          "x_px": 1000,
+          "y_px": 68,
+          "width_px": 584,
+          "height_px": 776,
+          "x_percent": 62.5,
+          "y_percent": 7.556,
+          "width_percent": 36.5,
+          "height_percent": 86.222
+        },
+        "display": "grid",
+        "grid_template_rows": "642px 122px",
+        "row_gap_px": 12
+      },
+      "bottom_status_bar": {
+        "bounds": {
+          "x_px": 0,
+          "y_px": 858,
+          "width_px": 1600,
+          "height_px": 42,
+          "x_percent": 0.0,
+          "y_percent": 95.333,
+          "width_percent": 100.0,
+          "height_percent": 4.667
+        },
+        "position": "fixed/bottom",
+        "z_index": 50
+      }
+    },
+    "alignment_rules": [
+      "Todos os painéis principais alinham os cabeçalhos na mesma linha y=68.",
+      "A coluna direita mantém largura fixa aproximada de 36,5% do viewport de referência.",
+      "A sidebar não toca as bordas do viewport; possui margem externa de aproximadamente 12px.",
+      "O footer usa divisores verticais entre grupos e alinhamento central vertical.",
+      "O conteúdo denso usa baseline de 4px e múltiplos de 8px para espaçamentos maiores."
+    ],
+    "responsive_strategy": "desktop-first"
+  },
+  "component_tree": {
+    "id": "app-root",
+    "type": "ApplicationShell",
+    "children": [
+      {
+        "id": "top-header",
+        "type": "TopHeader",
+        "children": [
+          "brand-lockup",
+          "connection-status",
+          "model-region-meta",
+          "resource-meters",
+          "terminal-action",
+          "header-utility-icons"
+        ]
+      },
+      {
+        "id": "sidebar",
+        "type": "Sidebar",
+        "children": [
+          "sidebar-navigation",
+          "active-session-card",
+          "sidebar-collapse"
+        ]
+      },
+      {
+        "id": "workspace",
+        "type": "WorkspaceGrid",
+        "children": [
+          {
+            "id": "left-workspace-column",
+            "type": "Column",
+            "children": [
+              "vision-panel",
+              "device-controls-panel",
+              "logs-panel",
+              "metrics-panel"
+            ]
+          },
+          {
+            "id": "right-workspace-column",
+            "type": "Column",
+            "children": [
+              "conversation-panel",
+              "quick-actions-panel"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "bottom-status-bar",
+        "type": "StatusFooter"
+      }
+    ]
+  },
+  "components": {
+    "top_header": {
+      "id": "top-header",
+      "bounds": {
+        "x_px": 0,
+        "y_px": 0,
+        "width_px": 1600,
+        "height_px": 56,
+        "x_percent": 0.0,
+        "y_percent": 0.0,
+        "width_percent": 100.0,
+        "height_percent": 6.222
+      },
+      "background_token": "background.header",
+      "border_bottom_token": "border.subtle",
+      "padding": {
+        "left_px": 14,
+        "right_px": 14,
+        "top_px": 8,
+        "bottom_px": 8
+      },
+      "layout": {
+        "display": "flex",
+        "align_items": "center",
+        "justify_content": "space-between",
+        "gap_px": 16
+      },
+      "sections": [
+        {
+          "id": "brand-lockup",
+          "bounds_approx": {
+            "x_px": 14,
+            "y_px": 10,
+            "width_px": 475,
+            "height_px": 38,
+            "x_percent": 0.875,
+            "y_percent": 1.111,
+            "width_percent": 29.688,
+            "height_percent": 4.222
+          },
+          "items": [
+            {
+              "id": "lc-logo",
+              "type": "LogoBadge",
+              "size_px": 34,
+              "content": "LC",
+              "background_token": "accent.primary",
+              "text_token": "text.inverse",
+              "font": "display",
+              "font_weight": 800,
+              "radius_token": "xs"
+            },
+            {
+              "id": "product-title",
+              "type": "Text",
+              "content": "LIVE COMMENTATOR",
+              "typography_token": "display_lg",
+              "color_token": "text.primary"
+            },
+            {
+              "id": "version-badge",
+              "type": "Badge",
+              "content": "v1.2.0",
+              "variant": "accent-outline"
+            },
+            {
+              "id": "product-descriptor",
+              "type": "Text",
+              "content": "AI COPILOT WORKSTATION",
+              "typography_token": "mono_sm",
+              "color_token": "text.secondary"
+            }
+          ]
+        },
+        {
+          "id": "connection-and-model",
+          "bounds_approx": {
+            "x_px": 566,
+            "y_px": 10,
+            "width_px": 430,
+            "height_px": 38,
+            "x_percent": 35.375,
+            "y_percent": 1.111,
+            "width_percent": 26.875,
+            "height_percent": 4.222
+          },
+          "items": [
+            {
+              "id": "connected-status",
+              "type": "StatusLabel",
+              "label": "CONECTADO",
+              "status": "success",
+              "leading_indicator": "solid-dot"
+            },
+            {
+              "id": "model-info",
+              "type": "KeyValueInline",
+              "label": "MODELO:",
+              "value": "Gemini 1.5 Pro",
+              "value_color_token": "text.accent"
+            },
+            {
+              "id": "region-info",
+              "type": "KeyValueInline",
+              "label": "REGIÃO:",
+              "value": "local",
+              "value_color_token": "text.accent"
+            }
+          ]
+        },
+        {
+          "id": "header-system-controls",
+          "bounds_approx": {
+            "x_px": 1080,
+            "y_px": 8,
+            "width_px": 505,
+            "height_px": 40,
+            "x_percent": 67.5,
+            "y_percent": 0.889,
+            "width_percent": 31.562,
+            "height_percent": 4.444
+          },
+          "items": [
+            {
+              "id": "cpu-meter",
+              "type": "ResourceMeter",
+              "label": "CPU",
+              "value": 24,
+              "unit": "%",
+              "segments": 12,
+              "active_segments": 6
+            },
+            {
+              "id": "ram-meter",
+              "type": "ResourceMeter",
+              "label": "RAM",
+              "value": 2.4,
+              "unit": "GB",
+              "segments": 12,
+              "active_segments": 6
+            },
+            {
+              "id": "fps-meter",
+              "type": "ResourceMeter",
+              "label": "FPS",
+              "value": 30,
+              "segments": 12,
+              "active_segments": 7
+            },
+            {
+              "id": "terminal-button",
+              "type": "Button",
+              "label": "TERMINAL",
+              "trailing_icon": "Terminal",
+              "variant": "secondary"
+            },
+            {
+              "id": "notifications-button",
+              "type": "IconButton",
+              "icon": "Bell",
+              "aria_label": "Notificações"
+            },
+            {
+              "id": "user-avatar",
+              "type": "Avatar",
+              "content": "LC",
+              "variant": "accent-outline",
+              "size_px": 30
+            }
+          ]
+        }
+      ]
+    },
+    "sidebar": {
+      "id": "sidebar",
+      "bounds": {
+        "x_px": 12,
+        "y_px": 68,
+        "width_px": 138,
+        "height_px": 776,
+        "x_percent": 0.75,
+        "y_percent": 7.556,
+        "width_percent": 8.625,
+        "height_percent": 86.222
+      },
+      "background_token": "background.sidebar",
+      "border_token": "border.default",
+      "radius_token": "sm",
+      "layout": {
+        "display": "flex",
+        "direction": "column",
+        "justify_content": "space-between"
+      },
+      "navigation": {
+        "item_height_px": 47,
+        "icon_size_px": 16,
+        "active_indicator_width_px": 3,
+        "active_background": "linear-gradient(90deg, rgba(217,255,0,.12), rgba(217,255,0,.025))",
+        "items": [
+          {
+            "id": "nav-vision",
+            "label": "VISÃO",
+            "icon": "Eye",
+            "route": "/vision",
+            "active": true
+          },
+          {
+            "id": "nav-conversation",
+            "label": "CONVERSA",
+            "icon": "MessageSquare",
+            "route": "/conversation",
+            "active": false
+          },
+          {
+            "id": "nav-tools",
+            "label": "FERRAMENTAS",
+            "icon": "Wrench",
+            "route": "/tools",
+            "active": false
+          },
+          {
+            "id": "nav-sessions",
+            "label": "SESSÕES",
+            "icon": "SquareCheckBig",
+            "route": "/sessions",
+            "active": false
+          },
+          {
+            "id": "nav-settings",
+            "label": "CONFIGURAÇÕES",
+            "icon": "Settings",
+            "route": "/settings",
+            "active": false
+          },
+          {
+            "id": "nav-extensions",
+            "label": "EXTENSÕES",
+            "icon": "BadgePlus",
+            "route": "/extensions",
+            "active": false
+          },
+          {
+            "id": "nav-monitor",
+            "label": "MONITOR",
+            "icon": "Monitor",
+            "route": "/monitor",
+            "active": false
+          },
+          {
+            "id": "nav-analytics",
+            "label": "ANALYTICS",
+            "icon": "BarChart3",
+            "route": "/analytics",
+            "active": false
+          }
+        ]
+      },
+      "active_session_summary": {
+        "id": "active-session-card",
+        "position": "bottom",
+        "padding_px": 14,
+        "content": {
+          "label": "SESSÃO ATIVA",
+          "session_id": "sess_7f3a2c1b",
+          "uptime_label": "Uptime",
+          "uptime_value": "00:12:47"
+        }
+      },
+      "collapse_control": {
+        "id": "sidebar-collapse",
+        "icon": "ChevronsLeft",
+        "aria_label": "Recolher barra lateral"
+      }
+    },
+    "vision_panel": {
+      "id": "vision-panel",
+      "bounds": {
+        "x_px": 164,
+        "y_px": 68,
+        "width_px": 824,
+        "height_px": 397,
+        "x_percent": 10.25,
+        "y_percent": 7.556,
+        "width_percent": 51.5,
+        "height_percent": 44.111
+      },
+      "background_token": "background.panel",
+      "border_token": "border.default",
+      "radius_token": "sm",
+      "header": {
+        "height_px": 58,
+        "padding": {
+          "left_px": 15,
+          "right_px": 15,
+          "top_px": 12,
+          "bottom_px": 10
+        },
+        "title": "VISÃO — OBSERVAÇÃO",
+        "title_typography_token": "panel_title",
+        "status_badge": {
+          "label": "LIVE",
+          "variant": "accent-outline",
+          "leading_dot": true
+        },
+        "substatus": {
+          "label": "Sem captura",
+          "icon": "Circle",
+          "color_token": "text.tertiary"
+        },
+        "actions": [
+          {
+            "label": "ABRIR CÂMERA",
+            "icon": "Camera",
+            "variant": "secondary"
+          },
+          {
+            "label": "COMPARTILHAR TELA",
+            "icon": "MonitorUp",
+            "variant": "secondary"
+          },
+          {
+            "icon": "EllipsisVertical",
+            "variant": "ghost",
+            "aria_label": "Mais opções"
+          }
+        ]
+      },
+      "viewport": {
+        "id": "vision-canvas",
+        "bounds_approx": {
+          "x_px": 176,
+          "y_px": 127,
+          "width_px": 800,
+          "height_px": 337,
+          "x_percent": 11.0,
+          "y_percent": 14.111,
+          "width_percent": 50.0,
+          "height_percent": 37.444
+        },
+        "background_token": "background.app",
+        "grid_texture": true,
+        "hud_elements": {
+          "corner_brackets": true,
+          "left_index": "01",
+          "crosshair_markers": true,
+          "right_meta": [
+            {
+              "label": "RESOLUÇÃO:",
+              "value": "—"
+            },
+            {
+              "label": "FPS:",
+              "value": "—"
+            }
+          ],
+          "reticle": {
+            "center_approx_px": {
+              "x": 564,
+              "y": 225
+            },
+            "diameter_px": 86,
+            "rings": 3,
+            "nodes": 3,
+            "node_color_token": "accent.primary",
+            "center_mark": "+"
+          }
+        },
+        "empty_state": {
+          "title_lines": [
+            "COMPARTILHE CONTEXTO VISUAL",
+            "QUANDO QUISER"
+          ],
+          "accent_line_index": 1,
+          "description": "A câmera e a tela são enviadas apenas enquanto os controles estiverem ativos.",
+          "primary_action": {
+            "label": "ABRIR CÂMERA",
+            "icon": "ScanLine",
+            "variant": "primary",
+            "width_px": 188,
+            "height_px": 46
+          },
+          "secondary_action": {
+            "label": "COMPARTILHAR TELA",
+            "icon": "ScanLine",
+            "variant": "secondary",
+            "width_px": 205,
+            "height_px": 46
+          }
+        }
+      },
+      "states": {
+        "idle": {
+          "label": "Sem captura",
+          "show_empty_state": true,
+          "show_grid": true
+        },
+        "requesting_permission": {
+          "label": "Solicitando permissão…",
+          "show_spinner": true,
+          "disable_actions": true
+        },
+        "camera_active": {
+          "label": "Câmera ativa",
+          "show_video": true,
+          "show_resolution_fps": true,
+          "primary_action_label": "ENCERRAR CÂMERA"
+        },
+        "screen_active": {
+          "label": "Tela compartilhada",
+          "show_screen_stream": true,
+          "show_resolution_fps": true,
+          "secondary_action_label": "PARAR COMPARTILHAMENTO"
+        },
+        "error": {
+          "label": "Falha na captura",
+          "show_error_message": true,
+          "error_color_token": "status.error"
+        }
+      }
+    },
+    "device_controls_panel": {
+      "id": "device-controls-panel",
+      "bounds": {
+        "x_px": 164,
+        "y_px": 476,
+        "width_px": 824,
+        "height_px": 110,
+        "x_percent": 10.25,
+        "y_percent": 52.889,
+        "width_percent": 51.5,
+        "height_percent": 12.222
+      },
+      "display": "grid",
+      "grid_template_columns": "445px 367px",
+      "column_gap_px": 12,
+      "left_section": {
+        "title": "CONTROLES DE DISPOSITIVOS",
+        "shortcut_menu_label": "ATALHOS",
+        "device_cards": [
+          {
+            "id": "microphone-control",
+            "label": "MICROFONE",
+            "icon": "Mic",
+            "status": "Desligado",
+            "state": "off",
+            "menu": true
+          },
+          {
+            "id": "camera-control",
+            "label": "CÂMERA",
+            "icon": "Video",
+            "status": "Desligada",
+            "state": "off",
+            "menu": true
+          },
+          {
+            "id": "screen-control",
+            "label": "TELA",
+            "icon": "Monitor",
+            "status": "Não compartilhada",
+            "state": "off",
+            "menu": true
+          }
+        ],
+        "card_size_approx_px": {
+          "width": 132,
+          "height": 52
+        }
+      },
+      "right_section": {
+        "title": "PROATIVIDADE",
+        "value": 0.5,
+        "min": 0,
+        "max": 1,
+        "step": 0.1,
+        "left_label": "REATIVO",
+        "right_label": "PROATIVO",
+        "slider": {
+          "track_height_px": 6,
+          "thumb_size_px": 15,
+          "fill_color_token": "accent.primary"
+        },
+        "actions": [
+          {
+            "label": "APLICAR",
+            "variant": "secondary"
+          },
+          {
+            "label": "PADRÃO",
+            "variant": "secondary"
+          }
+        ]
+      }
+    },
+    "logs_panel": {
+      "id": "logs-panel",
+      "bounds": {
+        "x_px": 164,
+        "y_px": 598,
+        "width_px": 405,
+        "height_px": 246,
+        "x_percent": 10.25,
+        "y_percent": 66.444,
+        "width_percent": 25.312,
+        "height_percent": 27.333
+      },
+      "title": "LOGS DA SESSÃO",
+      "header_action": "LIMPAR",
+      "filter_chips": [
+        {
+          "label": "Todos",
+          "active": true
+        },
+        {
+          "label": "Sistema",
+          "active": false
+        },
+        {
+          "label": "Conexão",
+          "active": false
+        },
+        {
+          "label": "Visão",
+          "active": false
+        },
+        {
+          "label": "Proatividade",
+          "active": false
+        }
+      ],
+      "columns": [
+        {
+          "id": "time",
+          "width_percent": 18
+        },
+        {
+          "id": "category",
+          "width_percent": 24
+        },
+        {
+          "id": "message",
+          "width_percent": 58
+        }
+      ],
+      "rows": [
+        {
+          "time": "17:11:05",
+          "category": "SISTEMA",
+          "message": "Sessão iniciada com sucesso.",
+          "status": "neutral"
+        },
+        {
+          "time": "17:11:05",
+          "category": "CONEXÃO",
+          "message": "Conectado ao modelo Gemini 1.5 Pro (local)",
+          "status": "success"
+        },
+        {
+          "time": "17:11:04",
+          "category": "VISÃO",
+          "message": "Nenhuma entrada visual detectada.",
+          "status": "info"
+        },
+        {
+          "time": "17:11:05",
+          "category": "PROATIVIDADE",
+          "message": "Nível definido para 0,5 (Reativo)",
+          "status": "neutral"
+        },
+        {
+          "time": "17:11:12",
+          "category": "CONVERSA",
+          "message": "Comentário enviado com sucesso.",
+          "status": "success"
+        }
+      ],
+      "row_height_px": 28,
+      "scrollable": true,
+      "empty_state": "Nenhum evento registrado nesta sessão."
+    },
+    "metrics_panel": {
+      "id": "metrics-panel",
+      "bounds": {
+        "x_px": 581,
+        "y_px": 598,
+        "width_px": 407,
+        "height_px": 246,
+        "x_percent": 36.312,
+        "y_percent": 66.444,
+        "width_percent": 25.438,
+        "height_percent": 27.333
+      },
+      "title": "MÉTRICAS DA SESSÃO",
+      "metric_cards": [
+        {
+          "id": "metric-tokens",
+          "label": "Tokens",
+          "value": "1.248",
+          "delta": "↑ 12%",
+          "trend": "up",
+          "semantic": "positive"
+        },
+        {
+          "id": "metric-latency",
+          "label": "Latência média",
+          "value": "612 ms",
+          "delta": "↓ 8%",
+          "trend": "down",
+          "semantic": "positive"
+        },
+        {
+          "id": "metric-messages",
+          "label": "Msgs enviados",
+          "value": "12",
+          "delta": "↑ 9%",
+          "trend": "up",
+          "semantic": "positive"
+        },
+        {
+          "id": "metric-errors",
+          "label": "Erros",
+          "value": "0",
+          "delta": "— 0%",
+          "trend": "flat",
+          "semantic": "neutral"
+        }
+      ],
+      "chart": {
+        "type": "line",
+        "title": "LATÊNCIA (ms)",
+        "height_px": 104,
+        "x_axis": [
+          "16:56",
+          "17:00",
+          "17:04",
+          "17:08",
+          "17:12"
+        ],
+        "y_axis": [
+          0,
+          500,
+          1000
+        ],
+        "series": [
+          {
+            "name": "latência",
+            "color_token": "chart.line_primary",
+            "values": [
+              920,
+              760,
+              710,
+              680,
+              790,
+              805,
+              620,
+              760,
+              780,
+              590,
+              540
+            ]
+          }
+        ],
+        "current_value": "612ms",
+        "show_points": true,
+        "show_grid": true
+      }
+    },
+    "conversation_panel": {
+      "id": "conversation-panel",
+      "bounds": {
+        "x_px": 1000,
+        "y_px": 68,
+        "width_px": 584,
+        "height_px": 642,
+        "x_percent": 62.5,
+        "y_percent": 7.556,
+        "width_percent": 36.5,
+        "height_percent": 71.333
+      },
+      "background_token": "background.panel",
+      "border_token": "border.default",
+      "header": {
+        "height_px": 57,
+        "title": "CONVERSA — COMENTARISTA",
+        "actions": [
+          {
+            "label": "LIMPAR VISUAL",
+            "variant": "secondary"
+          },
+          {
+            "icon": "Scan",
+            "variant": "ghost",
+            "aria_label": "Expandir conversa"
+          }
+        ]
+      },
+      "session_separator": {
+        "label": "SESSÃO REINICIADA ÀS 17:11:05",
+        "line_color_token": "accent.primary_muted"
+      },
+      "message_list": {
+        "padding_px": 14,
+        "gap_px": 14,
+        "scrollable": true,
+        "messages": [
+          {
+            "id": "msg-001",
+            "role": "assistant",
+            "author_label": "COMENTARISTA AI",
+            "timestamp": "17:11:05",
+            "content": "Olá! Sim, estou vendo sua tela perfeitamente.\nEstamos aqui na interface “Live Commentator”, pronta para começar a nossa conversa!",
+            "latency_ms": 612,
+            "delivery_status": "complete",
+            "selected": false
+          },
+          {
+            "id": "msg-002",
+            "role": "assistant",
+            "author_label": "COMENTARISTA AI",
+            "timestamp": "17:11:12",
+            "content": "Ah, que bacana que você curtiu! É um design bem moderno, né, e cheio de recursos!\nVamos ver o que podemos criar juntos!",
+            "latency_ms": 538,
+            "delivery_status": "complete",
+            "selected": false
+          },
+          {
+            "id": "msg-003",
+            "role": "assistant",
+            "author_label": "COMENTARISTA AI",
+            "timestamp": "17:11:20",
+            "content": "Sim, ouvindo perfeitamente! Que mudança rápida! Passamos de uma interface de comentários para uma página de compras da sua empresa e agora para este produto aqui, que você vai nos mostrar?",
+            "highlight_ranges": [
+              {
+                "text": "este produto aqui",
+                "style": "accent-underline"
+              }
+            ],
+            "latency_ms": 742,
+            "delivery_status": "complete",
+            "selected": true
+          }
+        ]
+      },
+      "message_card_style": {
+        "background_token": "background.surface",
+        "border_token": "border.default",
+        "selected_border_token": "border.accent",
+        "radius_token": "sm",
+        "padding_px": 14,
+        "min_height_px": 118,
+        "author_label_variant": "accent-text",
+        "timestamp_typography_token": "mono_sm"
+      },
+      "composer": {
+        "bounds_approx": {
+          "x_px": 1014,
+          "y_px": 613,
+          "width_px": 556,
+          "height_px": 89,
+          "x_percent": 63.375,
+          "y_percent": 68.111,
+          "width_percent": 34.75,
+          "height_percent": 9.889
+        },
+        "input": {
+          "placeholder": "Pergunte algo sobre a tela...",
+          "min_height_px": 48,
+          "multiline": true,
+          "max_rows": 5
+        },
+        "secondary_actions": [
+          {
+            "label": "ANEXAR CONTEXTO",
+            "icon": "Paperclip",
+            "has_menu": true
+          },
+          {
+            "label": "AÇÕES RÁPIDAS",
+            "icon": "Zap",
+            "has_menu": true
+          }
+        ],
+        "shortcut_hint": "⌘ ↵ para enviar",
+        "send_action": {
+          "label": "ENVIAR",
+          "icon": "ArrowUpRight",
+          "variant": "primary",
+          "shortcut": [
+            "Meta",
+            "Enter"
+          ]
+        }
+      },
+      "states": {
+        "empty": "Nenhuma mensagem nesta sessão.",
+        "streaming": "Mostrar cursor/bloco pulsante ao final da mensagem.",
+        "error": "Exibir borda de erro e botão 'Tentar novamente'.",
+        "loading_older": "Skeleton de mensagens ao rolar para o topo."
+      }
+    },
+    "quick_actions_panel": {
+      "id": "quick-actions-panel",
+      "bounds": {
+        "x_px": 1000,
+        "y_px": 722,
+        "width_px": 584,
+        "height_px": 122,
+        "x_percent": 62.5,
+        "y_percent": 80.222,
+        "width_percent": 36.5,
+        "height_percent": 13.556
+      },
+      "title": "AÇÕES RÁPIDAS",
+      "header_action": {
+        "label": "CONFIGURAR",
+        "icon": "Settings2"
+      },
+      "grid": {
+        "columns": 6,
+        "gap_px": 8,
+        "item_height_px": 72
+      },
+      "actions": [
+        {
+          "id": "qa-screen-summary",
+          "label": "Resumo da tela",
+          "icon": "ScanText"
+        },
+        {
+          "id": "qa-extract-text",
+          "label": "Extrair texto",
+          "icon": "TextCursorInput"
+        },
+        {
+          "id": "qa-detect-ui",
+          "label": "Detectar UI",
+          "icon": "ScanLine"
+        },
+        {
+          "id": "qa-analyze-data",
+          "label": "Analisar dados",
+          "icon": "FileChartColumn"
+        },
+        {
+          "id": "qa-translate",
+          "label": "Traduzir",
+          "icon": "Languages"
+        },
+        {
+          "id": "qa-more",
+          "label": "Mais ações",
+          "icon": "CircleEllipsis"
+        }
+      ]
+    },
+    "bottom_status_bar": {
+      "id": "bottom-status-bar",
+      "bounds": {
+        "x_px": 0,
+        "y_px": 858,
+        "width_px": 1600,
+        "height_px": 42,
+        "x_percent": 0.0,
+        "y_percent": 95.333,
+        "width_percent": 100.0,
+        "height_percent": 4.667
+      },
+      "background_token": "background.header",
+      "border_top_token": "border.subtle",
+      "layout": {
+        "display": "flex",
+        "align_items": "center",
+        "justify_content": "space-between",
+        "padding_horizontal_px": 17
+      },
+      "left_groups": [
+        {
+          "label": "SESSÃO:",
+          "value": "sess_7f3a2c1b",
+          "copyable": true
+        },
+        {
+          "label": "INICIADA EM:",
+          "value": "29 de jul. de 2025 17:11"
+        },
+        {
+          "label": "DURAÇÃO:",
+          "value": "00:00:12"
+        },
+        {
+          "label": "TOKENS:",
+          "value": "1.248 (↑ 12%)"
+        }
+      ],
+      "right_groups": [
+        {
+          "label": "REDE:",
+          "value": "local"
+        },
+        {
+          "label": "LATÊNCIA:",
+          "value": "3ms"
+        },
+        {
+          "label": "SAÚDE:",
+          "value": "OK",
+          "status": "success"
+        }
+      ],
+      "typography_token": "mono_sm",
+      "divider_style": "vertical 1px border.subtle"
+    }
+  },
+  "button_variants": {
+    "primary": {
+      "background_token": "accent.primary",
+      "text_token": "text.inverse",
+      "border_token": "accent.primary",
+      "hover_background_token": "accent.primary_hover",
+      "pressed_background_token": "accent.primary_pressed",
+      "height_px": 36,
+      "padding_horizontal_px": 14,
+      "radius_token": "xs",
+      "focus_ring_token": "border.focus"
+    },
+    "secondary": {
+      "background_token": "background.surface",
+      "text_token": "text.primary",
+      "border_token": "border.strong",
+      "hover_background_token": "background.surface_hover",
+      "height_px": 34,
+      "padding_horizontal_px": 12,
+      "radius_token": "xs"
+    },
+    "ghost": {
+      "background": "transparent",
+      "text_token": "text.secondary",
+      "border": "transparent",
+      "hover_background_token": "background.surface_hover"
+    },
+    "danger": {
+      "background": "transparent",
+      "text_token": "status.error",
+      "border_token": "status.error"
+    }
+  },
+  "data_models": {
+    "Session": {
+      "fields": {
+        "id": "string",
+        "startedAt": "ISO-8601 datetime",
+        "durationMs": "number",
+        "status": "'active' | 'paused' | 'ended' | 'error'",
+        "model": "string",
+        "region": "string",
+        "network": "string",
+        "health": "'ok' | 'warning' | 'error'"
+      }
+    },
+    "DeviceState": {
+      "fields": {
+        "microphone": "'off' | 'requesting' | 'on' | 'denied' | 'error'",
+        "camera": "'off' | 'requesting' | 'on' | 'denied' | 'error'",
+        "screen": "'off' | 'requesting' | 'sharing' | 'denied' | 'error'",
+        "activeDeviceIds": "object",
+        "permissionErrors": "array"
+      }
+    },
+    "VisualContext": {
+      "fields": {
+        "source": "'none' | 'camera' | 'screen' | 'camera_and_screen'",
+        "resolution": "{ width: number, height: number } | null",
+        "fps": "number | null",
+        "streamStatus": "'idle' | 'starting' | 'active' | 'stopped' | 'error'",
+        "lastFrameAt": "ISO-8601 datetime | null"
+      }
+    },
+    "ConversationMessage": {
+      "fields": {
+        "id": "string",
+        "role": "'system' | 'user' | 'assistant' | 'tool'",
+        "authorLabel": "string",
+        "content": "string",
+        "createdAt": "ISO-8601 datetime",
+        "latencyMs": "number | null",
+        "status": "'queued' | 'streaming' | 'complete' | 'error'",
+        "highlights": "array",
+        "attachments": "array"
+      }
+    },
+    "LogEntry": {
+      "fields": {
+        "id": "string",
+        "timestamp": "ISO-8601 datetime",
+        "category": "'system' | 'connection' | 'vision' | 'proactivity' | 'conversation' | 'error'",
+        "message": "string",
+        "severity": "'debug' | 'info' | 'success' | 'warning' | 'error'",
+        "metadata": "object"
+      }
+    },
+    "MetricSnapshot": {
+      "fields": {
+        "timestamp": "ISO-8601 datetime",
+        "tokens": "number",
+        "averageLatencyMs": "number",
+        "messagesSent": "number",
+        "errors": "number",
+        "cpuPercent": "number",
+        "ramGb": "number",
+        "fps": "number"
+      }
+    },
+    "QuickAction": {
+      "fields": {
+        "id": "string",
+        "label": "string",
+        "icon": "string",
+        "enabled": "boolean",
+        "requiresVisualContext": "boolean",
+        "shortcut": "string | null",
+        "handler": "string"
+      }
+    }
+  },
+  "interaction_spec": {
+    "global": [
+      {
+        "trigger": "Meta+K ou Ctrl+K",
+        "action": "Abrir command palette",
+        "feedback": "Overlay central com busca e atalhos"
+      },
+      {
+        "trigger": "Escape",
+        "action": "Fechar menu, modal ou command palette ativa"
+      }
+    ],
+    "vision": [
+      {
+        "target": "ABRIR CÂMERA",
+        "trigger": "click",
+        "action": "Solicitar permissão e iniciar MediaStream da câmera",
+        "loading_label": "ABRINDO…",
+        "success_feedback": "Status muda para Câmera ativa; viewport exibe vídeo",
+        "error_feedback": "Toast de permissão negada e ação para abrir configurações"
+      },
+      {
+        "target": "COMPARTILHAR TELA",
+        "trigger": "click",
+        "action": "Iniciar getDisplayMedia",
+        "success_feedback": "Status muda para Tela compartilhada"
+      }
+    ],
+    "devices": [
+      {
+        "target": "device card",
+        "trigger": "click",
+        "action": "Alternar dispositivo quando permitido"
+      },
+      {
+        "target": "device overflow menu",
+        "trigger": "click",
+        "action": "Abrir seletor de dispositivo e diagnóstico"
+      },
+      {
+        "target": "proactivity slider",
+        "trigger": "drag/keyboard",
+        "action": "Atualizar valor local sem persistir"
+      },
+      {
+        "target": "APLICAR",
+        "trigger": "click",
+        "action": "Persistir novo valor de proatividade"
+      },
+      {
+        "target": "PADRÃO",
+        "trigger": "click",
+        "action": "Restaurar 0,5"
+      }
+    ],
+    "conversation": [
+      {
+        "target": "message card",
+        "trigger": "click",
+        "action": "Selecionar mensagem e exibir ações contextuais"
+      },
+      {
+        "target": "LIMPAR VISUAL",
+        "trigger": "click",
+        "action": "Remover anexos e referências visuais do contexto atual",
+        "confirmation": "somente quando houver contexto ativo"
+      },
+      {
+        "target": "composer",
+        "trigger": "Meta+Enter ou Ctrl+Enter",
+        "action": "Enviar mensagem"
+      },
+      {
+        "target": "ANEXAR CONTEXTO",
+        "trigger": "click",
+        "action": "Abrir menu de câmera, tela, arquivo ou captura atual"
+      },
+      {
+        "target": "AÇÕES RÁPIDAS",
+        "trigger": "click",
+        "action": "Abrir menu de quick actions"
+      }
+    ],
+    "logs_and_metrics": [
+      {
+        "target": "log filter chip",
+        "trigger": "click",
+        "action": "Filtrar entradas sem recarregar a página"
+      },
+      {
+        "target": "LIMPAR logs",
+        "trigger": "click",
+        "action": "Limpar visualização local; não apagar telemetria persistida sem confirmação"
+      },
+      {
+        "target": "chart point",
+        "trigger": "hover/focus",
+        "action": "Exibir tooltip com horário e valor"
+      }
+    ]
+  },
+  "assets": {
+    "required": [
+      {
+        "id": "logo-lc",
+        "type": "svg",
+        "description": "Quadrado amarelo-lima com letras LC em preto.",
+        "recommended_viewbox": "0 0 32 32"
+      },
+      {
+        "id": "hud-reticle",
+        "type": "svg",
+        "description": "Três círculos concêntricos, marca central e três nós amarelo-lima.",
+        "recommended_viewbox": "0 0 96 96"
+      },
+      {
+        "id": "vision-corner-brackets",
+        "type": "css-or-svg",
+        "description": "Quatro cantos em L usados no viewport."
+      },
+      {
+        "id": "grid-texture",
+        "type": "css",
+        "description": "Grade ortogonal de baixa opacidade, sem arquivo bitmap."
+      },
+      {
+        "id": "resource-meter",
+        "type": "css-or-svg",
+        "description": "Barra segmentada de CPU/RAM/FPS."
+      },
+      {
+        "id": "latency-chart",
+        "type": "svg-or-canvas",
+        "description": "Linha amarelo-lima, pontos circulares e tooltip."
+      }
+    ],
+    "icon_map": {
+      "Eye": "sidebar visão",
+      "MessageSquare": "sidebar conversa",
+      "Wrench": "ferramentas",
+      "SquareCheckBig": "sessões",
+      "Settings": "configurações",
+      "BadgePlus": "extensões",
+      "Monitor": "monitor/tela",
+      "BarChart3": "analytics",
+      "Camera": "abrir câmera",
+      "MonitorUp": "compartilhar tela",
+      "Mic": "microfone",
+      "Video": "câmera",
+      "Paperclip": "anexar contexto",
+      "Zap": "ações rápidas",
+      "ArrowUpRight": "enviar",
+      "Bell": "notificações",
+      "Terminal": "terminal",
+      "Languages": "traduzir"
+    },
+    "image_policy": "Nenhum asset fotográfico é necessário nesta tela."
+  },
+  "content_inventory": {
+    "brand": [
+      "LC",
+      "LIVE COMMENTATOR",
+      "v1.2.0",
+      "AI COPILOT WORKSTATION"
+    ],
+    "system_labels": [
+      "CONECTADO",
+      "MODELO:",
+      "Gemini 1.5 Pro",
+      "REGIÃO:",
+      "local",
+      "CPU",
+      "RAM",
+      "FPS",
+      "TERMINAL"
+    ],
+    "sidebar_labels": [
+      "VISÃO",
+      "CONVERSA",
+      "FERRAMENTAS",
+      "SESSÕES",
+      "CONFIGURAÇÕES",
+      "EXTENSÕES",
+      "MONITOR",
+      "ANALYTICS"
+    ],
+    "panel_titles": [
+      "VISÃO — OBSERVAÇÃO",
+      "CONTROLES DE DISPOSITIVOS",
+      "LOGS DA SESSÃO",
+      "MÉTRICAS DA SESSÃO",
+      "CONVERSA — COMENTARISTA",
+      "AÇÕES RÁPIDAS"
+    ],
+    "primary_actions": [
+      "ABRIR CÂMERA",
+      "COMPARTILHAR TELA",
+      "APLICAR",
+      "PADRÃO",
+      "LIMPAR VISUAL",
+      "ANEXAR CONTEXTO",
+      "AÇÕES RÁPIDAS",
+      "ENVIAR"
+    ],
+    "quick_actions": [
+      "Resumo da tela",
+      "Extrair texto",
+      "Detectar UI",
+      "Analisar dados",
+      "Traduzir",
+      "Mais ações"
+    ]
+  },
+  "accessibility": {
+    "target_standard": "WCAG 2.2 AA",
+    "contrast": {
+      "body_text_minimum": "4.5:1",
+      "large_text_minimum": "3:1",
+      "ui_component_minimum": "3:1",
+      "note": "Não usar o amarelo-lima como texto pequeno sobre branco; nesta UI ele é aplicado sobre superfícies escuras."
+    },
+    "keyboard": {
+      "all_controls_focusable": true,
+      "focus_order": [
+        "header actions",
+        "sidebar navigation",
+        "vision actions",
+        "device controls",
+        "logs filters",
+        "conversation messages",
+        "composer",
+        "quick actions",
+        "footer copy control"
+      ],
+      "focus_style": "outline 2px #D9FF00 com offset 2px"
+    },
+    "aria": {
+      "live_region": {
+        "conversation_stream": "aria-live='polite'",
+        "system_errors": "aria-live='assertive'"
+      },
+      "labels_required": [
+        "Botões apenas com ícone",
+        "métricas de recursos",
+        "controle de proatividade",
+        "gráfico de latência",
+        "estado dos dispositivos"
+      ]
+    },
+    "non_color_cues": [
+      "Estado ativo também usa borda, ícone e texto.",
+      "Mensagens selecionadas possuem marcador lateral além da cor.",
+      "Tendências usam setas e valores, não apenas cor."
+    ],
+    "minimum_touch_target_px": 36
+  },
+  "responsive": {
+    "breakpoints": [
+      {
+        "name": "wide",
+        "min_width_px": 1440,
+        "behavior": "Layout idêntico à referência; sidebar expandida; duas colunas permanentes."
+      },
+      {
+        "name": "desktop",
+        "min_width_px": 1200,
+        "max_width_px": 1439,
+        "behavior": "Reduzir sidebar para 112px; coluna direita para 36%; reduzir gaps para 8px; manter duas colunas."
+      },
+      {
+        "name": "compact_desktop",
+        "min_width_px": 1024,
+        "max_width_px": 1199,
+        "behavior": "Sidebar em modo ícones; métricas e logs em tabs; quick actions com rolagem horizontal."
+      },
+      {
+        "name": "tablet_landscape",
+        "min_width_px": 768,
+        "max_width_px": 1023,
+        "behavior": "Visão e conversa tornam-se tabs; sidebar vira rail de 64px; footer reduzido."
+      },
+      {
+        "name": "mobile",
+        "max_width_px": 767,
+        "behavior": "Layout em uma coluna; header compacto; painel de visão acima da conversa; controles em bottom sheet; métricas em carrossel."
+      }
+    ],
+    "content_priority_on_small_screens": [
+      "conversa",
+      "captura visual",
+      "dispositivos",
+      "ações rápidas",
+      "métricas",
+      "logs"
+    ]
+  },
+  "implementation_blueprint": {
+    "recommended_stack": {
+      "framework": "React + TypeScript",
+      "bundler": "Vite",
+      "styling": "CSS Modules, Tailwind CSS ou vanilla-extract",
+      "state": "Zustand ou Redux Toolkit",
+      "charts": "Recharts, Visx ou SVG customizado",
+      "icons": "lucide-react",
+      "realtime": "WebSocket",
+      "media": "MediaDevices.getUserMedia + getDisplayMedia"
+    },
+    "component_files": [
+      "src/app/AppShell.tsx",
+      "src/components/header/TopHeader.tsx",
+      "src/components/sidebar/Sidebar.tsx",
+      "src/features/vision/VisionPanel.tsx",
+      "src/features/vision/HudReticle.tsx",
+      "src/features/devices/DeviceControls.tsx",
+      "src/features/proactivity/ProactivityControl.tsx",
+      "src/features/logs/SessionLogs.tsx",
+      "src/features/metrics/SessionMetrics.tsx",
+      "src/features/conversation/ConversationPanel.tsx",
+      "src/features/conversation/MessageCard.tsx",
+      "src/features/conversation/Composer.tsx",
+      "src/features/actions/QuickActionsPanel.tsx",
+      "src/components/footer/StatusFooter.tsx",
+      "src/styles/tokens.css"
+    ],
+    "css_custom_properties": {
+      "--color-bg": "#060806",
+      "--color-panel": "#0B0D0B",
+      "--color-surface": "#121512",
+      "--color-accent": "#D9FF00",
+      "--color-text": "#F2F4ED",
+      "--color-text-muted": "#838980",
+      "--color-border": "#30352F",
+      "--radius-panel": "3px",
+      "--space-1": "4px",
+      "--space-2": "8px",
+      "--space-3": "12px",
+      "--space-4": "16px",
+      "--header-height": "56px",
+      "--footer-height": "42px",
+      "--sidebar-width": "138px"
+    },
+    "z_index_scale": {
+      "base": 0,
+      "panel": 10,
+      "sticky": 20,
+      "sidebar": 30,
+      "popover": 40,
+      "header_footer": 50,
+      "modal": 60,
+      "toast": 70
+    },
+    "performance_notes": [
+      "Renderizar gráfico em SVG e evitar canvas se acessibilidade for prioridade.",
+      "Virtualizar logs e mensagens quando houver mais de 200 itens.",
+      "Não redesenhar vídeo/captura em React a cada frame.",
+      "Atualizar medidores de CPU/RAM em frequência máxima de 2 Hz.",
+      "Usar CSS para a grade, evitando imagem bitmap."
+    ]
+  },
+  "state_machine": {
+    "session": {
+      "initial": "connecting",
+      "states": {
+        "connecting": {
+          "on": {
+            "CONNECTED": "active",
+            "FAILED": "error"
+          }
+        },
+        "active": {
+          "on": {
+            "PAUSE": "paused",
+            "END": "ended",
+            "ERROR": "error"
+          }
+        },
+        "paused": {
+          "on": {
+            "RESUME": "active",
+            "END": "ended"
+          }
+        },
+        "error": {
+          "on": {
+            "RETRY": "connecting",
+            "END": "ended"
+          }
+        },
+        "ended": {
+          "type": "final"
+        }
+      }
+    },
+    "capture": {
+      "initial": "idle",
+      "states": {
+        "idle": {
+          "on": {
+            "START_CAMERA": "requesting_camera",
+            "START_SCREEN": "requesting_screen"
+          }
+        },
+        "requesting_camera": {
+          "on": {
+            "GRANTED": "camera_active",
+            "DENIED": "permission_denied",
+            "FAILED": "error"
+          }
+        },
+        "requesting_screen": {
+          "on": {
+            "GRANTED": "screen_active",
+            "DENIED": "permission_denied",
+            "FAILED": "error"
+          }
+        },
+        "camera_active": {
+          "on": {
+            "STOP": "idle",
+            "START_SCREEN": "camera_and_screen"
+          }
+        },
+        "screen_active": {
+          "on": {
+            "STOP": "idle",
+            "START_CAMERA": "camera_and_screen"
+          }
+        },
+        "camera_and_screen": {
+          "on": {
+            "STOP_CAMERA": "screen_active",
+            "STOP_SCREEN": "camera_active",
+            "STOP_ALL": "idle"
+          }
+        },
+        "permission_denied": {
+          "on": {
+            "RETRY": "idle"
+          }
+        },
+        "error": {
+          "on": {
+            "RETRY": "idle"
+          }
+        }
+      }
+    },
+    "message": {
+      "initial": "draft",
+      "states": {
+        "draft": {
+          "on": {
+            "SUBMIT": "queued"
+          }
+        },
+        "queued": {
+          "on": {
+            "START_STREAM": "streaming",
+            "FAILED": "error"
+          }
+        },
+        "streaming": {
+          "on": {
+            "COMPLETE": "complete",
+            "FAILED": "error",
+            "CANCEL": "cancelled"
+          }
+        },
+        "complete": {
+          "type": "final"
+        },
+        "cancelled": {
+          "type": "final"
+        },
+        "error": {
+          "on": {
+            "RETRY": "queued"
+          }
+        }
+      }
+    }
+  },
+  "validation_and_acceptance": {
+    "visual_acceptance": [
+      "O amarelo-lima aparece somente em elementos de foco, seleção, ação principal, métricas positivas e destaques de texto.",
+      "A grade técnica é visível, mas nunca compete com conteúdo e vídeo.",
+      "Painéis possuem borda fina, cantos pequenos e praticamente nenhuma sombra externa.",
+      "A coluna de conversa ocupa aproximadamente 36% da largura útil.",
+      "A interface completa cabe em 1600×900 sem scroll da página; apenas painéis internos podem rolar.",
+      "Todos os títulos de seção usam caixa alta e tipografia condensada."
+    ],
+    "functional_acceptance": [
+      "Câmera e compartilhamento de tela possuem estados de permissão, carregamento, ativo e erro.",
+      "Mensagens suportam streaming, latência, status de entrega e realce de trechos.",
+      "Logs podem ser filtrados por categoria.",
+      "O valor de proatividade só é persistido ao clicar em Aplicar.",
+      "Quick actions podem exigir contexto visual e devem informar quando não houver captura.",
+      "Footer reflete estado de rede, latência e saúde em tempo real."
+    ],
+    "accessibility_acceptance": [
+      "Todos os controles são acessíveis por teclado.",
+      "Foco visível não depende apenas de mudança de cor.",
+      "Mensagens novas são anunciadas em região aria-live polite.",
+      "Gráfico possui resumo textual equivalente.",
+      "Contraste mínimo AA é mantido."
+    ]
+  },
+  "open_questions": [
+    "A fonte exata da imagem não pode ser determinada; recomenda-se Barlow Condensed + IBM Plex Mono + Inter.",
+    "Confirmar se o item 'Monitor' é uma página de dispositivos ou telemetria.",
+    "Confirmar se 'Limpar visual' remove somente anexos ou também o histórico de observação.",
+    "Definir se o valor de proatividade afeta apenas a sessão atual ou uma preferência global.",
+    "Definir retenção e persistência dos logs após o encerramento da sessão."
+  ]
+}
