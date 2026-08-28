@@ -1,6 +1,8 @@
 import asyncio
 from collections.abc import AsyncIterable
+import gc
 import unittest
+import warnings
 
 from absl.testing import absltest
 from absl.testing import parameterized
@@ -20,7 +22,6 @@ def create_image(width, height):
   return Image.new('RGB', (width, height))
 
 
-# Fake realtime models - simply wraps the parts around a model() call.
 @processor.processor_function
 async def main_model_fake(
     content: AsyncIterable[ProcessorPart],
@@ -34,7 +35,6 @@ async def main_model_fake(
   yield ')'
 
 
-# Fake of a realtime model raising an error
 @processor.part_processor_function
 async def main_model_exception_fake(
     part: ProcessorPart,
@@ -80,8 +80,6 @@ class RealTimeConversationTest(
                   role='user',
               ),
           ],
-          # The first model call is cancelled, the second model call is made
-          # with the full prompt.
           output_text='model(hello[audio/wav]yo[image/png])',
       ),
   ])
@@ -113,7 +111,6 @@ async def model_fake(
   buffer = content_api.ProcessorContent()
   async for part in content:
     buffer += part
-  # Assume a long model call.
   await asyncio.sleep(1)
   yield ProcessorPart(f'model({buffer.as_text()})', role='model')
 
@@ -128,7 +125,6 @@ class RealTimeConversationModelTest(unittest.IsolatedAsyncioTestCase):
     self.rolling_prompt = window.RollingPrompt()
 
   def end_conversation(self):
-    # To be called within an asyncio loop.
     async def _end_conversation():
       await asyncio.sleep(5)
       self.output_queue.put_nowait(None)
@@ -145,7 +141,6 @@ class RealTimeConversationModelTest(unittest.IsolatedAsyncioTestCase):
     model.user_input(ProcessorPart('hello'))
     model.user_input(ProcessorPart('world'))
 
-    # A turn takes 1 sec (see model_fake).
     await model.turn()
     model.user_input(ProcessorPart('done', role='user'))
 
@@ -165,14 +160,11 @@ class RealTimeConversationModelTest(unittest.IsolatedAsyncioTestCase):
     )
     model.user_input(ProcessorPart('hello'))
     model.user_input(ProcessorPart('world'))
-    # A turn takes 1 sec (see model_fake).
     await model.turn()
 
-    # Wait for the conversation to end.
     self.end_conversation()
     _ = await streams.gather_stream(streams.dequeue(self.output_queue))
 
-    # Check that the rolling prompt put all the parts in the correct order.
     await self.rolling_prompt.finalize_pending()
     prompt_pending = self.rolling_prompt.pending()
     await self.rolling_prompt.finalize_pending()
@@ -181,6 +173,30 @@ class RealTimeConversationModelTest(unittest.IsolatedAsyncioTestCase):
         content_api.as_text(prompt_actual, substream_name=''),
         'helloworldmodel(helloworld)',
     )
+
+  async def test_early_cancel_does_not_orphan_inner_coroutine(self):
+    with warnings.catch_warnings(record=True) as caught:
+      warnings.simplefilter('always', RuntimeWarning)
+      model = realtime._RealTimeConversationModel(
+          output_queue=self.output_queue,
+          generation=model_fake,
+          rolling_prompt=self.rolling_prompt,
+          user_not_talking=self.user_not_talking,
+      )
+      task = model._pending_generate_output
+      task.cancel()
+      await asyncio.gather(task, return_exceptions=True)
+      del model
+      gc.collect()
+      await asyncio.sleep(0)
+
+    unawaited = [
+        item
+        for item in caught
+        if issubclass(item.category, RuntimeWarning)
+        and 'was never awaited' in str(item.message)
+    ]
+    self.assertEqual(unawaited, [])
 
 
 if __name__ == '__main__':
