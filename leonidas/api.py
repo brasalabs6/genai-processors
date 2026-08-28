@@ -163,8 +163,6 @@ class ControlApi:
               runtime.SessionState.RUNNING.value,
               runtime.SessionState.STOPPING.value,
           ):
-            # Local preview and the active response share one serialized XTTS
-            # worker. Refuse preview rather than delaying or cancelling speech.
             return _error(
                 409,
                 'session_busy',
@@ -200,7 +198,7 @@ class ControlApi:
       return _error(409, 'media_already_connected', str(exc))
     except log_store.InvalidLogIdError as exc:
       return _error(404, 'invalid_log_id', str(exc))
-    except (config.ConfigValidationError, ValueError) as exc:
+    except (config.ConfigValidationError, TypeError, ValueError) as exc:
       return _error(422, 'invalid_configuration', str(exc))
     except RuntimeError:
       return _error(
