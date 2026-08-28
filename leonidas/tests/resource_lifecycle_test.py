@@ -108,6 +108,74 @@ class ResourceLifecycleTest(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(len(created['tts-b']), 2)
     await pool.close()
 
+  async def test_failed_diarization_toggle_preserves_active_shared_workers(self):
+    created = {}
+
+    class Resource:
+
+      def __init__(self, model_id, *, should_fail=False):
+        self.model_id = model_id
+        self.should_fail = should_fail
+        self.closed = False
+
+      async def load(self, progress=None):
+        del progress
+        if self.should_fail:
+          raise RuntimeError('diarization candidate failed')
+        return {'device': 'cpu'}
+
+      async def close(self):
+        self.closed = True
+
+    def model_factory(**kwargs):
+      value = Resource(kwargs['model_id'])
+      created.setdefault(kwargs['model_id'], []).append(value)
+      return value
+
+    diarizers = []
+
+    def diarizer_factory(**_kwargs):
+      value = Resource('diarization', should_fail=True)
+      diarizers.append(value)
+      return value
+
+    pool = resources.CascadeResources(
+        voices={},
+        device_resolver=lambda _requested: 'cpu',
+        transcriber_factory=model_factory,
+        synthesizer_factory=model_factory,
+        diarizer_factory=diarizer_factory,
+    )
+    ready = await pool.ensure_ready(
+        'stt-a', 'tts-a', 'cpu', diarization_enabled=False
+    )
+    active_generation = ready['generation']
+    active_stt = created['stt-a'][0]
+    active_tts = created['tts-a'][0]
+
+    with self.assertRaisesRegex(RuntimeError, 'diarization candidate failed'):
+      await pool.ensure_ready(
+          'stt-a', 'tts-a', 'cpu', diarization_enabled=True
+      )
+
+    failed = pool.snapshot()
+    self.assertEqual(failed['overall_state'], 'ready')
+    self.assertEqual(failed['generation'], active_generation)
+    self.assertFalse(active_stt.closed)
+    self.assertFalse(active_tts.closed)
+    self.assertTrue(diarizers[0].closed)
+    self.assertIs(pool._transcribers[('stt-a', 'cpu')], active_stt)
+    self.assertIs(pool._synthesizers[('tts-a', 'cpu')], active_tts)
+    self.assertNotIn('cpu', pool._diarizers)
+
+    restored = await pool.ensure_ready(
+        'stt-a', 'tts-a', 'cpu', diarization_enabled=False
+    )
+    self.assertEqual(restored['generation'], active_generation)
+    self.assertEqual(len(created['stt-a']), 1)
+    self.assertEqual(len(created['tts-a']), 1)
+    await pool.close()
+
   async def test_waiter_for_another_key_does_not_inherit_failed_generation(
       self,
   ):
