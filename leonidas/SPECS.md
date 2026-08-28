@@ -34,7 +34,8 @@ Leonidas e o Leonidas não deve importar o exemplo original.
 ## 3. Não objetivos desta versão
 
 - Exposição em LAN ou internet, autenticação multiusuário ou TLS próprio.
-- Groq Whisper, diarização ou instalação obrigatória de CUDA na biblioteca base.
+- Groq Whisper ou instalação obrigatória de CUDA/diarização na biblioteca base;
+  Pyannote permanece opcional e isolado na cascata local.
 - Compatibilidade de configuração com versões internas anteriores do exemplo.
 - Edição das instruções protegidas de ferramentas e máquina de estados.
 
@@ -121,12 +122,17 @@ browser PCM 16 kHz -> WebRTC VAD/endpointing -> Parakeet TDT 0.6B v3
   `ready` e `error`. O estado inclui fase, modelo, device solicitado/resolvido,
   GPU, tempos, memória PyTorch alocada/reservada e erro seguro.
 - Start da cascata retorna `starting` sem aguardar inferência bloqueante. A
-  carga ocorre sequencialmente Parakeet → XTTS para limitar pico de VRAM.
+  carga ocorre sequencialmente Parakeet → Pyannote, quando habilitado, → XTTS
+  para limitar pico de VRAM e falhar cedo em recursos gated.
 - Warm-up executa inferência local real e só então marca `ready`. Pesos já
   instalados usam cache local sem sondagens repetidas ao Hugging Face.
-- A sessão entra em `running` somente com os dois componentes `ready`. Stop
-  invalida o start pendente; readiness concluída depois não inicia sessão.
+- A sessão entra em `running` somente com STT e TTS `ready`; quando a
+  diarização foi explicitamente habilitada, Pyannote também deve estar `ready`.
+  Stop invalida o start pendente; readiness concluída depois não inicia sessão.
 - Modelos prontos são reutilizados entre sessões e fechados somente no shutdown.
+- Uma geração candidata que falha nunca fecha workers pertencentes à geração
+  ativa; o swap de configuração só passa a valer quando o conjunto candidato
+  alcança readiness e o rollback preserva recursos compartilhados.
 - Gemini Live não cria, carrega ou consulta os workers locais.
 
 ## 5. Modelos e capabilities
@@ -188,7 +194,8 @@ O contrato serializado é `AgentConfig`:
     "reasoning_effort": "medium",
     "language": "pt",
     "device": "auto",
-    "voice_id": "leonidas-reference"
+    "voice_id": "leonidas",
+    "diarization_enabled": false
   }
 }
 ```
@@ -215,7 +222,9 @@ Presets fornecem valores iniciais e overrides permanecem explícitos:
 O backend mantém `active`, `draft`, `revision` e `dirty_fields`. O cliente
 envia `expected_revision`; conflitos retornam `409 revision_conflict`.
 Defaults ficam versionados em código. O estado local é salvo atomicamente em
-`leonidas/.runtime/config.json`, sem credenciais.
+`leonidas/.runtime/config.json`, sem credenciais. Campos aninhados são validados
+por tipo antes de limites semânticos; payloads malformados retornam 4xx e nunca
+são convertidos silenciosamente para bool/int/string úteis.
 
 ## 7. Sessão e aplicação transacional
 
@@ -231,6 +240,8 @@ permitir novo Start explícito.
   credenciais da pipeline e preflight local aprovado.
 - Stop é idempotente, encerra entrada, cancela tasks, fecha processadores e
   publica `stopped`; após timeout deve cancelar forçadamente sem deixar tasks.
+- Start, Stop e Apply são serializados como operações de lifecycle; chamadas
+  concorrentes não podem intercalar uma promoção/rollback com outro ciclo.
 - Cada Start ou Apply cria novas filas, streams e processor instances.
 - Apply parado apenas promove o draft.
 - Apply rodando valida e constrói, para a sessão, promove e reinicia.
@@ -238,6 +249,10 @@ permitir novo Start explícito.
   também no rollback deixa a sessão em `error`; nunca inicia loop de reset.
 - Apenas uma sessão multimídia pode estar ativa. Conexões adicionais recebem
   fechamento WebSocket por violação de política.
+- A fila de entrada é limitada. Imagens podem ser descartadas sob pressão e
+  contabilizadas; áudio/texto aguardam por um intervalo limitado. Saturação
+  persistente encerra o WebSocket com overload explícito em vez de propagar
+  `QueueFull` ou crescer memória sem limite.
 
 O carregamento XTTS exige uma reserva mínima configurável de memória do
 sistema (`LEONIDAS_XTTS_MIN_AVAILABLE_MEMORY_MIB`, default 5120 MiB). Se o
@@ -251,10 +266,12 @@ contrato de saída é um segmento com `speaker_id`, `start`, `end` (segundos
 relativos ao áudio endpointado) e
 `confidence`; segmentos são associados à transcrição por intervalo, nunca por
 posição textual presumida. O adapter declara `device`, memória esperada,
-cache/modelo, fallback CPU e estado de readiness. Falhas ou ausência do
-modelo produzem `unavailable`/`error` observável, mas não interrompem
-Parakeet → Groq → XTTS. A inferência ocorre em worker/thread apropriado e é
-cancelável no Stop/Apply/shutdown.
+cache/modelo, fallback CPU e estado de readiness. Se a diarização estiver
+habilitada e sua preparação falhar, o Start falha de forma observável e a
+geração ativa anterior permanece válida. Depois de `ready`, falhas, resultado
+vazio ou timeout em um turno preservam a transcrição sem speaker e incrementam
+métricas de fallback/erro sem interromper Parakeet → Groq → XTTS. A inferência
+ocorre em worker/thread apropriado e é cancelável no Stop/Apply/shutdown.
 
 ## 8. APIs
 
@@ -377,9 +394,12 @@ Por sessão:
 - duração de resposta;
 - interrupção até flush confirmado pelo cliente;
 - frames enviados, descartados e bytes;
-- chunks de áudio enviados/recebidos.
+- chunks de áudio enviados/recebidos;
+- profundidade da fila de entrada, frames descartados por backpressure e
+  timeouts de saturação (`input_queue_depth`, `frames_dropped_backpressure`,
+  `input_backpressure_timeouts`);
 - carga local, STT, Groq e TTS (`local_model_load_ms`, `local_stt_ms`,
-  `groq_reasoning_ms`, `local_tts_ms`).
+  `groq_reasoning_ms`, `local_tts_ms`);
 - decisões do endpoint local (`vad_candidates_rejected`,
   `vad_utterances_started`, `turn_interruptions`, `local_tts_cancelled`).
 
@@ -404,8 +424,12 @@ vincular em interfaces diferentes de `127.0.0.1` nesta versão.
 
 - Os dois modelos iniciam, param e alternam sem pipeline presa ou tasks órfãs.
 - Voz, objetivo, presets e overrides são validados e aplicados explicitamente.
+- Payloads de configuração malformados permanecem em erro 4xx e nunca são
+  aceitos por coerção implícita de tipos.
 - A UI nunca reinicia uma sessão durante a edição do draft.
 - Stop e interrupção limpam o áudio imediatamente.
+- Saturação da fila nunca cresce memória sem limite nem vaza `QueueFull`; frames
+  descartáveis e inputs não descartáveis seguem políticas observáveis distintas.
 - Silêncio e ruído estável não criam turnos; fala curta real continua aceita.
 - Uma resposta local só conclui após gerar PCM 24 kHz válido e
   `generation_complete`; erro ao retomar o `AudioContext` fica visível na UI.
