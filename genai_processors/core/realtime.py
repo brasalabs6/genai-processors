@@ -48,14 +48,24 @@ Processor = processor.Processor
 
 CONVERSATION_START = '\nThe following is your conversation so far:\n'
 
+# Substream name to output part directly as is without going through the model.
 DIRECT_OUTPUT_SUBSTREAM = speech_events.TRANSCRIPTION_SUBSTREAM_NAME
+# Metadata key that should be set to True if the part that is output directly
+# as text (see DIRECT_OUTPUT_TEXT) should also be in the prompt.
 DIRECT_OUTPUT_IN_PROMPT = 'is_final'
 
 
 class AudioTriggerMode(enum.StrEnum):
   """Trigger model mode."""
 
+  # Trigger model when user is done talking. This is appropriate for Audio
+  # models. Note that the final transcription might not be in the prompt when
+  # using this mode as the transcription requires an extra step compared to
+  # detecting speech activity.
   END_OF_SPEECH = 'end_of_speech'
+  # Trigger model when the final transcription is available. This is appropriate
+  # for Text models. It is slower than END_OF_SPEECH as it requires an extra
+  # step to get the final transcription.
   FINAL_TRANSCRIPTION = 'final_transcription'
 
 
@@ -87,7 +97,7 @@ class LiveProcessor(Processor):
   def __init__(
       self,
       turn_processor: Processor,
-      duration_prompt_sec: float | None = 600,
+      duration_prompt_sec: float | None = 600,  # 10 minutes
       trigger_model_mode: AudioTriggerMode = AudioTriggerMode.FINAL_TRANSCRIPTION,
       debug_latency: bool = False,
   ):
@@ -142,9 +152,12 @@ class LiveProcessor(Processor):
       if context.is_reserved_substream(part.substream_name):
         output_queue.put_nowait(part)
       elif part.substream_name == DIRECT_OUTPUT_SUBSTREAM:
+        # part returned to the user as is. It is used in the model prompt only
+        # when DIRECT_OUTPUT_IN_PROMPT=True in its metadata.
         part.substream_name = ''
         output_queue.put_nowait(part)
         if part.metadata[DIRECT_OUTPUT_IN_PROMPT]:
+          # The final transcription is kept in the prompt as a user input.
           conversation_model.user_input(
               content_api.ProcessorPart(part, substream_name='')
           )
@@ -152,14 +165,20 @@ class LiveProcessor(Processor):
             await conversation_model.cancel()
             await conversation_model.turn()
       elif speech_events.is_start_of_speech(part):
+        # User starts talking.
         user_not_talking.clear()
         await conversation_model.cancel()
       elif speech_events.is_end_of_speech(part):
+        # User is done talking, a conversation turn is requested.
         user_not_talking.set()
         if self._trigger_model_mode == AudioTriggerMode.END_OF_SPEECH:
           await conversation_model.cancel()
           await conversation_model.turn()
       elif content_api.is_end_of_turn(part):
+        # A conversation turn is requested outside of audio/speech signals.
+        # Remove turn_complete metadata as it is an internal signal that
+        # should not be passed to the model. Copy the metadata to avoid
+        # modifying the original part.
         new_part = part.copy()
         new_part.metadata.pop('turn_complete', None)
         conversation_model.user_input(new_part)
@@ -169,6 +188,7 @@ class LiveProcessor(Processor):
         conversation_model.user_input(part)
 
     await conversation_model.finish()
+
     output_queue.put_nowait(None)
 
   async def call(
@@ -179,6 +199,7 @@ class LiveProcessor(Processor):
     rolling_prompt = window.RollingPrompt(
         duration_prompt_sec=self.duration_prompt_sec
     )
+    # Create the main conversation loop.
     control_loop_task = processor.create_task(
         self._conversation_loop(
             content,
@@ -202,7 +223,7 @@ class LiveModelProcessor(LiveProcessor):
   def __init__(
       self,
       turn_processor: Processor,
-      duration_prompt_sec: float | None = 600,
+      duration_prompt_sec: float | None = 600,  # 10 minutes
       trigger_model_mode: AudioTriggerMode = AudioTriggerMode.FINAL_TRANSCRIPTION,
       debug_latency: bool = False,
   ):
@@ -232,15 +253,18 @@ class _RealTimeConversationModel:
     self._debug_latency = debug_latency
 
     self._generation = generation
+    # We start enqueuing what is in the prompt into the model to process parts
+    # ahead of time whenever possible, we will finalize this call in turn().
     if self._debug_latency:
       p = debug.TTFTSingleStream('Model Generate', self._generation)
     else:
       p = self._generation
-    self._pending_generate_output = self._create_generate_task(
-        p(self._prompt.pending())
-    )
+    stream_content = p(self._prompt.pending())
+    self._pending_generate_output = self._create_generate_task(stream_content)
     self._current_generate_output = None
 
+    # Use an event instead of current_task.done() to allow for cancellation not
+    # block the main control loop.
     self._model_done = asyncio.Event()
     self._model_done.set()
     self._pending_turn_task = None
@@ -248,7 +272,7 @@ class _RealTimeConversationModel:
   def _create_generate_task(
       self, content: AsyncIterable[ProcessorPart]
   ) -> asyncio.Task[None]:
-    """Creates the inner generation coroutine only after its task starts."""
+    """Creates generation only after the outer task begins executing."""
 
     async def run() -> None:
       await context.context_cancel_coro(self._generate_output(content))
@@ -269,6 +293,10 @@ class _RealTimeConversationModel:
         and not self._model_done.is_set()
     ):
       self._current_generate_output.cancel()
+      # Wait for the current generate output to be done. As commented below, the
+      # model_done event might not be set if the current generate output is
+      # cancelled before entering the try/finally code block. So we stop here
+      # whenever generate_output is done or model_done is set.
       done_task = processor.create_task(self._model_done.wait())
       await asyncio.wait(
           (
@@ -277,6 +305,10 @@ class _RealTimeConversationModel:
           ),
           return_when=asyncio.FIRST_COMPLETED,
       )
+      # current_generate_output can be cancelled before entering the try/finally
+      # code block which would not set the model_done event to true nor run the
+      # prompt model done clean-up. Ensure we do it here when we know the
+      # current generate output is done.
       if not done_task.done() or not done_task.cancelled():
         self._model_done.set()
         self._prompt.apply_stash()
@@ -293,6 +325,9 @@ class _RealTimeConversationModel:
         and not self._model_done.is_set()
     ):
       await self.cancel()
+    # We still have to finalize the pending request to make sure the model
+    # output is processed. This will trigger a new model call whenever the input
+    # stream is closed.
     await self._prompt.finalize_pending()
     self._model_done.clear()
     if self._pending_generate_output is not None:
@@ -304,15 +339,17 @@ class _RealTimeConversationModel:
   async def turn(self) -> None:
     """Finalises the pending request and creates a new one."""
     self._model_done.clear()
+    # This is a model turn. Finish the current prompt and start a new one.
     self._current_generate_output = self._pending_generate_output
     await self._prompt.finalize_pending()
+    # Prepare a new pending task for the next turn. This will do all the
+    # pre-processing ahead of time whenever possible.
     if self._debug_latency:
       p = debug.TTFTSingleStream('Model Generate', self._generation)
     else:
       p = self._generation
-    self._pending_generate_output = self._create_generate_task(
-        p(self._prompt.pending())
-    )
+    stream_content = p(self._prompt.pending())
+    self._pending_generate_output = self._create_generate_task(stream_content)
 
   async def _generate_output(
       self, content: AsyncIterable[ProcessorPart]
@@ -338,8 +375,12 @@ class _RealTimeConversationModel:
         if not context.is_reserved_substream(part.substream_name):
           part_to_prompt.append(part)
     finally:
+      # We add the prompt whatever has been output. We do this once everything
+      # is output to avoid feeding the prompt while it's used to compute the
+      # output.
       for c in part_to_prompt:
         self._prompt.add_part(c)
+      # Notify that the end of the turn has been reached.
       self._output_queue.put_nowait(
           content_api.ProcessorPart(
               '', metadata={'turn_complete': True}, role='model'
