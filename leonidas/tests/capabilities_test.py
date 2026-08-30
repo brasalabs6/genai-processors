@@ -37,6 +37,38 @@ class CapabilitiesTest(unittest.TestCase):
     self.assertEqual(cascade['tts_models'], [capabilities.XTTS_V2_MODEL])
     self.assertNotIn('api_key', str(public).lower())
 
+  def test_codex_capability_advertises_confirmed_realtime_versions(self):
+    public = capabilities.public_capabilities()
+    codex = next(
+        item
+        for item in public['pipelines']
+        if item['id'] == capabilities.PIPELINE_CODEX
+    )
+    self.assertTrue(codex['implemented'])
+    self.assertEqual(codex['realtime_versions'], ['v2', 'v1'])
+    self.assertEqual(codex['experimental_realtime_versions'], ['v3'])
+    self.assertEqual(
+        codex['transports'],
+        {'websocket': ['v2', 'v1'], 'webrtc': ['v1']},
+    )
+    self.assertEqual(
+        codex['models'][0]['id'], capabilities.CODEX_REALTIME_MODEL
+    )
+    self.assertEqual(codex['models'][0]['version'], 'v2')
+    self.assertIn(codex['voices'][0], capabilities.CODEX_WEBRTC_V1_VOICES)
+
+  def test_codex_text_is_an_explicit_non_realtime_fallback(self):
+    public = capabilities.public_capabilities()
+    codex_text = next(
+        item
+        for item in public['pipelines']
+        if item['id'] == capabilities.PIPELINE_CODEX_TEXT
+    )
+    self.assertTrue(codex_text['implemented'])
+    self.assertFalse(codex_text['native_audio'])
+    self.assertEqual(codex_text['input_modalities'], ['text'])
+    self.assertEqual(codex_text['voices'], [])
+
 
 if __name__ == '__main__':
   unittest.main()

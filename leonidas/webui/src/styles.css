@@ -138,3 +138,75 @@ label output { float: right; color: var(--green); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
 }
+
+/* Adaptive workstation navigation from resources/ui_002. */
+.workspace-nav {
+  position: sticky;
+  z-index: 15;
+  top: 76px;
+  display: flex;
+  gap: 4px;
+  max-width: 1680px;
+  margin: 0 auto;
+  padding: 12px clamp(16px, 3vw, 42px) 0;
+  border-bottom: 1px solid var(--line);
+  background: rgb(10 13 12 / 92%);
+  backdrop-filter: blur(18px);
+}
+.workspace-tab {
+  position: relative;
+  min-height: 42px;
+  border: 0;
+  border-radius: 10px 10px 0 0;
+  color: var(--muted);
+  background: transparent;
+  letter-spacing: .02em;
+}
+.workspace-tab span {
+  margin-right: 8px;
+  color: #5d7368;
+  font: 700 11px ui-monospace, monospace;
+}
+.workspace-tab:hover:not(:disabled), .workspace-tab.active {
+  color: var(--green);
+  background: #14231b;
+  transform: none;
+}
+.workspace-tab.active::after {
+  position: absolute;
+  right: 10px;
+  bottom: -1px;
+  left: 10px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--green);
+  content: "";
+}
+.workspace-space { display: contents; }
+
+@media (max-width: 620px) {
+  .workspace-nav {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    top: auto;
+    z-index: 30;
+    justify-content: space-around;
+    gap: 2px;
+    padding: 6px max(6px, env(safe-area-inset-left)) max(6px, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    border-bottom: 0;
+    background: rgb(10 13 12 / 96%);
+  }
+  .workspace-tab {
+    flex: 1;
+    min-width: 0;
+    min-height: 48px;
+    padding: 0 6px;
+    font-size: 12px;
+  }
+  .workspace-tab span { display: block; margin: 0 0 2px; }
+  .workspace-tab.active::after { right: 18%; bottom: 2px; left: 18%; }
+  .dashboard { padding-bottom: 92px; }
+}

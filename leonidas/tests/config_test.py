@@ -42,6 +42,33 @@ class AgentConfigTest(unittest.TestCase):
     with self.assertRaisesRegex(config.ConfigValidationError, 'voice_name'):
       config.AgentConfig.from_dict(value)
 
+  def test_rejects_malformed_media_type(self):
+    value = config.AgentConfig.default().to_dict()
+    value['media']['frame_interval_ms'] = '1000'
+
+    with self.assertRaisesRegex(
+        config.ConfigValidationError, 'media.frame_interval_ms'
+    ):
+      config.AgentConfig.from_dict(value)
+
+  def test_rejects_string_diarization_boolean(self):
+    value = config.AgentConfig.default().to_dict()
+    value['cascade']['diarization_enabled'] = 'false'
+
+    with self.assertRaisesRegex(
+        config.ConfigValidationError, 'cascade.diarization_enabled'
+    ):
+      config.AgentConfig.from_dict(value)
+
+  def test_rejects_malformed_generation_token_type(self):
+    value = config.AgentConfig.default().to_dict()
+    value['generation']['context_trigger_tokens'] = '6000'
+
+    with self.assertRaisesRegex(
+        config.ConfigValidationError, 'generation.context_trigger_tokens'
+    ):
+      config.AgentConfig.from_dict(value)
+
   def test_cascade_configuration_is_explicit_and_validated(self):
     value = config.AgentConfig.default().with_updates(
         {
@@ -57,11 +84,37 @@ class AgentConfigTest(unittest.TestCase):
 
     self.assertEqual(value.cascade.reasoning_effort, 'high')
     self.assertEqual(value.cascade.device, 'cuda')
+    self.assertFalse(value.cascade.diarization_enabled)
     self.assertEqual(value.voice_name, None)
 
     invalid = value.to_dict()
     invalid['cascade']['reasoning_effort'] = 'extreme'
     with self.assertRaisesRegex(config.ConfigValidationError, 'reasoning'):
+      config.AgentConfig.from_dict(invalid)
+
+  def test_codex_realtime_configuration_is_explicit_and_validated(self):
+    value = config.AgentConfig.from_dict(
+        {
+            'pipeline_id': capabilities.PIPELINE_CODEX,
+            'model_id': capabilities.CODEX_REALTIME_MODEL,
+            'voice_name': capabilities.CODEX_VOICES[0],
+        }
+    )
+    self.assertEqual(value.pipeline_id, capabilities.PIPELINE_CODEX)
+
+  def test_codex_text_configuration_has_no_voice_or_audio_assumption(self):
+    value = config.AgentConfig.from_dict(
+        {
+            'pipeline_id': capabilities.PIPELINE_CODEX_TEXT,
+            'model_id': capabilities.CODEX_TEXT_MODEL,
+            'voice_name': None,
+        }
+    )
+    self.assertEqual(value.pipeline_id, capabilities.PIPELINE_CODEX_TEXT)
+
+    invalid = value.to_dict()
+    invalid['voice_name'] = capabilities.CODEX_VOICES[0]
+    with self.assertRaisesRegex(config.ConfigValidationError, 'voice_name'):
       config.AgentConfig.from_dict(invalid)
 
 

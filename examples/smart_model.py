@@ -178,7 +178,7 @@ class Researcher(processor.Processor):
         ),
         http_options=_RETRY_A_LOT,
     )
-    self._researcher = function_calling.FunctionCalling(model, fns=tools)
+    self._researcher = function_calling.FunctionCalling(model, fns=tools)  # pyrefly: ignore[bad-argument-type]
 
     self._reviser = genai_model.GenaiModel(
         api_key=api_key,

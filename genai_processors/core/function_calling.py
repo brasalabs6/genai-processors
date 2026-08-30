@@ -476,7 +476,7 @@ class FunctionCalling(processor.Processor):
     if self._fns_initialized:
       return
     fns = []
-    for fn in self._fns:
+    for fn in self._fns:  # pyrefly: ignore[not-iterable]
       if isinstance(fn, genai_types.McpClientSession):
         await fn.initialize()
         fns.extend(await mcp.mcp_tools_to_callables(fn))
@@ -503,7 +503,7 @@ class FunctionCalling(processor.Processor):
 
     output_queue = asyncio.Queue[content_api.ProcessorPart | None]()
     execute_function_call = _ExecuteFunctionCall(
-        fns=self._fns,
+        fns=self._fns,  # pyrefly: ignore[bad-argument-type]
         output_queue=output_queue,
         fn_state=state,
         is_bidi_model=self._is_bidi_model,
@@ -739,7 +739,7 @@ class _ExecuteFunctionCall:
         role='user',
         substream_name=self._substream_name,
         is_error=is_error,
-        scheduling='SILENT',
+        scheduling='SILENT',  # pyrefly: ignore[bad-argument-type]
     )
 
   def _add_task(
@@ -747,6 +747,7 @@ class _ExecuteFunctionCall:
   ) -> None:
     """Adds the Task running a function and returns task_id."""
     task_id = call.id
+    assert task_id is not None, 'call.id must not be None'
     task = processor.create_task(
         self._put_function_response_to_output_queue(call, fn)
     )
@@ -852,7 +853,7 @@ class _ExecuteFunctionCall:
     """Runs the function into an async Task."""
     converted_args = (
         _extra_utils.convert_number_values_for_dict_function_call_args(
-            call.args
+            call.args  # pyrefly: ignore[bad-argument-type]
         )
     )
     try:
@@ -871,10 +872,10 @@ class _ExecuteFunctionCall:
           )
           substreams_to_close.add(substream)
 
-          if response.function_response.will_continue is False:  # pylint: disable=g-bool-id-comparison
+          if response.function_response.will_continue is False:  # pylint: disable=g-bool-id-comparison  # pyrefly: ignore[missing-attribute]
             substreams_to_close.discard(substream)
           else:
-            response.function_response.will_continue = True
+            response.function_response.will_continue = True  # pyrefly: ignore[missing-attribute]
 
           yield response
 
@@ -919,11 +920,12 @@ class _ExecuteFunctionCall:
 
     part.substream_name = FUNCTION_CALL_SUBSTREAM_NAME
     call = part.function_call
+    assert call is not None, 'part.function_call must not be None'
 
     await self._output_queue.put(part)
 
     try:
-      fn = self._fns[call.name]
+      fn = self._fns[call.name]  # pyrefly: ignore[bad-index]
     except KeyError:
       function_names = ', '.join(repr(fn) for fn in sorted(self._fns.keys()))
       await self._output_queue.put(
@@ -948,7 +950,7 @@ class _ExecuteFunctionCall:
         or self._is_bidi_model
     ):
       if call.id is None:
-        call.id = self._create_task_id(call.name)
+        call.id = self._create_task_id(call.name)  # pyrefly: ignore[bad-argument-type]
       # Immediately returns a function response with a std result. The
       # scheduling is silent.
       await self._output_queue.put(

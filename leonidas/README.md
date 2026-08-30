@@ -69,3 +69,64 @@ GOOGLE_API_KEY='...' GROQ_API_KEY='...' .venv/bin/python -m leonidas
 
 O primeiro smoke baixa o Parakeet para o cache Hugging Face. A referência de
 voz, pesos, mídia e resultados permanecem fora do Git.
+
+### Diarização opcional
+
+A diarização roda em um terceiro runtime isolado para não substituir o Torch
+validado do Parakeet. Instale-o somente quando essa capacidade for necessária:
+
+```bash
+./leonidas/cascade/install_diarization.sh auto
+```
+
+O script usa `torch==2.6.0`, `torchaudio==2.6.0`, `pyannote.audio==3.4.0` e
+`huggingface_hub<1.0` (necessário pelo contrato `use_auth_token` do Pyannote)
+em `.venv-diarization`; `cpu` e `cuda` também podem ser passados
+explicitamente. O modelo
+`pyannote/speaker-diarization-community-1` requer acesso Hugging Face e seus
+termos próprios. Configure o login no ambiente do usuário, sem colocar token
+no repositório. Gere o corpus privado com duas vozes humanas Gemini e execute o
+smoke sem substituir o resultado do STT:
+
+```bash
+.venv/bin/python -m leonidas.e2e.diarization_corpus
+LEONIDAS_RUN_DIARIZATION_E2E=1 \
+  LEONIDAS_DIARIZATION_PYTHON=.venv-diarization/bin/python \
+  LEONIDAS_DIARIZATION_DEVICE=cuda \
+  .venv/bin/python -m leonidas.e2e.diarization_smoke
+
+# Gate final: três workers residentes, diarização real e três turnos locais.
+LEONIDAS_DIARIZATION_PYTHON=.venv-diarization/bin/python \
+  .venv/bin/python -m leonidas.e2e.coexistence_smoke --device cuda
+```
+
+O WAV e o manifesto técnico ficam em
+`leonidas/.runtime/e2e/diarization_audio/`, ignorado pelo Git. O smoke exige
+dois speakers reais; erro, timeout ou resultado ambíguo preserva a transcrição
+Parakeet. Quando um speaker é confiável, somente o prompt interno do Groq recebe
+`speakN falou:`, sem alterar a conversa exibida.
+
+Sem runtime, pesos ou acesso ao modelo, a API expõe `diarization` como
+`unavailable` e a cascata Parakeet → Groq → XTTS continua funcionando com a
+diarização desativada. A UI exibe o comando de instalação e não habilita o
+checkbox automaticamente.
+
+O smoke de coexistência exige que STT, diarização e TTS alcancem `ready`,
+identifica pelo menos dois speakers no corpus humano e mantém os três workers
+residentes durante três turnos Parakeet → Groq → XTTS. Ele registra somente
+RAM/swap/VRAM técnicas e sempre encerra os workers. Falha de acesso ao modelo
+gated, memória insuficiente ou OOM reprova o gate; não há fallback sintético.
+
+Para liberar os pesos gated, aceite os termos de
+`pyannote/speaker-diarization-community-1` na sua conta Hugging Face e faça o
+login interativo local, sem enviar o token para a UI ou para logs:
+
+```bash
+.venv-diarization/bin/hf auth login
+.venv-diarization/bin/hf auth list
+```
+
+O segundo comando deve listar uma credencial; o exit code de `hf auth whoami`
+sozinho não comprova login nesta versão do CLI. Antes do smoke CUDA conjunto,
+o host também precisa de RAM/swap suficiente para manter pelo menos o guard de
+5.120 MiB disponível no momento em que o XTTS iniciar.

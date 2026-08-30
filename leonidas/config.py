@@ -59,6 +59,7 @@ class CascadeConfig:
   language: str = 'pt'
   device: str = 'auto'
   voice_id: str = 'leonidas'
+  diarization_enabled: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -172,12 +173,79 @@ class AgentConfig:
     result.validate()
     return result
 
+  def _validate_types(self) -> None:
+    integer_fields = (
+        ('media.frame_interval_ms', self.media.frame_interval_ms),
+        ('media.max_width', self.media.max_width),
+        ('media.max_height', self.media.max_height),
+    )
+    for name, value in integer_fields:
+      if type(value) is not int:
+        raise ConfigValidationError(f'{name} must be an integer')
+
+    optional_integer_fields = (
+        ('vad.prefix_padding_ms', self.vad.prefix_padding_ms),
+        ('vad.silence_duration_ms', self.vad.silence_duration_ms),
+        ('generation.thinking_budget', self.generation.thinking_budget),
+        (
+            'generation.context_trigger_tokens',
+            self.generation.context_trigger_tokens,
+        ),
+        (
+            'generation.context_target_tokens',
+            self.generation.context_target_tokens,
+        ),
+    )
+    for name, value in optional_integer_fields:
+      if value is not None and type(value) is not int:
+        raise ConfigValidationError(f'{name} must be an integer or null')
+
+    numeric_fields = (
+        ('media.jpeg_quality', self.media.jpeg_quality),
+        ('generation.temperature', self.generation.temperature),
+    )
+    for name, value in numeric_fields:
+      if value is not None and (
+          isinstance(value, bool) or not isinstance(value, (int, float))
+      ):
+        raise ConfigValidationError(f'{name} must be numeric or null')
+
+    string_fields = (
+        ('media.model_resolution', self.media.model_resolution),
+        ('cascade.stt_model_id', self.cascade.stt_model_id),
+        ('cascade.llm_model_id', self.cascade.llm_model_id),
+        ('cascade.tts_model_id', self.cascade.tts_model_id),
+        ('cascade.reasoning_effort', self.cascade.reasoning_effort),
+        ('cascade.language', self.cascade.language),
+        ('cascade.device', self.cascade.device),
+        ('cascade.voice_id', self.cascade.voice_id),
+    )
+    for name, value in string_fields:
+      if not isinstance(value, str):
+        raise ConfigValidationError(f'{name} must be a string')
+
+    optional_string_fields = (
+        ('voice_name', self.voice_name),
+        ('vad.start_sensitivity', self.vad.start_sensitivity),
+        ('vad.end_sensitivity', self.vad.end_sensitivity),
+        ('generation.thinking_level', self.generation.thinking_level),
+    )
+    for name, value in optional_string_fields:
+      if value is not None and not isinstance(value, str):
+        raise ConfigValidationError(f'{name} must be a string or null')
+
+    if type(self.cascade.diarization_enabled) is not bool:
+      raise ConfigValidationError('cascade.diarization_enabled must be boolean')
+
   def validate(self) -> None:
+    self._validate_types()
     if self.schema_version != 1:
       raise ConfigValidationError('schema_version must be 1')
     if self.pipeline_id not in (
         capabilities.PIPELINE_GEMINI,
         capabilities.PIPELINE_CASCADE,
+        capabilities.PIPELINE_CODEX,
+        capabilities.PIPELINE_CODEX_TEXT,
     ):
       raise ConfigValidationError('pipeline_id is unsupported')
     profile = None
@@ -191,7 +259,7 @@ class AgentConfig:
           and self.voice_name not in capabilities.VOICES
       ):
         raise ConfigValidationError('voice_name is not supported')
-    else:
+    elif self.pipeline_id == capabilities.PIPELINE_CASCADE:
       if self.model_id not in (
           capabilities.GROQ_GPT_OSS_20B,
           capabilities.GROQ_GPT_OSS_120B,
@@ -200,6 +268,18 @@ class AgentConfig:
       if self.voice_name is not None:
         raise ConfigValidationError('voice_name is only supported by Gemini')
       self._validate_cascade()
+    elif self.pipeline_id == capabilities.PIPELINE_CODEX:
+      if self.model_id != capabilities.CODEX_REALTIME_MODEL:
+        raise ConfigValidationError(
+            'model_id is unsupported for Codex realtime'
+        )
+      if self.voice_name not in capabilities.CODEX_VOICES:
+        raise ConfigValidationError('voice_name is required for Codex realtime')
+    else:
+      if self.model_id != capabilities.CODEX_TEXT_MODEL:
+        raise ConfigValidationError('model_id is unsupported for Codex text')
+      if self.voice_name is not None:
+        raise ConfigValidationError('voice_name is unsupported for Codex text')
     if not 1 <= len(self.objective.strip()) <= 12000:
       raise ConfigValidationError(
           'objective must contain 1 to 12000 characters'

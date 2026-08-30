@@ -259,11 +259,8 @@ class _RealTimeConversationModel:
       p = debug.TTFTSingleStream('Model Generate', self._generation)
     else:
       p = self._generation
-    self._pending_generate_output = processor.create_task(
-        context.context_cancel_coro(
-            self._generate_output(p(self._prompt.pending())),
-        )
-    )
+    stream_content = p(self._prompt.pending())
+    self._pending_generate_output = self._create_generate_task(stream_content)
     self._current_generate_output = None
 
     # Use an event instead of current_task.done() to allow for cancellation not
@@ -271,6 +268,16 @@ class _RealTimeConversationModel:
     self._model_done = asyncio.Event()
     self._model_done.set()
     self._pending_turn_task = None
+
+  def _create_generate_task(
+      self, content: AsyncIterable[ProcessorPart]
+  ) -> asyncio.Task[None]:
+    """Creates generation only after the outer task begins executing."""
+
+    async def run() -> None:
+      await context.context_cancel_coro(self._generate_output(content))
+
+    return processor.create_task(run())
 
   def user_input(self, part: ProcessorPart) -> None:
     """Callback for when the user has a new input."""
@@ -342,11 +349,7 @@ class _RealTimeConversationModel:
     else:
       p = self._generation
     stream_content = p(self._prompt.pending())
-    self._pending_generate_output = processor.create_task(
-        context.context_cancel_coro(
-            self._generate_output(stream_content),
-        )
-    )
+    self._pending_generate_output = self._create_generate_task(stream_content)
 
   async def _generate_output(
       self, content: AsyncIterable[ProcessorPart]

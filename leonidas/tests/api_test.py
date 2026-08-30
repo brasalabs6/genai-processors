@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 from leonidas import api
 from leonidas import config
@@ -86,6 +87,18 @@ class ControlApiTest(unittest.IsolatedAsyncioTestCase):
         json.loads(conflict.body)['error']['code'], 'revision_conflict'
     )
 
+  async def test_malformed_revision_returns_validation_error(self):
+    response = await self.control.dispatch(
+        'PUT',
+        '/api/v1/config/draft',
+        {'expected_revision': None, 'updates': {'chattiness': 0.25}},
+    )
+
+    self.assertEqual(response.status, 422)
+    self.assertEqual(
+        json.loads(response.body)['error']['code'], 'invalid_configuration'
+    )
+
   async def test_start_without_media_returns_conflict(self):
     response = await self.control.dispatch('POST', '/api/v1/session/start', {})
     self.assertEqual(response.status, 409)
@@ -94,7 +107,7 @@ class ControlApiTest(unittest.IsolatedAsyncioTestCase):
     )
 
   async def test_starting_session_returns_accepted(self):
-    self.control._session.start = unittest.mock.AsyncMock(
+    self.control._session.start = mock.AsyncMock(
         return_value={'state': 'starting'}
     )
 

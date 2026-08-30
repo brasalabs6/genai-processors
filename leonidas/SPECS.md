@@ -1,5 +1,10 @@
 # Leonidas — Especificação Canônica
 
+> Escopo ativo (2026-08-01): Codex foi retirado do produto-alvo por decisão do
+> usuário. As subseções Codex são documentação histórica da capability já
+> existente e não são requisito de conclusão. Não ampliar esse caminho durante
+> a estabilização de Gemini, cascata local, diarização e UI.
+
 ## 1. Status e precedência
 
 Este documento é a fonte de verdade de produto e arquitetura do Leonidas. Ele
@@ -29,7 +34,8 @@ Leonidas e o Leonidas não deve importar o exemplo original.
 ## 3. Não objetivos desta versão
 
 - Exposição em LAN ou internet, autenticação multiusuário ou TLS próprio.
-- Groq Whisper, diarização ou instalação obrigatória de CUDA na biblioteca base.
+- Groq Whisper ou instalação obrigatória de CUDA/diarização na biblioteca base;
+  Pyannote permanece opcional e isolado na cascata local.
 - Compatibilidade de configuração com versões internas anteriores do exemplo.
 - Edição das instruções protegidas de ferramentas e máquina de estados.
 
@@ -60,6 +66,7 @@ cancelamento antes de aparecer na UI.
 
 ```text
 browser PCM 16 kHz -> WebRTC VAD/endpointing -> Parakeet TDT 0.6B v3
+                   -> Pyannote opcional -> contexto `speakN falou:`
                    -> Groq GPT-OSS reasoning -> XTTS v2 -> PCM 24 kHz chunks
 ```
 
@@ -91,6 +98,21 @@ browser PCM 16 kHz -> WebRTC VAD/endpointing -> Parakeet TDT 0.6B v3
 - A pipeline cascata v0.2 declara `vision=false`: o catálogo Groq disponível
   nesta conta não oferece modelo visual. A UI desabilita câmera/tela e explica
   a limitação; visão nunca é descartada silenciosamente.
+- Diarização é exclusiva da cascata local nesta fase. Ela roda em paralelo ao
+  Parakeet depois do endpointing. Quando o turno possui exatamente um speaker
+  confiável, somente o prompt interno do Groq recebe
+  `speakN falou: <transcrição>`; o substream `input_transcription` mantém o
+  texto original. Numeração é estável durante a sessão. Múltiplos speakers sem
+  alinhamento palavra-tempo, resultado vazio, erro ou timeout preservam o texto
+  original e incrementam métricas de fallback/erro; identidades nunca são
+  inventadas. Gemini Live não usa Pyannote.
+- Com diarização habilitada, o preparo usa a ordem STT → Pyannote → XTTS. Isso
+  garante que acesso/peso inválido do componente opcional falhe antes do load
+  caro do sintetizador; depois de `ready`, os três workers permanecem
+  residentes e a inferência STT/diarização do turno continua concorrente.
+- O gate empírico de coexistência exige dois speakers reais no corpus Gemini,
+  três turnos completos, métricas de RAM/swap/VRAM por fase e zero workers
+  órfãos no cleanup. Smokes individuais não comprovam coexistência.
 
 ### Lifecycle e readiness dos modelos locais
 
@@ -100,12 +122,17 @@ browser PCM 16 kHz -> WebRTC VAD/endpointing -> Parakeet TDT 0.6B v3
   `ready` e `error`. O estado inclui fase, modelo, device solicitado/resolvido,
   GPU, tempos, memória PyTorch alocada/reservada e erro seguro.
 - Start da cascata retorna `starting` sem aguardar inferência bloqueante. A
-  carga ocorre sequencialmente Parakeet → XTTS para limitar pico de VRAM.
+  carga ocorre sequencialmente Parakeet → Pyannote, quando habilitado, → XTTS
+  para limitar pico de VRAM e falhar cedo em recursos gated.
 - Warm-up executa inferência local real e só então marca `ready`. Pesos já
   instalados usam cache local sem sondagens repetidas ao Hugging Face.
-- A sessão entra em `running` somente com os dois componentes `ready`. Stop
-  invalida o start pendente; readiness concluída depois não inicia sessão.
+- A sessão entra em `running` somente com STT e TTS `ready`; quando a
+  diarização foi explicitamente habilitada, Pyannote também deve estar `ready`.
+  Stop invalida o start pendente; readiness concluída depois não inicia sessão.
 - Modelos prontos são reutilizados entre sessões e fechados somente no shutdown.
+- Uma geração candidata que falha nunca fecha workers pertencentes à geração
+  ativa; o swap de configuração só passa a valer quando o conjunto candidato
+  alcança readiness e o rollback preserva recursos compartilhados.
 - Gemini Live não cria, carrega ou consulta os workers locais.
 
 ## 5. Modelos e capabilities
@@ -167,7 +194,8 @@ O contrato serializado é `AgentConfig`:
     "reasoning_effort": "medium",
     "language": "pt",
     "device": "auto",
-    "voice_id": "leonidas-reference"
+    "voice_id": "leonidas",
+    "diarization_enabled": false
   }
 }
 ```
@@ -194,16 +222,26 @@ Presets fornecem valores iniciais e overrides permanecem explícitos:
 O backend mantém `active`, `draft`, `revision` e `dirty_fields`. O cliente
 envia `expected_revision`; conflitos retornam `409 revision_conflict`.
 Defaults ficam versionados em código. O estado local é salvo atomicamente em
-`leonidas/.runtime/config.json`, sem credenciais.
+`leonidas/.runtime/config.json`, sem credenciais. Campos aninhados são validados
+por tipo antes de limites semânticos; payloads malformados retornam 4xx e nunca
+são convertidos silenciosamente para bool/int/string úteis.
 
 ## 7. Sessão e aplicação transacional
 
 Estados canônicos: `stopped`, `starting`, `running`, `stopping`, `error`.
 
+O snapshot de sessão inclui `last_error` (classe estável) e
+`last_error_detail` somente para diagnósticos explicitamente aprovados pelo
+adapter. Falha de worker local, OOM ou timeout nunca pode deixar a sessão em
+`speaking`/`running` sem processamento; deve transicionar para `error` e
+permitir novo Start explícito.
+
 - Start exige WebSocket de mídia conectado, configuração ativa válida,
   credenciais da pipeline e preflight local aprovado.
 - Stop é idempotente, encerra entrada, cancela tasks, fecha processadores e
   publica `stopped`; após timeout deve cancelar forçadamente sem deixar tasks.
+- Start, Stop e Apply são serializados como operações de lifecycle; chamadas
+  concorrentes não podem intercalar uma promoção/rollback com outro ciclo.
 - Cada Start ou Apply cria novas filas, streams e processor instances.
 - Apply parado apenas promove o draft.
 - Apply rodando valida e constrói, para a sessão, promove e reinicia.
@@ -211,6 +249,29 @@ Estados canônicos: `stopped`, `starting`, `running`, `stopping`, `error`.
   também no rollback deixa a sessão em `error`; nunca inicia loop de reset.
 - Apenas uma sessão multimídia pode estar ativa. Conexões adicionais recebem
   fechamento WebSocket por violação de política.
+- A fila de entrada é limitada. Imagens podem ser descartadas sob pressão e
+  contabilizadas; áudio/texto aguardam por um intervalo limitado. Saturação
+  persistente encerra o WebSocket com overload explícito em vez de propagar
+  `QueueFull` ou crescer memória sem limite.
+
+O carregamento XTTS exige uma reserva mínima configurável de memória do
+sistema (`LEONIDAS_XTTS_MIN_AVAILABLE_MEMORY_MIB`, default 5120 MiB). Se o
+worker for morto por `SIGKILL`/OOM, o erro deve distinguir falta de recurso de
+falha de protocolo e não iniciar retries ilimitados.
+
+### Diarização opcional
+
+A cascata pode incluir um adapter de diarização independente do STT. Seu
+contrato de saída é um segmento com `speaker_id`, `start`, `end` (segundos
+relativos ao áudio endpointado) e
+`confidence`; segmentos são associados à transcrição por intervalo, nunca por
+posição textual presumida. O adapter declara `device`, memória esperada,
+cache/modelo, fallback CPU e estado de readiness. Se a diarização estiver
+habilitada e sua preparação falhar, o Start falha de forma observável e a
+geração ativa anterior permanece válida. Depois de `ready`, falhas, resultado
+vazio ou timeout em um turno preservam a transcrição sem speaker e incrementam
+métricas de fallback/erro sem interromper Parakeet → Groq → XTTS. A inferência
+ocorre em worker/thread apropriado e é cancelável no Stop/Apply/shutdown.
 
 ## 8. APIs
 
@@ -247,8 +308,59 @@ com `id`, `model_id`, `state`, `phase`, `device`, `gpu_name`, `load_ms`,
 `memory_allocated_mib`, `memory_reserved_mib` e `error`. Campos de GPU/memória
 são `null` em CPU. Erros possuem `stage`, `code`, `message` e `recovery`,
 nunca traceback, prompt ou credencial. Os identificadores de componente são
-sempre `stt` e `tts`; campos privados do worker, como request `id` e `type`,
-nunca entram nesse contrato.
+`stt`, `tts` e, quando configurado, `diarization`; campos privados do worker,
+como request `id` e `type`, nunca entram nesse contrato.
+
+### Codex Realtime experimental (histórico, fora do escopo ativo)
+
+`pipeline_id=codex_realtime` inicia `codex app-server --listen stdio://` no
+servidor, executa `initialize` com `capabilities.experimentalApi=true`, envia
+`initialized`, cria um thread efêmero e usa os métodos confirmados
+`thread/realtime/start`, `appendText`, `appendAudio` e `stop`. O checkout
+`~/github/codex` é a referência mais recente: ele confirma v3, enquanto o
+binário instalado anuncia apenas v1/v2. O capability document distingue
+`realtime_versions` confirmadas (`v2`, `v1`) de
+`experimental_realtime_versions` (`v3`) e publica a matriz de transportes.
+V3 só pode ser selecionada por opt-in quando o app-server executado publicar
+esse schema; não é anunciada como operacional no `codex-cli 0.144.0`.
+
+Após o handshake, o adapter chama `thread/realtime/listVoices` e valida a voz
+contra o conjunto da versão: v1/v3 usam as vozes V1 e v2 usa as vozes V2.
+`appendText` sempre inclui `role`; `appendAudio` usa o objeto estruturado
+`data`, `sampleRate`, `numChannels`, `samplesPerChannel` e `itemId` opcional.
+`thread/realtime/error` e `thread/realtime/closed` são terminais em startup e
+runtime e precisam cancelar inputs/tasks sem deixar a UI presa.
+
+O browser nunca recebe JSON-RPC, request IDs, `auth.json` ou tokens. WebSocket
+realtime exige `OPENAI_API_KEY` compatível; para login ChatGPT, o browser cria
+WebRTC v1 com track de áudio e data channel `oai-events`, envia a oferta SDP
+como `application/x-codex-webrtc-offer` e recebe a resposta como
+`application/x-codex-webrtc-answer`. Tokens não são convertidos. O áudio
+WebRTC é reproduzido pela track remota; áudio de sideband não é duplicado.
+O smoke real é opt-in e registra apenas status, versão, latência e estado de
+conexão. A feature `realtime_conversation` é habilitada somente no subprocesso
+local, sem alterar Gemini ou a cascata. Para WebSocket, áudio vira
+`ProcessorPart` no substream `realtime` com MIME explícito. Um erro `403 Voice
+session access denied` significa falta de entitlement upstream e é sanitizado,
+não mascarado como falha de autenticação local.
+
+O smoke de áudio usa corpus privado gerado pelo Gemini em
+`leonidas/.runtime/e2e/codex_audio/`. Cada WAV é validado como PCM16 mono
+24 kHz, convertido para PCM16 mono 16 kHz e enviado em chunks de 100 ms com
+pacing e silêncio final, por no mínimo dois turnos. O manifesto persiste apenas
+metadados técnicos e hash. WebSocket V2 é testado quando há API key; WebRTC V1
+usa Chromium e track de microfone alimentada pelo WAV. Áudio, transcripts,
+respostas e credenciais nunca entram no Git ou nos relatórios.
+
+### Codex Text fallback (histórico, fora do escopo ativo)
+
+`pipeline_id=codex_text` é uma capacidade separada para instalações cujo
+`auth.json` contém login ChatGPT, mas não `OPENAI_API_KEY`. Ela usa somente
+`initialize`, `thread/start` e `turn/start` do app-server, coleta
+`item/agentMessage/delta` até `turn/completed` e retorna texto no contrato
+`ProcessorPart`. Não aceita áudio, voz ou visão e não tenta iniciar
+`thread/realtime/start`. Assim, a ausência de API key produz erro acionável no
+realtime e não uma degradação implícita para texto.
 
 `POST /api/v1/session/start` preserva `200/running` para Gemini. Para cascata
 fria retorna `202/starting`; readiness e transições posteriores chegam pelo
@@ -282,9 +394,12 @@ Por sessão:
 - duração de resposta;
 - interrupção até flush confirmado pelo cliente;
 - frames enviados, descartados e bytes;
-- chunks de áudio enviados/recebidos.
+- chunks de áudio enviados/recebidos;
+- profundidade da fila de entrada, frames descartados por backpressure e
+  timeouts de saturação (`input_queue_depth`, `frames_dropped_backpressure`,
+  `input_backpressure_timeouts`);
 - carga local, STT, Groq e TTS (`local_model_load_ms`, `local_stt_ms`,
-  `groq_reasoning_ms`, `local_tts_ms`).
+  `groq_reasoning_ms`, `local_tts_ms`);
 - decisões do endpoint local (`vad_candidates_rejected`,
   `vad_utterances_started`, `turn_interruptions`, `local_tts_cancelled`).
 
@@ -309,8 +424,12 @@ vincular em interfaces diferentes de `127.0.0.1` nesta versão.
 
 - Os dois modelos iniciam, param e alternam sem pipeline presa ou tasks órfãs.
 - Voz, objetivo, presets e overrides são validados e aplicados explicitamente.
+- Payloads de configuração malformados permanecem em erro 4xx e nunca são
+  aceitos por coerção implícita de tipos.
 - A UI nunca reinicia uma sessão durante a edição do draft.
 - Stop e interrupção limpam o áudio imediatamente.
+- Saturação da fila nunca cresce memória sem limite nem vaza `QueueFull`; frames
+  descartáveis e inputs não descartáveis seguem políticas observáveis distintas.
 - Silêncio e ruído estável não criam turnos; fala curta real continua aceita.
 - Uma resposta local só conclui após gerar PCM 24 kHz válido e
   `generation_complete`; erro ao retomar o `AudioContext` fica visível na UI.

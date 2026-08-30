@@ -1,5 +1,9 @@
 # Leonidas — Workflows e máquinas de estado
 
+> Escopo ativo (2026-08-01): os fluxos Codex abaixo são históricos e não são
+> gates do goal atual. A operação validada deve se concentrar em Gemini Live e
+> na cascata local com diarização opcional.
+
 ## Componentes
 
 ```mermaid
@@ -15,11 +19,13 @@ flowchart LR
   REG --> G25[Gemini Live 2.5]
   REG --> G31[Gemini Live 3.1]
   REG --> CAS[Cascade local]
+  REG --> CODEX[Codex app-server realtime experimental]
   CAS --> STT[Parakeet v3]
   STT --> GRQ[Groq GPT-OSS]
   GRQ --> XTTS[XTTS v2]
   G25 --> RATE[RateLimitAudio]
   G31 --> RATE
+  CODEX --> RATE
   RATE --> WS
 ```
 
@@ -51,10 +57,22 @@ stateDiagram-v2
   running --> stopping: POST /session/stop
   running --> stopping: disconnect
   running --> stopping: apply config
+  running --> error: worker/audio resource failure
   stopping --> stopped: cleanup concluído
   stopping --> error: cleanup forçado falha
   error --> starting: start explícito
   error --> stopped: stop explícito
+```
+
+```mermaid
+flowchart LR
+  PCM[PCM endpointado] --> STT[Parakeet STT]
+  PCM -. janela opcional .-> DIA[Diarização worker]
+  STT --> TURN[Turno/transcrição]
+  DIA --> SEG[Segmentos de speaker]
+  TURN --> LLM[Groq reasoning]
+  LLM --> TTS[XTTS]
+  SEG -. atraso/erro não bloqueia .-> TURN
 ```
 
 Invariantes:
@@ -63,6 +81,75 @@ Invariantes:
 - toda inicialização cria nova fila e novo stream;
 - `stop` pode ser repetido sem erro;
 - nenhuma transição automática sai de `error`.
+
+## Codex app-server e autenticação (histórico, fora do escopo ativo)
+
+```mermaid
+sequenceDiagram
+  participant Leonidas
+  participant Auth as ~/.codex/auth.json
+  participant Codex as codex app-server
+  participant Model as Realtime backend
+  Leonidas->>Auth: validar shape sem registrar valores
+  Leonidas->>Codex: spawn stdio + CODEX_HOME
+  Leonidas->>Codex: initialize(experimentalApi=true)
+  Leonidas->>Codex: initialized
+  Leonidas->>Codex: thread/realtime/listVoices
+  Codex-->>Leonidas: vozes V1/V2 + defaults
+  Leonidas->>Codex: thread/start(ephemeral, safe policy)
+  Leonidas->>Codex: thread/realtime/start(versão/transporte validados)
+  Codex->>Model: sessão autenticada server-side
+  Model-->>Codex: started/transcript/audio/error/closed
+  Codex-->>Leonidas: JSONL multiplexado
+  Leonidas-->>UI: ProcessorPart/state
+```
+
+Para login ChatGPT sem API key, o fluxo usa WebRTC: o browser cria track de
+microfone + `oai-events`, envia uma oferta SDP pelo envelope
+`application/x-codex-webrtc-offer`, e aplica a resposta emitida pelo backend
+como `application/x-codex-webrtc-answer`. A versão WebRTC é v1; o WebSocket
+continua sendo o transporte de compatibilidade para API key.
+
+```mermaid
+stateDiagram-v2
+  [*] --> auth_missing
+  auth_missing --> auth_invalid: arquivo ausente/JSON inválido
+  auth_invalid --> auth_ready: auth.json corrigido
+  auth_missing --> auth_ready: API key disponível
+  auth_ready --> thread_starting: initialize concluído
+  thread_starting --> realtime_starting: thread/start
+  realtime_starting --> running: realtime/started
+  realtime_starting --> error: feature/versão/credencial
+  running --> stopping: stop/disconnect
+  stopping --> stopped: cleanup
+  error --> auth_ready: nova tentativa explícita
+```
+
+Tokens de login ChatGPT não satisfazem o requisito de API key do transporte
+WebSocket observado no app-server atual. Para esse login, WebRTC é a rota
+correta, mas ainda depende do entitlement de voz da conta. `error` e `closed`
+são transições terminais tanto antes quanto depois de `started`.
+
+```mermaid
+sequenceDiagram
+  participant Corpus as WAV Gemini privado
+  participant Runner
+  participant Codex
+  Corpus->>Runner: validar PCM16 mono 24 kHz + hash
+  Runner->>Runner: converter 16 kHz e dividir em 100 ms
+  loop dois ou mais turnos
+    Runner->>Codex: appendAudio(chunks com pacing)
+    Runner->>Codex: silêncio de endpointing
+    Codex-->>Runner: transcript/audio ou erro terminal
+  end
+  Runner->>Codex: realtime/stop
+  Runner->>Runner: cleanup e relatório redigido
+```
+
+Para instalações com esse login, a UI pode selecionar explicitamente
+`codex_text`. Essa composição mantém um thread efêmero e executa turnos
+`turn/start`, agregando deltas de `item/agentMessage/delta` até
+`turn/completed`. Ela não habilita a feature realtime nem promete áudio.
 
 ## Aplicar configuração
 
@@ -119,7 +206,8 @@ stateDiagram-v2
   [*] --> idle
   idle --> listening: PCM recebido
   listening --> transcribing: VAD end of speech
-  transcribing --> thinking: Parakeet final
+  transcribing --> diarizing: Parakeet final + Pyannote opcional
+  diarizing --> thinking: speaker context ou fallback
   thinking --> speaking: Groq response
   speaking --> idle: XTTS complete
   speaking --> interrupted: VAD start of speech
@@ -135,6 +223,7 @@ sequenceDiagram
   participant Browser
   participant VAD
   participant Parakeet
+  participant Pyannote
   participant Groq
   participant Parent
   participant XTTS
@@ -146,8 +235,13 @@ sequenceDiagram
     VAD-->>Browser: start_of_speech
   end
   VAD->>Parakeet: utterance final <= 30 s
+  VAD->>Pyannote: mesmo utterance PCM (somente cascata local)
   Parakeet-->>Browser: final transcription
-  Parakeet->>Groq: objective + bounded history + user text
+  alt um speaker confiável
+    Pyannote-->>Groq: speakN falou: + transcrição
+  else indisponível, ambíguo, timeout ou erro
+    Parakeet->>Groq: transcrição original
+  end
   Groq-->>Browser: response text
   Groq->>Parent: response
   Parent->>XTTS: JSONL em subprocesso .venv-xtts
@@ -157,6 +251,13 @@ sequenceDiagram
   end
   Parent-->>Browser: generation_complete
 ```
+
+Quando a diarização é habilitada, o resource supervisor prepara
+`Parakeet → Pyannote → XTTS`. Se Pyannote falhar por runtime, peso ou acesso
+gated, o XTTS não é carregado e todos os candidatos são encerrados. Depois dos
+três estados `ready`, o smoke de coexistência mantém os workers residentes,
+diariza o corpus humano, executa três turnos e coleta RAM/swap/VRAM antes do
+cleanup obrigatório.
 
 Um `start_of_speech` só existe após confirmação híbrida. Isso preserva
 barge-in de fala curta, mas impede que ruído de microfone cancele Groq/XTTS.

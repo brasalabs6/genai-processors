@@ -35,11 +35,12 @@ export interface CascadeConfig {
   language: 'pt';
   device: 'auto' | 'cuda' | 'cpu';
   voice_id: string;
+  diarization_enabled: boolean;
 }
 
 export interface AgentConfig {
   schema_version: 1;
-  pipeline_id: 'gemini_live' | 'cascade_local';
+  pipeline_id: 'gemini_live' | 'cascade_local' | 'codex_realtime' | 'codex_text';
   model_id: string;
   voice_name: string | null;
   objective: string;
@@ -87,11 +88,54 @@ export interface CascadePipelineCapability {
   devices: Array<'auto' | 'cuda' | 'cpu'>;
 }
 
+export interface CodexPipelineCapability {
+  id: 'codex_realtime';
+  label: string;
+  implemented: boolean;
+  vision: false;
+  input_modalities: string[];
+  output_modalities: string[];
+  native_audio: boolean;
+  voices: string[];
+  models: ModelCapability[];
+  realtime_versions: string[];
+  experimental_realtime_versions: string[];
+  transports: {
+    websocket: string[];
+    webrtc: string[];
+  };
+  requires_local_codex: boolean;
+}
+
+export interface CodexTextPipelineCapability {
+  id: 'codex_text';
+  label: string;
+  implemented: boolean;
+  vision: false;
+  input_modalities: string[];
+  output_modalities: string[];
+  native_audio: false;
+  voices: [];
+  models: ModelCapability[];
+  requires_local_codex: boolean;
+}
+
 export interface Capabilities {
   schema_version: number;
-  pipelines: Array<GeminiPipelineCapability | CascadePipelineCapability>;
+  pipelines: Array<GeminiPipelineCapability | CascadePipelineCapability | CodexPipelineCapability | CodexTextPipelineCapability>;
   voices: string[];
   presets: string[];
+  diarization?: {
+    id: string;
+    state: string;
+    model_id: string;
+    device: string | null;
+    weights_loaded: boolean;
+    optional_dependency: string;
+    runtime_path?: string;
+    setup_command?: string;
+    model_access_required?: boolean;
+  };
 }
 
 export interface SessionSnapshot {
@@ -100,6 +144,7 @@ export interface SessionSnapshot {
   media_connected: boolean;
   started_at: number | null;
   last_error: string | null;
+  last_error_detail: string | null;
 }
 
 export interface MetricSummary {
@@ -119,6 +164,7 @@ export interface MetricsSnapshot {
 
 export type ResourceState =
   | 'unloaded'
+  | 'unavailable'
   | 'validating'
   | 'loading'
   | 'warming'
@@ -126,7 +172,7 @@ export type ResourceState =
   | 'error';
 
 export interface ResourceComponent {
-  id: 'stt' | 'tts';
+  id: 'stt' | 'tts' | 'diarization';
   model_id: string | null;
   state: ResourceState;
   phase: string;

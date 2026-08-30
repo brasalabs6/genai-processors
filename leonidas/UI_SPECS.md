@@ -1,5 +1,9 @@
 # Leonidas — Especificação da Web UI
 
+> Escopo ativo (2026-08-01): controles Codex existentes são legados isolados e
+> não serão ampliados neste goal. A UI deve ser validada para Gemini 2.5/3.1,
+> cascata local, diarização, diagnóstico e layouts desktop/mobile.
+
 ## 1. Princípios
 
 - Standalone, local-first, sem dependência de AI Studio.
@@ -107,6 +111,47 @@ Durante carga, o estado de sessão é `starting`, Start fica desabilitado e Stop
 permanece habilitado. A UI não promete percentual quando o backend só conhece
 fases discretas.
 
+Se um worker local morrer ou a memória mínima não estiver disponível, a UI
+mostra a sessão como `Erro`, exibe `last_error_detail` acionável e mantém Start
+disponível para uma nova tentativa explícita. Não exibe `Falando` indefinidamente
+nem reinicia em loop silencioso.
+
+Quando diarização estiver instalada, a UI exibirá seu estado (`indisponível`,
+`carregando`, `pronta` ou `erro`), device e memória estimada. A ativação será
+independente do botão de microfone; enquanto estiver indisponível, a
+transcrição e o playback continuam normalmente.
+No painel da cascata, o checkbox “Ativar diarização opcional” só fica habilitado
+quando a capability anuncia a dependência instalada; alterar o checkbox é uma
+mudança de configuração que exige Apply/Start e nunca altera Gemini.
+
+O controle de diarização aparece somente para `cascade_local`; Gemini Live não
+carrega Pyannote e não exibe esse controle como aplicável. Prefixos
+`speakN falou:` são contexto interno do reasoning e não devem contaminar a
+transcrição mostrada ao usuário.
+
+Quando `codex_realtime` estiver selecionado, a UI mostra o badge “Codex
+experimental”, o modelo `gpt-realtime-1.5`, a versão realtime negociada e as
+vozes anunciadas pelo capability document. Versões confirmadas e experimentais
+devem ser apresentadas separadamente; V3 não pode aparecer como operacional no
+runtime 0.144.0. No transporte WebRTC v1, deve
+priorizar as vozes compatíveis (`juniper`, `maple`, `spruce`, `ember`, `vale`,
+`breeze`, `arbor`, `sol`, `cove`) e enviar a oferta SDP somente pelo WebSocket
+de sinalização local; o microfone não deve ser duplicado como PCM. Erros de
+`auth.json`, API key
+ausente, feature desabilitada ou versão não suportada são acionáveis. A UI
+nunca mostra o conteúdo de `auth.json` nem oferece campo de credencial.
+
+Quando `codex_text` estiver selecionado, a UI mostra “Codex Text”, não oferece
+voz nem controles de áudio e deixa explícito que é o fallback textual do
+app-server. A UI nunca troca automaticamente entre `codex_realtime` e
+`codex_text`; a escolha é do usuário e o erro de autenticação do realtime deve
+ser acionável.
+
+`thread/realtime/error` ou `closed` deve encerrar imediatamente os estados
+`conectando`, `ouvindo` ou `falando`, parar a track, limpar o SDP pendente e
+mostrar o diagnóstico sanitizado. A UI não tenta reconectar uma sessão de voz
+negada por entitlement sem nova ação do usuário.
+
 O erro de runtime XTTS deve distinguir ambiente ausente, referência de voz
 ausente e termos CPML ainda não aceitos. A UI nunca oferece um botão que aceite
 licença automaticamente; ela mostra o comando de preparação documentado.
@@ -200,3 +245,27 @@ nunca lançadas na raiz do app.
 - A cascata mostra cada componente local antes de declarar sessão running.
 - Selecionar/iniciar Gemini não carrega recursos locais nem altera seus
   controles ou lifecycle.
+
+## 9. Navegação adaptativa v2 (`resources/ui_002`)
+
+A WebUI implementada deve expor somente três espaços reais, sem criar
+funcionalidades fictícias:
+
+- **Operação**: percepção, controles de captura, conversa, composer e métricas
+  resumidas; é o espaço inicial em desktop e mobile.
+- **Configuração**: pipeline, modelo, voz, objetivo, recursos locais,
+  diarização e parâmetros avançados; o rascunho continua separado da
+  configuração aplicada e só muda com `Apply`.
+- **Diagnóstico**: estado REST/WebSocket/sessão, readiness dos componentes,
+  métricas detalhadas e logs Live/Arquivos.
+
+Cada espaço é uma região semântica alternável por teclado, touch e leitor de
+tela. A troca de espaço não encerra sessão, não reinicia captura e não altera
+configuração. Em telas menores que 760 px, a navegação vira uma barra fixa
+inferior com áreas de toque de pelo menos 44 px; o preview pode ser reduzido
+ou sobreposto, mas conversa e controles de sessão permanecem acessíveis.
+
+O redesenho preserva os IDs DOM dos controles existentes para manter o
+contrato de `main.ts`, mas reorganiza sua apresentação. Não são introduzidos
+Capacitor, autenticação móvel ou conexão remota nesta fase: o backend continua
+local-only e o suporte mobile entregue é Web responsive testável.

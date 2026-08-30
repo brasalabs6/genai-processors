@@ -163,7 +163,7 @@ async def run_chat() -> None:
     model = models.turn_based_model(
         system_instruction=SYSTEM_INSTRUCTIONS,
         disable_automatic_function_calling=True,
-        tools=tools,
+        tools=tools,  # pyrefly: ignore[bad-argument-type]
     )
     model = function_calling.FunctionCalling(
         model=realtime.LiveModelProcessor(model),

@@ -5,12 +5,14 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
 import httpx
 import numpy as np
 
 from genai_processors import content_api
 from leonidas import telemetry
+from leonidas.cascade import diarization
 from leonidas.cascade import groq_reasoning
 from leonidas.cascade import parakeet
 from leonidas.cascade import parakeet_process
@@ -535,6 +537,13 @@ class CascadeResourcesTest(unittest.IsolatedAsyncioTestCase):
       self,
   ):
     order = []
+    availability = mock.patch.object(
+        diarization,
+        'availability',
+        return_value={'state': 'unavailable'},
+    )
+    availability.start()
+    self.addCleanup(availability.stop)
 
     class Resource:
 
@@ -570,11 +579,107 @@ class CascadeResourcesTest(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(pool.snapshot()['overall_state'], 'ready')
     self.assertEqual(
         [item['state'] for item in pool.snapshot()['components']],
-        ['ready', 'ready'],
+        ['ready', 'ready', 'unavailable'],
     )
     self.assertTrue(
         any(item['overall_state'] == 'loading' for item in snapshots)
     )
+
+  async def test_prepare_loads_optional_diarizer_when_enabled(self):
+    order = []
+
+    class Resource:
+
+      def __init__(self, name):
+        self.name = name
+        self.device = 'cpu'
+
+      async def load(self, progress=None):
+        order.append(f'{self.name}:start')
+        if progress is not None:
+          await progress('warming')
+        order.append(f'{self.name}:ready')
+        return {'device': self.device}
+
+    pool = resources.CascadeResources(
+        voices={},
+        device_resolver=lambda _requested: 'cpu',
+        transcriber_factory=lambda **_kwargs: Resource('stt'),
+        synthesizer_factory=lambda **_kwargs: Resource('tts'),
+        diarizer_factory=lambda **_kwargs: Resource('diarization'),
+    )
+
+    snapshot = await pool.ensure_ready(
+        'stt-model',
+        'tts-model',
+        'cpu',
+        diarization_enabled=True,
+    )
+
+    self.assertEqual(
+        order,
+        [
+            'stt:start',
+            'stt:ready',
+            'diarization:start',
+            'diarization:ready',
+            'tts:start',
+            'tts:ready',
+        ],
+    )
+    self.assertEqual(
+        [item['state'] for item in snapshot['components']],
+        ['ready', 'ready', 'ready'],
+    )
+    await pool.close()
+
+  async def test_failed_diarizer_prevents_tts_load_and_closes_candidates(self):
+    events = []
+
+    class Resource:
+
+      def __init__(self, name, *, fails=False):
+        self.name = name
+        self.fails = fails
+        self.device = 'cuda'
+
+      async def load(self, progress=None):
+        del progress
+        events.append(f'{self.name}:load')
+        if self.fails:
+          raise RuntimeError('gated model')
+        return {'device': self.device}
+
+      async def close(self):
+        events.append(f'{self.name}:close')
+
+    pool = resources.CascadeResources(
+        voices={},
+        device_resolver=lambda _requested: 'cuda',
+        transcriber_factory=lambda **_kwargs: Resource('stt'),
+        synthesizer_factory=lambda **_kwargs: Resource('tts'),
+        diarizer_factory=lambda **_kwargs: Resource('diarization', fails=True),
+    )
+
+    with self.assertRaisesRegex(RuntimeError, 'gated model'):
+      await pool.ensure_ready(
+          'stt-model',
+          'tts-model',
+          'cuda',
+          diarization_enabled=True,
+      )
+
+    self.assertEqual(
+        events,
+        [
+            'stt:load',
+            'diarization:load',
+            'stt:close',
+            'tts:close',
+            'diarization:close',
+        ],
+    )
+    await pool.close()
 
   async def test_status_listener_failure_cannot_abort_model_loading(self):
     class Resource:
@@ -832,6 +937,149 @@ class CascadeProcessorTest(unittest.IsolatedAsyncioTestCase):
     audio = [part for part in output if part.mimetype == 'audio/pcm;rate=24000']
     self.assertGreater(len(audio), 1)
     self.assertTrue(output[-1].get_metadata('generation_complete'))
+
+  async def test_diarization_contract_emits_two_synthetic_speakers(self):
+    class Transcriber:
+
+      async def transcribe(self, _audio):
+        return 'duas pessoas falando'
+
+    class Reasoner:
+
+      async def respond(self, **kwargs):
+        self.prompt = kwargs['prompt']
+        return 'Entendi as duas vozes.'
+
+    class Synthesizer:
+
+      async def synthesize(self, _text, **_kwargs):
+        return b'\x00\x00' * 1200
+
+    class SyntheticDiarizer:
+
+      async def diarize(self, audio, *, sample_rate):
+        self.audio = audio
+        self.sample_rate = sample_rate
+        midpoint = len(audio) / (sample_rate * 2) / 2
+        return [
+            diarization.SpeakerSegment('SPEAKER_00', 0.0, midpoint, 0.91),
+            diarization.SpeakerSegment(
+                'SPEAKER_01', midpoint, midpoint * 2, 0.88
+            ),
+        ]
+
+    first_speaker = np.full(480, 5000, dtype='<i2').tobytes()
+    second_speaker = np.full(480, -5000, dtype='<i2').tobytes()
+    endpoint = vad.EndpointDetector(
+        is_speech=lambda frame: bool(frame.strip(b'\x00')),
+        start_frames=1,
+        end_frames=1,
+        pre_roll_frames=0,
+    )
+
+    async def inputs():
+      yield content_api.ProcessorPart(
+          first_speaker + second_speaker + b'\x00\x00' * 480,
+          mimetype='audio/pcm;rate=16000',
+      )
+
+    synthetic = SyntheticDiarizer()
+    reasoner = Reasoner()
+    cascade = pipeline.CascadeProcessor(
+        transcriber=Transcriber(),
+        reasoner=reasoner,
+        synthesizer=Synthesizer(),
+        objective='Ajude.',
+        model_id='openai/gpt-oss-20b',
+        reasoning_effort='medium',
+        voice_id='leonidas',
+        endpoint_detector=endpoint,
+        diarizer=synthetic,
+    )
+    output = [part async for part in cascade(inputs())]
+
+    diarization_parts = [
+        part for part in output if part.substream_name == 'diarization'
+    ]
+    self.assertEqual(len(diarization_parts), 1)
+    self.assertEqual(synthetic.sample_rate, 16000)
+    segments = diarization_parts[0].get_metadata('speaker_segments')
+    self.assertEqual(
+        [item['speaker_id'] for item in segments],
+        [
+            'SPEAKER_00',
+            'SPEAKER_01',
+        ],
+    )
+    self.assertEqual([item['confidence'] for item in segments], [0.91, 0.88])
+    self.assertEqual(segments[0]['start'], 0.0)
+    self.assertGreater(segments[0]['end'], segments[0]['start'])
+    self.assertEqual(segments[1]['start'], segments[0]['end'])
+    self.assertGreater(segments[1]['end'], segments[1]['start'])
+    self.assertEqual(reasoner.prompt, 'duas pessoas falando')
+
+  async def test_single_diarized_speaker_is_added_only_to_reasoning_prompt(
+      self,
+  ):
+    class Transcriber:
+
+      async def transcribe(self, _audio):
+        return 'precisamos revisar o projeto'
+
+    class Reasoner:
+
+      async def respond(self, **kwargs):
+        self.prompt = kwargs['prompt']
+        return 'Vamos revisar.'
+
+    class Synthesizer:
+
+      async def synthesize(self, _text, **_kwargs):
+        return b'\x00\x00' * 1200
+
+    class SingleSpeakerDiarizer:
+
+      async def diarize(self, audio, *, sample_rate):
+        duration = len(audio) / (sample_rate * 2)
+        return [diarization.SpeakerSegment('SPEAKER_00', 0.0, duration, 0.95)]
+
+    endpoint = vad.EndpointDetector(
+        is_speech=lambda frame: bool(frame.strip(b'\x00')),
+        start_frames=1,
+        end_frames=1,
+        pre_roll_frames=0,
+    )
+
+    async def inputs():
+      yield content_api.ProcessorPart(
+          b'\x01\x00' * 480 + b'\x00\x00' * 480,
+          mimetype='audio/pcm;rate=16000',
+      )
+
+    reasoner = Reasoner()
+    cascade = pipeline.CascadeProcessor(
+        transcriber=Transcriber(),
+        reasoner=reasoner,
+        synthesizer=Synthesizer(),
+        objective='Ajude.',
+        model_id='openai/gpt-oss-20b',
+        reasoning_effort='medium',
+        voice_id='leonidas',
+        endpoint_detector=endpoint,
+        diarizer=SingleSpeakerDiarizer(),
+    )
+    output = [part async for part in cascade(inputs())]
+
+    self.assertEqual(
+        reasoner.prompt,
+        'speak1 falou: precisamos revisar o projeto',
+    )
+    transcripts = [
+        part.text
+        for part in output
+        if part.substream_name == 'input_transcription'
+    ]
+    self.assertEqual(transcripts, ['precisamos revisar o projeto'])
 
   async def test_audio_frames_are_reassembled_across_websocket_chunks(self):
     utterance = b'\x01\x00' * 480

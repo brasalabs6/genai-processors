@@ -9,12 +9,14 @@ import time
 from typing import Any, Callable
 
 from leonidas.cascade import device as device_selection
+from leonidas.cascade import diarization
+from leonidas.cascade import diarization_process
 from leonidas.cascade import parakeet_process
 from leonidas.cascade import xtts_process
 
 
 class CascadeResources:
-  """Prevents duplicate local models across restart and voice preview paths."""
+  """Owns one active, atomically replaceable local model generation."""
 
   def __init__(
       self,
@@ -27,22 +29,36 @@ class CascadeResources:
       synthesizer_factory: Callable[..., Any] = (
           xtts_process.XttsWorkerSynthesizer
       ),
+      diarizer_factory: Callable[..., Any] = (
+          diarization_process.PyannoteWorkerDiarizer
+      ),
+      listener_timeout: float = 1.0,
   ):
+    if listener_timeout <= 0:
+      raise ValueError('listener_timeout must be positive')
     self._voices = dict(voices)
     self._device_resolver = device_resolver
     self._transcriber_factory = transcriber_factory
     self._synthesizer_factory = synthesizer_factory
+    self._diarizer_factory = diarizer_factory
+    self._listener_timeout = listener_timeout
     self._transcribers: dict[tuple[str, str], Any] = {}
     self._synthesizers: dict[tuple[str, str], Any] = {}
+    self._diarizers: dict[str, Any] = {}
     self._listeners: set[Callable[[dict[str, Any]], Any]] = set()
     self._status = {
         'stt': self._empty_status('stt'),
         'tts': self._empty_status('tts'),
+        'diarization': self._diarization_status(),
     }
+    self._ready_status: dict[str, dict[str, Any]] | None = None
+    self._last_error: dict[str, Any] | None = None
     self._prepare_lock = asyncio.Lock()
     self._prepare_task: asyncio.Task[None] | None = None
-    self._prepare_key: tuple[str, str, str] | None = None
-    self._ready_key: tuple[str, str, str] | None = None
+    self._prepare_key: tuple[str, str, str, bool] | None = None
+    self._ready_key: tuple[str, str, str, bool] | None = None
+    self._generation = 0
+    self._closing = False
 
   @staticmethod
   def _empty_status(component_id: str) -> dict[str, Any]:
@@ -59,6 +75,16 @@ class CascadeResources:
         'error': None,
     }
 
+  @staticmethod
+  def _diarization_status() -> dict[str, Any]:
+    available = diarization.availability()['state'] == 'available'
+    return {
+        **CascadeResources._empty_status('diarization'),
+        'state': 'unloaded' if available else 'unavailable',
+        'phase': 'optional_not_loaded' if available else 'optional_unavailable',
+        'model_id': 'pyannote/speaker-diarization-community-1',
+    }
+
   def add_listener(self, listener: Callable[[dict[str, Any]], Any]) -> None:
     self._listeners.add(listener)
 
@@ -66,8 +92,11 @@ class CascadeResources:
     self._listeners.discard(listener)
 
   def snapshot(self) -> dict[str, Any]:
-    components = [copy.deepcopy(self._status[name]) for name in ('stt', 'tts')]
-    states = {item['state'] for item in components}
+    components = [
+        copy.deepcopy(self._status[name])
+        for name in ('stt', 'tts', 'diarization')
+    ]
+    states = {self._status[name]['state'] for name in ('stt', 'tts')}
     if states == {'ready'}:
       overall = 'ready'
     elif 'error' in states:
@@ -78,28 +107,37 @@ class CascadeResources:
       overall = 'loading'
     return {
         'schema_version': 1,
+        'generation': self._generation,
         'overall_state': overall,
         'components': components,
+        'last_error': copy.deepcopy(self._last_error),
     }
 
   async def _notify(self) -> None:
     snapshot = self.snapshot()
-    for listener in tuple(self._listeners):
+
+    async def publish(listener: Callable[[dict[str, Any]], Any]) -> None:
       try:
-        result = listener(snapshot)
+        result = listener(copy.deepcopy(snapshot))
         if inspect.isawaitable(result):
-          await result
+          await asyncio.wait_for(result, timeout=self._listener_timeout)
       except Exception as exc:
         self._listeners.discard(listener)
         logging.warning(
             'Resource listener removed error_type=%s', type(exc).__name__
         )
 
+    listeners = tuple(self._listeners)
+    if listeners:
+      await asyncio.gather(*(publish(listener) for listener in listeners))
+
   async def _update(self, component_id: str, **values: Any) -> None:
     self._status[component_id].update(values)
     await self._notify()
 
   def transcriber(self, model_id: str, device: str) -> Any:
+    if self._closing:
+      raise RuntimeError('Cascade resources are closing')
     resolved = self._device_resolver(device)
     key = (model_id, resolved)
     if key not in self._transcribers:
@@ -109,6 +147,8 @@ class CascadeResources:
     return self._transcribers[key]
 
   def synthesizer(self, model_id: str, device: str) -> Any:
+    if self._closing:
+      raise RuntimeError('Cascade resources are closing')
     resolved = self._device_resolver(device)
     key = (model_id, resolved)
     if key not in self._synthesizers:
@@ -118,6 +158,14 @@ class CascadeResources:
           voices=self._voices,
       )
     return self._synthesizers[key]
+
+  def diarizer(self, device: str) -> Any:
+    if self._closing:
+      raise RuntimeError('Cascade resources are closing')
+    resolved = self._device_resolver(device)
+    if resolved not in self._diarizers:
+      self._diarizers[resolved] = self._diarizer_factory(device=resolved)
+    return self._diarizers[resolved]
 
   async def _load_component(
       self,
@@ -138,11 +186,7 @@ class CascadeResources:
 
     async def progress(phase: str) -> None:
       state = 'warming' if phase == 'warming' else 'loading'
-      await self._update(
-          component_id,
-          state=state,
-          phase=phase,
-      )
+      await self._update(component_id, state=state, phase=phase)
 
     try:
       await self._update(component_id, state='loading', phase='loading')
@@ -155,46 +199,198 @@ class CascadeResources:
           load_ms=(time.perf_counter() - started) * 1000,
           error=None,
       )
+    except asyncio.CancelledError:
+      await self._update(
+          component_id,
+          state='unloaded',
+          phase='unloaded',
+          error=None,
+      )
+      raise
     except Exception as exc:
-      code = 'cuda_unavailable' if 'CUDA' in str(exc) else 'model_load_failed'
+      if isinstance(exc, xtts_process.XttsResourceError):
+        code = 'insufficient_system_memory'
+      elif 'CUDA' in str(exc):
+        code = 'cuda_unavailable'
+      else:
+        code = 'model_load_failed'
+      error = {
+          'stage': component_id,
+          'code': code,
+          'message': (
+              str(exc)
+              if getattr(exc, 'public_message', False)
+              else f'{component_id.upper()} local não ficou disponível.'
+          ),
+          'recovery': 'Verifique CUDA, cache do modelo e os logs do Leonidas.',
+      }
+      self._last_error = copy.deepcopy(error)
       await self._update(
           component_id,
           state='error',
           phase='error',
           load_ms=(time.perf_counter() - started) * 1000,
-          error={
-              'stage': component_id,
-              'code': code,
-              'message': f'{component_id.upper()} local não ficou disponível.',
-              'recovery': (
-                  'Verifique CUDA, cache do modelo e os logs do Leonidas.'
-              ),
-          },
+          error=error,
       )
       raise
 
-  async def _prepare(
-      self, stt_model_id: str, tts_model_id: str, device: str
+  @staticmethod
+  async def _close_resource(resource: Any) -> None:
+    close = getattr(resource, 'close', None)
+    if close is None:
+      return
+    try:
+      result = close()
+      if inspect.isawaitable(result):
+        await result
+    except Exception as exc:
+      logging.warning(
+          'Cascade resource close failed error_type=%s', type(exc).__name__
+      )
+
+  async def _close_unique(self, values: list[Any]) -> None:
+    seen: set[int] = set()
+    for resource in values:
+      identity = id(resource)
+      if identity in seen:
+        continue
+      seen.add(identity)
+      await self._close_resource(resource)
+
+  async def _evict_inactive(
+      self,
+      active_stt: tuple[str, str],
+      active_tts: tuple[str, str],
+      active_diarization: str | None,
   ) -> None:
-    transcriber = self.transcriber(stt_model_id, device)
-    synthesizer = self.synthesizer(tts_model_id, device)
-    await self._load_component(
-        'stt', stt_model_id, transcriber, getattr(transcriber, 'device', device)
-    )
-    await self._load_component(
-        'tts', tts_model_id, synthesizer, getattr(synthesizer, 'device', device)
-    )
+    stale: list[Any] = []
+    for key in tuple(self._transcribers):
+      if key != active_stt:
+        stale.append(self._transcribers.pop(key))
+    for key in tuple(self._synthesizers):
+      if key != active_tts:
+        stale.append(self._synthesizers.pop(key))
+    for key in tuple(self._diarizers):
+      if key != active_diarization:
+        stale.append(self._diarizers.pop(key))
+    await self._close_unique(stale)
+
+  async def _discard_candidate(
+      self,
+      stt_key: tuple[str, str],
+      tts_key: tuple[str, str],
+      transcriber: Any | None,
+      synthesizer: Any | None,
+      diarizer: Any | None,
+      owned_ids: set[int],
+  ) -> None:
+    """Closes only resources created by the failed candidate generation."""
+    candidates: list[Any] = []
+    if (
+        transcriber is not None
+        and id(transcriber) in owned_ids
+        and self._transcribers.get(stt_key) is transcriber
+    ):
+      candidates.append(self._transcribers.pop(stt_key))
+    if (
+        synthesizer is not None
+        and id(synthesizer) in owned_ids
+        and self._synthesizers.get(tts_key) is synthesizer
+    ):
+      candidates.append(self._synthesizers.pop(tts_key))
+    if diarizer is not None and id(diarizer) in owned_ids:
+      for key, value in tuple(self._diarizers.items()):
+        if value is diarizer:
+          candidates.append(self._diarizers.pop(key))
+    await self._close_unique(candidates)
+
+  async def _prepare(
+      self,
+      stt_model_id: str,
+      tts_model_id: str,
+      device: str,
+      diarization_enabled: bool,
+  ) -> None:
+    stt_key = (stt_model_id, device)
+    tts_key = (tts_model_id, device)
+    owned_ids: set[int] = set()
+    transcriber = self._transcribers.get(stt_key)
+    synthesizer = self._synthesizers.get(tts_key)
+    diarizer = self._diarizers.get(device) if diarization_enabled else None
+    try:
+      if transcriber is None:
+        transcriber = self.transcriber(stt_model_id, device)
+        owned_ids.add(id(transcriber))
+      if synthesizer is None:
+        synthesizer = self.synthesizer(tts_model_id, device)
+        owned_ids.add(id(synthesizer))
+      if diarization_enabled and diarizer is None:
+        diarizer = self.diarizer(device)
+        owned_ids.add(id(diarizer))
+      if diarizer is None:
+        self._status['diarization'] = self._diarization_status()
+      await self._load_component(
+          'stt',
+          stt_model_id,
+          transcriber,
+          getattr(transcriber, 'device', device),
+      )
+      if diarizer is not None:
+        await self._load_component(
+            'diarization',
+            'pyannote/speaker-diarization-community-1',
+            diarizer,
+            getattr(diarizer, 'device', device),
+        )
+      await self._load_component(
+          'tts',
+          tts_model_id,
+          synthesizer,
+          getattr(synthesizer, 'device', device),
+      )
+    except BaseException:
+      await self._discard_candidate(
+          stt_key,
+          tts_key,
+          transcriber,
+          synthesizer,
+          diarizer,
+          owned_ids,
+      )
+      if self._ready_status is not None:
+        self._status = copy.deepcopy(self._ready_status)
+        await self._notify()
+      raise
+
+    ready_device = getattr(transcriber, 'device', device)
+    ready_tts_device = getattr(synthesizer, 'device', device)
     self._ready_key = (
         stt_model_id,
         tts_model_id,
-        getattr(transcriber, 'device', device),
+        ready_device,
+        diarization_enabled,
+    )
+    self._generation += 1
+    self._last_error = None
+    self._ready_status = copy.deepcopy(self._status)
+    await self._evict_inactive(
+        (stt_model_id, ready_device),
+        (tts_model_id, ready_tts_device),
+        getattr(diarizer, 'device', device) if diarizer is not None else None,
     )
 
   async def ensure_ready(
-      self, stt_model_id: str, tts_model_id: str, device: str
+      self,
+      stt_model_id: str,
+      tts_model_id: str,
+      device: str,
+      *,
+      diarization_enabled: bool = False,
   ) -> dict[str, Any]:
+    if self._closing:
+      raise RuntimeError('Cascade resources are closing')
     resolved = self._device_resolver(device)
-    key = (stt_model_id, tts_model_id, resolved)
+    key = (stt_model_id, tts_model_id, resolved, diarization_enabled)
     while self._ready_key != key:
       async with self._prepare_lock:
         if self._ready_key == key:
@@ -202,28 +398,52 @@ class CascadeResources:
         if self._prepare_task is None or self._prepare_task.done():
           self._prepare_key = key
           self._prepare_task = asyncio.create_task(
-              self._prepare(stt_model_id, tts_model_id, resolved),
+              self._prepare(
+                  stt_model_id,
+                  tts_model_id,
+                  resolved,
+                  diarization_enabled,
+              ),
               name='leonidas-local-model-prepare',
           )
         task = self._prepare_task
         preparing_key = self._prepare_key
-      await asyncio.shield(task)
+      try:
+        await asyncio.shield(task)
+      except asyncio.CancelledError:
+        raise
+      except Exception:
+        if preparing_key == key:
+          raise
+        continue
       if preparing_key == key:
         break
     return self.snapshot()
 
   async def close(self) -> None:
-    if self._prepare_task is not None:
-      await asyncio.gather(self._prepare_task, return_exceptions=True)
+    self._closing = True
+    async with self._prepare_lock:
+      task = self._prepare_task
       self._prepare_task = None
       self._prepare_key = None
-    values = [*self._transcribers.values(), *self._synthesizers.values()]
+      self._ready_key = None
+      self._ready_status = None
+      if task is not None and not task.done():
+        task.cancel()
+    if task is not None:
+      await asyncio.gather(task, return_exceptions=True)
+    values = [
+        *self._transcribers.values(),
+        *self._synthesizers.values(),
+        *self._diarizers.values(),
+    ]
     self._transcribers.clear()
     self._synthesizers.clear()
-    for value in values:
-      close = getattr(value, 'close', None)
-      if close is None:
-        continue
-      result = close()
-      if inspect.isawaitable(result):
-        await result
+    self._diarizers.clear()
+    await self._close_unique(values)
+    self._status = {
+        'stt': self._empty_status('stt'),
+        'tts': self._empty_status('tts'),
+        'diarization': self._diarization_status(),
+    }
+    self._last_error = None

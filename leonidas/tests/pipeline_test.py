@@ -80,8 +80,15 @@ class PipelineRegistryTest(unittest.TestCase):
       def __init__(self):
         self.arguments = None
 
-      async def ensure_ready(self, stt_model, tts_model, device):
-        self.arguments = (stt_model, tts_model, device)
+      async def ensure_ready(
+          self, stt_model, tts_model, device, *, diarization_enabled=False
+      ):
+        self.arguments = (
+            stt_model,
+            tts_model,
+            device,
+            diarization_enabled,
+        )
 
     resources = Resources()
     factory = registry.PipelineRegistry(
@@ -108,6 +115,7 @@ class PipelineRegistryTest(unittest.TestCase):
             cascade.cascade.stt_model_id,
             cascade.cascade.tts_model_id,
             cascade.cascade.device,
+            False,
         ),
     )
 

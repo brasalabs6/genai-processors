@@ -9,9 +9,12 @@ from genai_processors.core import rate_limit_audio
 from leonidas import capabilities
 from leonidas import config
 from leonidas.cascade import groq_reasoning
+from leonidas.cascade import diarization
 from leonidas.cascade import pipeline as cascade_pipeline
 from leonidas.cascade import resources
 from leonidas.pipelines import gemini_live
+from leonidas.pipelines import codex_realtime
+from leonidas.pipelines import codex_text
 from leonidas import telemetry
 
 
@@ -47,12 +50,22 @@ class PipelineRegistry:
       if not self._groq_api_key:
         raise ValueError('GROQ_API_KEY is required for cascade_local')
       cascade = agent_config.cascade
+      generation = agent_config.generation
+      context_trigger = generation.context_trigger_tokens or 6000
+      context_target = generation.context_target_tokens or min(
+          4500, context_trigger - 1
+      )
       try:
         transcriber = self._resources.transcriber(
             cascade.stt_model_id, cascade.device
         )
         synthesizer = self._resources.synthesizer(
             cascade.tts_model_id, cascade.device
+        )
+        diarizer = (
+            self._resources.diarizer(cascade.device)
+            if cascade.diarization_enabled
+            else diarization.NullDiarizer()
         )
         synthesizer.validate_runtime()
         cascade_processor = cascade_pipeline.CascadeProcessor(
@@ -64,11 +77,18 @@ class PipelineRegistry:
             reasoning_effort=cascade.reasoning_effort,
             voice_id=cascade.voice_id,
             language=cascade.language,
+            context_trigger_tokens=context_trigger,
+            context_target_tokens=context_target,
             metrics=self._metrics,
+            diarizer=diarizer,
         )
         return cascade_processor + rate_limit_audio.RateLimitAudio(24000)
       except RuntimeError as exc:
         raise ValueError(str(exc)) from exc
+    if agent_config.pipeline_id == capabilities.PIPELINE_CODEX:
+      return codex_realtime.create(agent_config)
+    if agent_config.pipeline_id == capabilities.PIPELINE_CODEX_TEXT:
+      return codex_text.create(agent_config)
     raise ValueError(f'Unsupported pipeline: {agent_config.pipeline_id!r}')
 
   def requires_preparation(self, agent_config: config.AgentConfig) -> bool:
@@ -86,6 +106,7 @@ class PipelineRegistry:
         cascade.stt_model_id,
         cascade.tts_model_id,
         cascade.device,
+        diarization_enabled=cascade.diarization_enabled,
     )
 
   @property

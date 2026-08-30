@@ -87,6 +87,15 @@ class ControlApi:
         }
     )
 
+  def _reset_metrics_for_new_session(self) -> None:
+    state = self._session.snapshot().get('state')
+    if state not in (
+        runtime.SessionState.STARTING.value,
+        runtime.SessionState.RUNNING.value,
+        runtime.SessionState.STOPPING.value,
+    ):
+      self._metrics.reset_session()
+
   async def dispatch(
       self,
       method: str,
@@ -108,10 +117,16 @@ class ControlApi:
         )
         return _json_response(snapshot.to_dict())
       if method == 'POST' and path == '/api/v1/config/apply':
+        if self._session.snapshot().get('state') in (
+            runtime.SessionState.STARTING.value,
+            runtime.SessionState.RUNNING.value,
+        ):
+          self._metrics.reset_session()
         return _json_response(await self._session.apply_config())
       if method == 'GET' and path == '/api/v1/session':
         return _json_response(self._session.snapshot())
       if method == 'POST' and path == '/api/v1/session/start':
+        self._reset_metrics_for_new_session()
         snapshot = await self._session.start()
         return _json_response(
             snapshot, status=202 if snapshot.get('state') == 'starting' else 200
@@ -137,26 +152,29 @@ class ControlApi:
       if method == 'POST' and path == '/api/v1/voices/preview':
         model_id = str(body.get('model_id', ''))
         voice_name = str(body.get('voice_name', ''))
-        if model_id in (
+        local_preview = model_id in (
             capabilities.GROQ_GPT_OSS_20B,
             capabilities.GROQ_GPT_OSS_120B,
-        ):
+        )
+        if local_preview:
           supported_voices = capabilities.CASCADE_VOICES
+          if self._session.snapshot().get('state') in (
+              runtime.SessionState.STARTING.value,
+              runtime.SessionState.RUNNING.value,
+              runtime.SessionState.STOPPING.value,
+          ):
+            return _error(
+                409,
+                'session_busy',
+                'Stop the local session before generating a voice preview',
+            )
         else:
           capabilities.resolve_model(model_id)
           supported_voices = capabilities.VOICES
         if voice_name not in supported_voices:
           raise config.ConfigValidationError('voice_name is not supported')
         draft = self._config.snapshot().draft
-        device = (
-            draft.cascade.device
-            if model_id
-            in (
-                capabilities.GROQ_GPT_OSS_20B,
-                capabilities.GROQ_GPT_OSS_120B,
-            )
-            else 'auto'
-        )
+        device = draft.cascade.device if local_preview else 'auto'
         audio = await self._voice_preview.preview(
             model_id,
             voice_name,
@@ -180,7 +198,7 @@ class ControlApi:
       return _error(409, 'media_already_connected', str(exc))
     except log_store.InvalidLogIdError as exc:
       return _error(404, 'invalid_log_id', str(exc))
-    except (config.ConfigValidationError, ValueError) as exc:
+    except (config.ConfigValidationError, TypeError, ValueError) as exc:
       return _error(422, 'invalid_configuration', str(exc))
     except RuntimeError:
       return _error(

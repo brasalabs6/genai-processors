@@ -61,6 +61,13 @@ class McpToolError(Exception):
     super().__init__(message)
 
 
+def _mcp_attribute(value: Any, snake_case: str, camel_case: str) -> Any:
+  """Reads canonical SDK fields while retaining MCP 1.x compatibility."""
+  if hasattr(value, snake_case):
+    return getattr(value, snake_case)
+  return getattr(value, camel_case)
+
+
 def _mcp_content_to_part(
     block: mcp_types.ContentBlock,
 ) -> content_api.ProcessorPart:
@@ -76,19 +83,24 @@ def _mcp_content_to_part(
     return content_api.ProcessorPart(block.text)
   elif isinstance(block, mcp_types.ImageContent):
     data = base64.b64decode(block.data)
-    return content_api.ProcessorPart(data, mimetype=block.mimeType)
+    return content_api.ProcessorPart(
+        data, mimetype=_mcp_attribute(block, 'mime_type', 'mimeType')
+    )
   elif isinstance(block, mcp_types.AudioContent):
     data = base64.b64decode(block.data)
-    return content_api.ProcessorPart(data, mimetype=block.mimeType)
+    return content_api.ProcessorPart(
+        data, mimetype=_mcp_attribute(block, 'mime_type', 'mimeType')
+    )
   elif isinstance(block, mcp_types.EmbeddedResource):
     resource = block.resource
+    mimetype = _mcp_attribute(resource, 'mime_type', 'mimeType')
     if isinstance(resource, mcp_types.TextResourceContents):
       return content_api.ProcessorPart(
-          resource.text, mimetype=resource.mimeType or "text/plain"
+          resource.text, mimetype=mimetype or "text/plain"
       )
     else:
       data = base64.b64decode(resource.blob)
-      return content_api.ProcessorPart(data, mimetype=resource.mimeType)
+      return content_api.ProcessorPart(data, mimetype=mimetype)
   elif isinstance(block, mcp_types.ResourceLink):
     return content_api.ProcessorPart(str(block.uri))
   else:
@@ -116,7 +128,7 @@ def create_mcp_tool(
 
   async def call_tool(**kwargs: Any) -> content_api.ProcessorPart:
     result = await session.call_tool(tool.name, kwargs)
-    if result.isError:
+    if _mcp_attribute(result, 'is_error', 'isError'):
       raise McpToolError(tool.name, result.content)
     return content_api.ProcessorPart.from_function_response(
         name=tool.name,

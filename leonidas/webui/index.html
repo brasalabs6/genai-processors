@@ -28,14 +28,29 @@
 
       <div id="error-banner" class="error-banner" role="alert" hidden>
         <strong id="error-title">Erro</strong><span id="error-detail"></span>
+        <button id="unlock-audio" type="button" hidden>Reativar áudio</button>
         <button id="dismiss-error" aria-label="Fechar erro">×</button>
       </div>
 
+      <nav class="workspace-nav" aria-label="Espaços do Leonidas">
+        <button id="space-tab-operation" class="workspace-tab active" type="button" data-space-target="operation" aria-selected="true">
+          <span>01</span> Operação
+        </button>
+        <button id="space-tab-config" class="workspace-tab" type="button" data-space-target="config" aria-selected="false">
+          <span>02</span> Configuração
+        </button>
+        <button id="space-tab-diagnostic" class="workspace-tab" type="button" data-space-target="diagnostic" aria-selected="false">
+          <span>03</span> Diagnóstico
+        </button>
+      </nav>
+
       <main class="dashboard">
+        <section id="space-operation" class="workspace-space active" data-space="operation" aria-labelledby="space-tab-operation">
         <section class="panel capture-panel">
           <div class="panel-heading"><div><span class="eyebrow">Contexto</span><h1>Visão e voz</h1></div><span id="capture-state" class="quiet">Sem captura</span></div>
           <div class="preview-stage">
             <video id="preview" autoplay muted playsinline hidden></video>
+            <audio id="codex-audio" autoplay playsinline hidden></audio>
             <div id="preview-empty" class="preview-empty"><span>◎</span><p>Ative a câmera ou compartilhe a tela</p></div>
           </div>
           <div class="capture-controls">
@@ -73,7 +88,9 @@
             <span>TTS cancelados <b id="tts-cancelled-count">0</b></span>
           </div>
         </section>
+        </section>
 
+        <section id="space-config" class="workspace-space" data-space="config" hidden>
         <section class="panel config-panel">
           <div class="panel-heading"><div><span class="eyebrow">Controle</span><h2>Configuração</h2></div><span id="draft-status" class="quiet">Ativa</span></div>
           <div class="form-grid">
@@ -98,12 +115,17 @@
                 <div><span>TTS · XTTS</span><b class="resource-state">Não carregado</b></div>
                 <small class="resource-detail">Será carregado após o STT.</small>
               </article>
+              <article class="resource-card" data-resource="diarization">
+                <div><span>Diarização · Pyannote</span><b class="resource-state">Indisponível</b></div>
+                <small class="resource-detail">Opcional; não bloqueia transcrição ou áudio.</small>
+              </article>
             </div>
             <div class="form-grid">
               <label>Reasoning<select id="reasoning-effort"><option value="low">Baixo</option><option value="medium">Médio</option><option value="high">Alto</option></select></label>
               <label>Device<select id="cascade-device"><option value="auto">Automático</option><option value="cuda">CUDA</option><option value="cpu">CPU</option></select></label>
               <label>STT<input id="cascade-stt" readonly /></label>
               <label>TTS<input id="cascade-tts" readonly /></label>
+              <label class="checkbox-field"><input id="cascade-diarization" type="checkbox" /> Ativar diarização opcional</label>
             </div>
           </div>
           <label class="objective-label">Objetivo e persona<textarea id="objective" rows="5" maxlength="12000"></textarea><small><span id="objective-count">0</span>/12.000 · instruções internas permanecem protegidas</small></label>
@@ -125,14 +147,17 @@
             </div>
           </details>
         </section>
+        </section>
 
+        <section id="space-diagnostic" class="workspace-space" data-space="diagnostic" hidden>
         <section class="panel logs-panel">
           <div class="panel-heading"><div><span class="eyebrow">Diagnóstico</span><h2>Logs</h2></div><div class="log-actions"><button id="pause-logs">Pausar</button><button id="clear-logs" class="ghost">Limpar tela</button></div></div>
           <div class="log-toolbar"><select id="log-file"><option value="">Tail ao vivo</option></select><select id="log-level"><option value="">Todos os níveis</option><option>ERROR</option><option>WARNING</option><option>INFO</option><option>DEBUG</option></select><input id="log-search" type="search" placeholder="Filtrar logs" /></div>
           <pre id="logs" tabindex="0" aria-label="Logs do Leonidas"></pre>
         </section>
+        </section>
       </main>
     </div>
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/bootstrap.ts"></script>
   </body>
 </html>

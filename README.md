@@ -83,7 +83,7 @@ turn-based interactions and live streaming.
 
 ## 📦 Installation
 
-The GenAI Processors library requires Python 3.10+.
+The GenAI Processors library requires Python 3.11+.
 
 Install it with:
 

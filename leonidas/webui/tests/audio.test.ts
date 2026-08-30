@@ -6,6 +6,7 @@ import {
   bytesToBase64,
   floatToPcm16,
   parseSampleRate,
+  pcm16BytesToFloat,
 } from '../src/audio';
 
 describe('audio helpers', () => {
@@ -18,6 +19,10 @@ describe('audio helpers', () => {
   it('converts normalized float audio to signed 16-bit PCM', () => {
     const pcm = floatToPcm16(new Float32Array([-1, -0.5, 0, 0.5, 1]));
     expect(Array.from(pcm)).toEqual([-32768, -16384, 0, 16383, 32767]);
+  });
+
+  it('rejects truncated PCM16 payloads', () => {
+    expect(() => pcm16BytesToFloat(new Uint8Array([1]))).toThrow('even');
   });
 
   it('encodes bytes with standard base64', () => {
@@ -54,6 +59,7 @@ describe('audio helpers', () => {
       createBufferSource: () => ({
         buffer: null,
         connect: () => undefined,
+        disconnect: () => undefined,
         addEventListener: () => undefined,
         start: (at: number) => starts.push(at),
         stop: () => undefined,
@@ -66,7 +72,37 @@ describe('audio helpers', () => {
     await player.enqueue('AQI=', 'audio/pcm;rate=24000');
 
     expect(context.state).toBe('running');
-    expect(starts).toEqual([1.02]);
+    expect(starts).toEqual([1.08]);
+  });
+
+  it('keeps later chunks contiguous instead of reapplying the reservoir', async () => {
+    const starts: number[] = [];
+    const context = {
+      state: 'running',
+      currentTime: 1,
+      destination: {},
+      createBuffer: (_channels: number, samples: number, rate: number) => ({
+        duration: samples / rate,
+        copyToChannel: () => undefined,
+      }),
+      createBufferSource: () => ({
+        buffer: null,
+        connect: () => undefined,
+        disconnect: () => undefined,
+        addEventListener: () => undefined,
+        start: (at: number) => starts.push(at),
+        stop: () => undefined,
+      }),
+    };
+    const player = new PcmPlayer(() => context as unknown as AudioContext);
+
+    await player.enqueue('AQI=', 'audio/pcm;rate=24000');
+    context.currentTime = 1.05;
+    await player.enqueue('AQI=', 'audio/pcm;rate=24000');
+
+    expect(starts).toHaveLength(2);
+    expect(starts[1]).toBeCloseTo((starts[0] ?? 0) + 1 / 24000, 8);
+    expect(starts[1]).toBeLessThan(1.13);
   });
 
   it('surfaces a browser refusal to resume audio', async () => {
@@ -82,5 +118,40 @@ describe('audio helpers', () => {
     await expect(
       player.enqueue('AQI=', 'audio/pcm;rate=24000'),
     ).rejects.toThrow('resume blocked');
+  });
+
+  it('lets a flushed generation bypass an old pending resume', async () => {
+    let releaseResume!: () => void;
+    const resumeGate = new Promise<void>((resolve) => { releaseResume = resolve; });
+    const starts: number[] = [];
+    const context = {
+      state: 'suspended',
+      currentTime: 0,
+      destination: {},
+      async resume() { await resumeGate; this.state = 'running'; },
+      createBuffer: (_channels: number, samples: number, rate: number) => ({
+        duration: samples / rate,
+        copyToChannel: () => undefined,
+      }),
+      createBufferSource: () => ({
+        buffer: null,
+        connect: () => undefined,
+        disconnect: () => undefined,
+        addEventListener: () => undefined,
+        start: (at: number) => starts.push(at),
+        stop: () => undefined,
+      }),
+    };
+    const player = new PcmPlayer(() => context as unknown as AudioContext);
+    const stale = player.enqueue('AQI=', 'audio/pcm;rate=24000');
+    await Promise.resolve();
+    player.flush();
+    context.state = 'running';
+    const current = player.enqueue('AQI=', 'audio/pcm;rate=24000');
+    await current;
+    releaseResume();
+    await stale;
+
+    expect(starts).toHaveLength(1);
   });
 });

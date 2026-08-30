@@ -47,7 +47,9 @@ class GenerateAssetsTest(unittest.IsolatedAsyncioTestCase):
 
     interactions = Interactions()
     client = type('Client', (), {'interactions': interactions})()
-    generator = generate_assets.GeminiAudioGenerator('ignored', client=client)
+    generator = generate_assets.GeminiAudioGenerator(
+        'ignored', voice='Puck', client=client
+    )
     wav = await generator.generate('Leia isto.')
     with tempfile.TemporaryDirectory() as temp_dir:
       path = Path(temp_dir) / 'fixture.wav'
@@ -59,6 +61,10 @@ class GenerateAssetsTest(unittest.IsolatedAsyncioTestCase):
         interactions.kwargs['model'], 'gemini-3.1-flash-tts-preview'
     )
     self.assertIn('Leia isto.', interactions.kwargs['input'])
+    self.assertEqual(
+        interactions.kwargs['generation_config']['speech_config'][0]['voice'],
+        'Puck',
+    )
 
   async def test_generates_and_validates_both_assets_atomically(self):
     scenario = manifest.Scenario.from_dict(

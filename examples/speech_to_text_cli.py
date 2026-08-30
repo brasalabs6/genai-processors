@@ -99,7 +99,7 @@ GOOGLE_PROJECT_ID = os.environ['GOOGLE_PROJECT_ID']
 async def run_stt() -> None:
   """Runs speech-to-text in a CLI environment."""
   pya = pyaudio.PyAudio()
-  stt_processor = audio_io.PyAudioIn(pya) + speech_to_text.SpeechToText(
+  stt_processor = audio_io.PyAudioIn(pya) + speech_to_text.SpeechToText(  # pyrefly: ignore[unsupported-operation]
       project_id=GOOGLE_PROJECT_ID, with_interim_results=True
   )
 

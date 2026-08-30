@@ -16,10 +16,24 @@ from leonidas.cascade import device as device_selection
 
 
 WORKER_RESPONSE_LIMIT = 64 * 1024 * 1024
+DEFAULT_MIN_AVAILABLE_MEMORY_MIB = 5120
 ProgressCallback = Callable[[str], Awaitable[None]]
 
 
+class XttsWorkerCrashedError(RuntimeError):
+  """The isolated worker exited before returning the requested result."""
+
+  public_message = True
+
+
+class XttsResourceError(RuntimeError):
+  """The host cannot safely load the XTTS model right now."""
+
+  public_message = True
+
+
 class XttsWorkerSynthesizer:
+  """Serializes XTTS requests and recreates poisoned workers deterministically."""
 
   sample_rate = 24000
 
@@ -53,13 +67,14 @@ class XttsWorkerSynthesizer:
     )
     self._lock = asyncio.Lock()
     self._stderr_task: asyncio.Task[None] | None = None
-    self._drain_task: asyncio.Task[None] | None = None
     self._timeout = timeout
     self._diagnostics: collections.deque[str] = collections.deque(maxlen=40)
 
   async def _start(self) -> asyncio.subprocess.Process:
     if self._process is not None and self._process.returncode is None:
       return self._process
+    if self._process is not None:
+      await self._invalidate_worker(self._process)
     self.validate_runtime()
     self._process = await asyncio.create_subprocess_exec(
         str(self._python),
@@ -98,6 +113,50 @@ class XttsWorkerSynthesizer:
       if not path.is_file():
         raise RuntimeError(f'XTTS voice reference is missing: {voice_id!r}')
 
+  @staticmethod
+  def _available_memory_mib() -> int | None:
+    """Reads Linux MemAvailable without importing a platform dependency."""
+    try:
+      for line in (
+          Path('/proc/meminfo').read_text(encoding='ascii').splitlines()
+      ):
+        if line.startswith('MemAvailable:'):
+          return int(line.split()[1]) // 1024
+    except (OSError, ValueError):
+      return None
+    return None
+
+  def _ensure_load_memory_budget(self) -> None:
+    # Test workers and explicit CPU runtimes are intentionally not gated by
+    # the production XTTS guard. The real isolated `.venv-xtts` process is the
+    # path whose model load has a multi-GiB resident-memory peak.
+    if self.device == 'cpu' or '.venv-xtts' not in str(self._python):
+      return
+    available = self._available_memory_mib()
+    if available is None:
+      return
+    configured = os.environ.get(
+        'LEONIDAS_XTTS_MIN_AVAILABLE_MEMORY_MIB',
+        str(DEFAULT_MIN_AVAILABLE_MEMORY_MIB),
+    )
+    try:
+      minimum = int(configured)
+    except ValueError as exc:
+      raise XttsResourceError(
+          'LEONIDAS_XTTS_MIN_AVAILABLE_MEMORY_MIB must be an integer'
+      ) from exc
+    if minimum <= 0:
+      raise XttsResourceError(
+          'LEONIDAS_XTTS_MIN_AVAILABLE_MEMORY_MIB must be positive'
+      )
+    if available < minimum:
+      raise XttsResourceError(
+          'Insufficient system memory for XTTS: '
+          f'{available} MiB available, {minimum} MiB required. '
+          'Close memory-heavy applications or add swap before starting '
+          'cascade_local.'
+      )
+
   async def _consume_stderr(self, process: asyncio.subprocess.Process) -> None:
     if process.stderr is None:
       return
@@ -114,16 +173,24 @@ class XttsWorkerSynthesizer:
       raise ValueError(f'Unknown or unavailable voice_id: {voice_id!r}')
     if language != 'pt':
       raise ValueError('XTTS language must be pt')
-    response = await self._request(
-        {
-            'op': 'synthesize',
-            'model_id': self.model_id,
-            'device': self.device,
-            'text': text.strip()[:12000],
-            'speaker_wav': str(voice.resolve()),
-            'language': language,
-        }
-    )
+    payload = {
+        'op': 'synthesize',
+        'model_id': self.model_id,
+        'device': self.device,
+        'text': text.strip()[:12000],
+        'speaker_wav': str(voice.resolve()),
+        'language': language,
+    }
+    for attempt in range(2):
+      try:
+        response = await self._request(payload)
+        break
+      except XttsWorkerCrashedError:
+        if attempt:
+          raise
+        logging.warning('XTTS worker crashed; retrying one fresh request')
+    else:  # pragma: no cover - loop either returns or raises
+      raise RuntimeError('XTTS synthesis did not produce a response')
     return base64.b64decode(response['audio'], validate=True)
 
   async def load(
@@ -131,6 +198,7 @@ class XttsWorkerSynthesizer:
   ) -> dict[str, Any]:
     """Loads and warms the persistent worker before a session starts."""
     self.validate_runtime()
+    self._ensure_load_memory_budget()
     if not self._voices:
       raise RuntimeError('XTTS requires at least one configured voice')
     voice = next(iter(self._voices.values()))
@@ -160,34 +228,52 @@ class XttsWorkerSynthesizer:
       *,
       progress: ProgressCallback | None = None,
   ) -> dict[str, Any]:
-    await self._lock.acquire()
-    release_lock = True
-    try:
+    async with self._lock:
       process = await self._start()
       if process.stdin is None or process.stdout is None:
+        await self._invalidate_worker(process)
         raise RuntimeError('XTTS worker pipes are unavailable')
       request_id = uuid.uuid4().hex
       request = {'id': request_id, **payload}
-      process.stdin.write(
-          (json.dumps(request, ensure_ascii=False) + '\n').encode()
-      )
-      await process.stdin.drain()
-      response_task = asyncio.create_task(
-          self._read_response(process, request_id, progress)
-      )
+      response_task: asyncio.Task[dict[str, Any]] | None = None
       try:
-        return await asyncio.wait_for(
-            asyncio.shield(response_task), timeout=self._timeout
+        process.stdin.write(
+            (json.dumps(request, ensure_ascii=False) + '\n').encode()
         )
-      except (asyncio.CancelledError, TimeoutError):
-        release_lock = False
-        self._drain_task = asyncio.create_task(
-            self._drain_cancelled_response(response_task)
+        await process.stdin.drain()
+        response_task = asyncio.create_task(
+            self._read_response(process, request_id, progress)
         )
+        response = await asyncio.wait_for(response_task, timeout=self._timeout)
+        if payload.get('op') == 'synthesize':
+          encoded_audio = response.get('audio')
+          if not isinstance(encoded_audio, str):
+            raise ValueError('XTTS worker returned no base64 audio')
+          base64.b64decode(encoded_audio, validate=True)
+        return response
+      except asyncio.CancelledError:
+        if response_task is not None:
+          response_task.cancel()
+          await asyncio.gather(response_task, return_exceptions=True)
+        await self._invalidate_worker(process)
         raise
-    finally:
-      if release_lock:
-        self._lock.release()
+      except TimeoutError:
+        if response_task is not None:
+          response_task.cancel()
+          await asyncio.gather(response_task, return_exceptions=True)
+        await self._invalidate_worker(process)
+        raise
+      except (BrokenPipeError, ConnectionResetError):
+        await self._invalidate_worker(process)
+        raise RuntimeError('XTTS worker connection was lost') from None
+      except (
+          json.JSONDecodeError,
+          UnicodeDecodeError,
+          ValueError,
+          RuntimeError,
+      ):
+        await self._invalidate_worker(process)
+        raise
 
   async def _read_response(
       self,
@@ -200,7 +286,12 @@ class XttsWorkerSynthesizer:
     while True:
       line = await process.stdout.readline()
       if not line:
-        raise RuntimeError(
+        if process.returncode == -9:
+          raise XttsResourceError(
+              'XTTS worker was killed with SIGKILL, likely by the OS OOM '
+              'killer. Check MemAvailable, swap and the kernel journal.'
+          )
+        raise XttsWorkerCrashedError(
             f'XTTS worker exited unexpectedly with {process.returncode}'
         )
       response = json.loads(line)
@@ -222,28 +313,36 @@ class XttsWorkerSynthesizer:
         )
       return response
 
-  async def _drain_cancelled_response(
-      self, response_task: asyncio.Task[dict[str, Any]]
+  async def _invalidate_worker(
+      self, process: asyncio.subprocess.Process | None = None
   ) -> None:
-    try:
-      await response_task
-    finally:
-      self._lock.release()
+    target = process or self._process
+    if target is self._process:
+      self._process = None
+    if target is not None:
+      if target.stdin is not None:
+        try:
+          target.stdin.close()
+        except (BrokenPipeError, ConnectionResetError):
+          pass
+      if target.returncode is None:
+        try:
+          target.terminate()
+        except ProcessLookupError:
+          pass
+        try:
+          await asyncio.wait_for(target.wait(), timeout=2)
+        except asyncio.TimeoutError:
+          try:
+            target.kill()
+          except ProcessLookupError:
+            pass
+          await target.wait()
+    stderr_task = self._stderr_task
+    self._stderr_task = None
+    if stderr_task is not None:
+      await asyncio.gather(stderr_task, return_exceptions=True)
 
   async def close(self) -> None:
-    process = self._process
-    self._process = None
-    if process is not None and process.returncode is None:
-      if process.stdin is not None:
-        process.stdin.close()
-      try:
-        await asyncio.wait_for(process.wait(), timeout=2)
-      except asyncio.TimeoutError:
-        process.terminate()
-        await process.wait()
-    if self._drain_task is not None:
-      await asyncio.gather(self._drain_task, return_exceptions=True)
-      self._drain_task = None
-    if self._stderr_task is not None:
-      await asyncio.gather(self._stderr_task, return_exceptions=True)
-      self._stderr_task = None
+    async with self._lock:
+      await self._invalidate_worker()

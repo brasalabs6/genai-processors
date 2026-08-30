@@ -24,7 +24,11 @@ class ImageInfo:
   format: str
 
 
-def validate_audio(path: Path) -> AudioInfo:
+def validate_audio(
+    path: Path, *, max_duration_seconds: float = 10.0
+) -> AudioInfo:
+  if max_duration_seconds < 0.25:
+    raise ValueError('Maximum audio duration must be at least 0.25 seconds')
   if not path.is_file() or path.stat().st_size > 5 * 1024 * 1024:
     raise ValueError('Audio asset is missing or too large')
   try:
@@ -42,8 +46,11 @@ def validate_audio(path: Path) -> AudioInfo:
     raise ValueError('Generated audio must be 24000 Hz')
   if info.channels != 1 or info.sample_width != 2:
     raise ValueError('Generated audio must be mono 16-bit PCM')
-  if not 0.25 <= info.duration_seconds <= 10:
-    raise ValueError('Generated audio duration must be 0.25 to 10 seconds')
+  if not 0.25 <= info.duration_seconds <= max_duration_seconds:
+    raise ValueError(
+        'Generated audio duration must be 0.25 to '
+        f'{max_duration_seconds:g} seconds'
+    )
   return info
 
 
@@ -64,8 +71,10 @@ def validate_image(path: Path) -> ImageInfo:
   return info
 
 
-def audio_as_pcm16_16khz(path: Path) -> bytes:
-  validate_audio(path)
+def audio_as_pcm16_16khz(
+    path: Path, *, max_duration_seconds: float = 10.0
+) -> bytes:
+  validate_audio(path, max_duration_seconds=max_duration_seconds)
   with wave.open(str(path), 'rb') as source:
     samples = np.frombuffer(source.readframes(source.getnframes()), dtype='<i2')
   target_length = round(len(samples) * 16000 / 24000)

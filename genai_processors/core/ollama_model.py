@@ -65,7 +65,7 @@ class GenerateContentConfig(TypedDict, total=False):
   )
   """Output response mimetype of the generated candidate text."""
 
-  response_schema: genai_types.SchemaUnion | None = None
+  response_schema: genai_types.SchemaUnion | None = None  # pyrefly: ignore[bad-class-definition]
   """The `Schema` object allows the definition of input and output data types.
 
   These types can be objects, but also primitives and arrays.
@@ -188,7 +188,7 @@ class OllamaModel(processor.Processor):
 
     # If schema is present, set up the structured output parser.
     if schema and not stream_json:
-      self._parser = constrained_decoding.StructuredOutputParser(schema)
+      self._parser = constrained_decoding.StructuredOutputParser(schema)  # pyrefly: ignore[bad-argument-type]
 
     # Populate system instructions.
     self._system_instruction = []
@@ -294,7 +294,7 @@ def _to_ollama_message(
   elif content_api.is_text(part.mimetype):
     message['content'] = part.text
   elif content_api.is_image(part.mimetype):
-    message['images'] = [base64.b64encode(part.bytes).decode('utf8')]
+    message['images'] = [base64.b64encode(part.bytes).decode('utf8')]  # pyrefly: ignore[bad-argument-type]
   else:
     raise ValueError(f'Unsupported Part type: {part.mimetype}')
 

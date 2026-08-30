@@ -87,7 +87,7 @@ class ProcessorAgent(base_agent.BaseAgent):
   ) -> AsyncGenerator[adk_event.Event, None]:
     p = self._processor_factory()
 
-    yield self._append_to_history(ctx, ctx.user_content)
+    yield self._append_to_history(ctx, ctx.user_content)  # pyrefly: ignore[bad-argument-type]
     response = genai_types.Content(parts=[], role='model')
     async for part in p(self._stream_history(ctx)):
       yield adk_event.Event(
@@ -96,7 +96,7 @@ class ProcessorAgent(base_agent.BaseAgent):
           partial=True,
           invocation_id=ctx.invocation_id,
       )
-      response.parts.append(part.part)
+      response.parts.append(part.part)  # pyrefly: ignore[missing-attribute]
 
     final_event = self._append_to_history(ctx, response)
     final_event.content = response
@@ -109,7 +109,7 @@ class ProcessorAgent(base_agent.BaseAgent):
   ) -> AsyncGenerator[adk_event.Event, None]:
     async def stream_content():
       while True:
-        request = await ctx.live_request_queue.get()
+        request = await ctx.live_request_queue.get()  # pyrefly: ignore[missing-attribute]
         if request.blob:
           yield content_api.ProcessorPart(
               request.blob.data,

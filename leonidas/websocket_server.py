@@ -1,6 +1,7 @@
 """ProcessorPart WebSocket transport owned by Leonidas."""
 
 import json
+import math
 import time
 from typing import Any, Callable, Protocol
 
@@ -10,8 +11,16 @@ from websockets.asyncio.server import ServerConnection
 from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
+from leonidas import codex_app_server
 from leonidas import runtime
 from leonidas import telemetry
+
+
+_ALLOWED_CLIENT_METRICS = frozenset({'playback_flush_ms'})
+_MAX_CLIENT_METRIC_VALUE = 60_000.0
+CODEX_WEBRTC_OFFER_MIMETYPE = codex_app_server.CODEX_WEBRTC_OFFER_MIMETYPE
+CODEX_WEBRTC_ANSWER_MIMETYPE = codex_app_server.CODEX_WEBRTC_ANSWER_MIMETYPE
+CODEX_WEBRTC_SDP_MAX_BYTES = 128 * 1024
 
 
 class ResourceStateSource(Protocol):
@@ -70,6 +79,15 @@ def _decode(message: str | bytes) -> content_api.ProcessorPart:
   if 'part' not in payload:
     payload['part'] = {'text': ''}
   part = content_api.ProcessorPart.from_dict(data=payload)
+  if part.mimetype == CODEX_WEBRTC_OFFER_MIMETYPE:
+    if not isinstance(part.part.text, str):
+      raise ValueError('Codex WebRTC SDP offer must be text')
+    if len(part.part.text.encode('utf-8')) > CODEX_WEBRTC_SDP_MAX_BYTES:
+      raise ValueError('Codex WebRTC SDP payload is too large')
+    part.role = 'user'
+    part.substream_name = 'realtime'
+    part.metadata['codex_webrtc_offer'] = True
+    return part
   if content_api.is_audio(part.mimetype) or content_api.is_image(part.mimetype):
     part.role = 'user'
     part.substream_name = 'realtime'
@@ -77,6 +95,27 @@ def _decode(message: str | bytes) -> content_api.ProcessorPart:
     part.role = 'user'
     part.metadata['turn_complete'] = True
   return part
+
+
+def _record_client_metric(
+    part: content_api.ProcessorPart, metrics: telemetry.MetricsStore
+) -> bool:
+  """Records a bounded allowlisted browser metric and rejects metric injection."""
+  name = str(part.metadata.get('name', ''))
+  try:
+    value = float(part.metadata.get('value', 0))
+  except (TypeError, ValueError):
+    metrics.increment('client_metrics_rejected')
+    return False
+  if (
+      name not in _ALLOWED_CLIENT_METRICS
+      or not math.isfinite(value)
+      or not 0 <= value <= _MAX_CLIENT_METRIC_VALUE
+  ):
+    metrics.increment('client_metrics_rejected')
+    return False
+  metrics.observe(name, value)
+  return True
 
 
 async def run(
@@ -101,6 +140,11 @@ async def run(
 
     async def send_part(part: content_api.ProcessorPart) -> None:
       nonlocal sequence
+      if (
+          part.mimetype == 'application/x-state'
+          and part.get_metadata('agent_state') == 'transcribing'
+      ):
+        latency.mark_turn_boundary()
       if content_api.is_audio(part.mimetype):
         metrics.increment('audio_chunks_sent')
         latency.mark_output_audio()
@@ -123,6 +167,14 @@ async def run(
       sequence += 1
       await send_part(_resource_part(state, sequence))
 
+    async def forward(part: content_api.ProcessorPart) -> bool:
+      try:
+        await manager.send(part)
+      except runtime.InputBackpressureError:
+        await websocket.close(1013, 'Input pipeline is overloaded')
+        return False
+      return True
+
     try:
       await manager.attach_media(send_part)
     except runtime.MediaAlreadyConnectedError:
@@ -142,25 +194,23 @@ async def run(
           await websocket.close(1007, 'Invalid ProcessorPart')
           return
         if part.mimetype == 'application/x-client-metric':
-          name = str(part.metadata.get('name', 'client_metric'))
-          value = float(part.metadata.get('value', 0))
-          metrics.observe(name, value)
+          _record_client_metric(part, metrics)
         elif part.mimetype == 'application/x-mic-off':
-          latency.mark_input()
-          await manager.send(
+          latency.mark_turn_boundary()
+          if not await forward(
               content_api.ProcessorPart(
                   '',
                   role='user',
                   substream_name='realtime',
                   metadata={'audio_stream_end': True},
               )
-          )
-        else:
-          if content_api.is_audio(part.mimetype) or content_api.is_text(
-              part.mimetype
           ):
-            latency.mark_input()
-          await manager.send(part)
+            return
+        else:
+          if content_api.is_text(part.mimetype):
+            latency.mark_turn_boundary()
+          if not await forward(part):
+            return
     except ConnectionClosed:
       pass
     finally:

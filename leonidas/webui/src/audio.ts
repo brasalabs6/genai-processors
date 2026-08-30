@@ -1,5 +1,27 @@
 export const MICROPHONE_SAMPLE_RATE = 16000;
 
+const INITIAL_RESERVOIR_SECONDS = 0.08;
+const UNDERRUN_RECOVERY_SECONDS = 0.02;
+const CONTIGUOUS_EPSILON_SECONDS = 0.005;
+const activeAudioContexts = new Set<AudioContext>();
+
+export async function unlockActiveAudioContexts(): Promise<void> {
+  const contexts = [...activeAudioContexts].filter(
+    (context) => context.state !== 'closed',
+  );
+  if (contexts.length === 0) {
+    throw new Error('Nenhuma saída de áudio foi inicializada.');
+  }
+  await Promise.all(
+    contexts.map(async (context) => {
+      if (context.state === 'suspended') await context.resume();
+      if (context.state !== 'running') {
+        throw new Error(`AudioContext não está ativo: ${context.state}.`);
+      }
+    }),
+  );
+}
+
 export function parseSampleRate(mimetype: string): number | null {
   const match = /(?:^|;)\s*rate=(\d+)/i.exec(mimetype);
   return match ? Number(match[1]) : null;
@@ -33,7 +55,10 @@ export function floatToPcm16(input: Float32Array): Int16Array {
 }
 
 export function pcm16BytesToFloat(bytes: Uint8Array): Float32Array {
-  const sampleCount = Math.floor(bytes.byteLength / 2);
+  if (bytes.byteLength % 2 !== 0) {
+    throw new Error('PCM16 payload must contain an even number of bytes.');
+  }
+  const sampleCount = bytes.byteLength / 2;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const output = new Float32Array(sampleCount);
   for (let index = 0; index < sampleCount; index += 1) {
@@ -88,6 +113,7 @@ export class PcmPlayer {
   private readonly scheduled = new Set<AudioBufferSourceNode>();
   private queue: Promise<void> = Promise.resolve();
   private generation = 0;
+  private closed = false;
 
   constructor(
     private readonly contextFactory: () => AudioContext = () =>
@@ -95,6 +121,7 @@ export class PcmPlayer {
   ) {}
 
   async unlock(): Promise<void> {
+    if (this.closed) throw new Error('PCM player is closed.');
     const context = this.getContext();
     if (context.state === 'suspended') {
       await context.resume();
@@ -105,6 +132,7 @@ export class PcmPlayer {
   }
 
   enqueue(base64Data: string, mimetype: string): Promise<void> {
+    if (this.closed) return Promise.reject(new Error('PCM player is closed.'));
     const generation = this.generation;
     const operation = this.queue.then(() =>
       this.enqueueNow(base64Data, mimetype, generation),
@@ -118,7 +146,7 @@ export class PcmPlayer {
     mimetype: string,
     generation: number,
   ): Promise<void> {
-    if (generation !== this.generation) return;
+    if (generation !== this.generation || this.closed) return;
     const sampleRate = parseSampleRate(mimetype);
     if (!sampleRate) {
       throw new Error(`Missing PCM sample rate in ${mimetype}.`);
@@ -127,26 +155,40 @@ export class PcmPlayer {
     if (samples.length === 0) return;
 
     const context = this.getContext();
-    // A media stream can arrive after a browser suspends the context (for
-    // example when the tab loses focus). Resume opportunistically so output
-    // is not silently scheduled into a suspended graph.
     if (context.state === 'suspended') {
       await context.resume();
     }
     if (context.state !== 'running') {
       throw new Error(`AudioContext não está ativo: ${context.state}.`);
     }
-    if (generation !== this.generation) return;
+    if (generation !== this.generation || this.closed) return;
     const buffer = context.createBuffer(1, samples.length, sampleRate);
     buffer.copyToChannel(new Float32Array(samples), 0);
     const source = context.createBufferSource();
     source.buffer = buffer;
     source.connect(context.destination);
-    source.addEventListener('ended', () => this.scheduled.delete(source), {
-      once: true,
-    });
+    source.addEventListener(
+      'ended',
+      () => {
+        this.scheduled.delete(source);
+        source.disconnect();
+      },
+      {once: true},
+    );
 
-    const startAt = Math.max(context.currentTime + 0.02, this.nextPlaybackTime);
+    // Only the first chunk receives the full reservoir. Once a continuous
+    // timeline exists, every following chunk starts at the exact prior end.
+    // The previous `max(currentTime + 80 ms, nextPlaybackTime)` applied the
+    // reservoir repeatedly and inserted audible micro-gaps whenever the main
+    // thread advanced between WebSocket chunks.
+    const continuous =
+      this.nextPlaybackTime > context.currentTime + CONTIGUOUS_EPSILON_SECONDS;
+    const startAt = continuous
+      ? this.nextPlaybackTime
+      : context.currentTime +
+        (this.scheduled.size === 0
+          ? INITIAL_RESERVOIR_SECONDS
+          : UNDERRUN_RECOVERY_SECONDS);
     source.start(startAt);
     this.nextPlaybackTime = startAt + buffer.duration;
     this.scheduled.add(source);
@@ -154,6 +196,8 @@ export class PcmPlayer {
 
   flush(): void {
     this.generation += 1;
+    // A new generation must not wait behind an old resume/decode promise.
+    this.queue = Promise.resolve();
     for (const source of this.scheduled) {
       try {
         source.stop();
@@ -166,16 +210,22 @@ export class PcmPlayer {
   }
 
   async close(): Promise<void> {
+    this.closed = true;
     this.flush();
     if (this.context) {
-      await this.context.close();
+      const context = this.context;
+      activeAudioContexts.delete(context);
+      await context.close();
       this.context = null;
     }
   }
 
   private getContext(): AudioContext {
+    if (this.closed) throw new Error('PCM player is closed.');
     if (!this.context || this.context.state === 'closed') {
+      if (this.context) activeAudioContexts.delete(this.context);
       this.context = this.contextFactory();
+      activeAudioContexts.add(this.context);
       this.nextPlaybackTime = this.context.currentTime;
     }
     return this.context;

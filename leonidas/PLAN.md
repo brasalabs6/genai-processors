@@ -2,6 +2,323 @@
 
 Versão: 20260730-0041
 
+## Escopo ativo após decisão do usuário — 2026-08-01
+
+A integração Codex foi retirada do objetivo por decisão explícita do usuário.
+Todas as seções Codex abaixo são registro histórico de trabalho já commitado,
+não constituem gate, requisito pendente ou frente autorizada. Não ampliar,
+corrigir ou validar Codex durante este goal. O escopo ativo passa a ser:
+Gemini Live 2.5/3.1, cascata Parakeet v3 → Groq → XTTS v2, diarização Pyannote,
+coexistência CUDA, observabilidade, API/WebSocket, WebUI desktop/mobile,
+documentação e testes E2E. O código Codex existente permanece isolado e sem
+fallback implícito; sua eventual remoção é uma decisão separada.
+
+Prioridade reafirmada pelo usuário: Codex está adiado e não deve consumir mais
+trabalho, inclusive testes. A execução deve atacar diretamente todo o restante
+com validação end-to-end, começando por diarização e pela coexistência da
+cascata local. Enquanto a autorização Hugging Face estiver ausente, comprovar
+o comportamento offline/erro acionável da diarização e continuar Gemini,
+Parakeet, Groq, XTTS, API, UI e cleanup; não usar Codex como regressão.
+
+Fronteira de diarização confirmada pelo usuário: Pyannote pertence somente à
+pipeline local nesta fase. Gemini Live 2.5/3.1 permanece sem diarização externa
+e não pode ter seu transporte, VAD ou áudio alterado por esse componente. A
+cascata local aplica diarização opcional depois do endpointing/STT e antes de
+montar o contexto do Groq; indisponibilidade ou atraso da diarização preserva a
+transcrição Parakeet e não bloqueia reasoning/TTS.
+
+Contrato de contexto para reasoning: quando a diarização local produzir um
+speaker válido, o texto enviado ao Groq deve ser prefixado como
+`speak1 falou: <transcrição>` (e correspondentemente `speak2`, etc.). O
+prefixo pertence somente ao prompt interno do reasoning; a transcrição original
+permanece inalterada nos substreams/UI. Segmentos devem ser associados às
+palavras/turnos por timestamps reais; não atribuir uma transcrição inteira a um
+speaker arbitrário. Sem resultado de diarização, enviar a transcrição normal e
+registrar o fallback observável.
+
+O corpus E2E de diarização agora usa duas vozes humanas Gemini (`Kore` e
+`Puck`), 10,44 s no total, com silêncio entre falantes e manifesto redigido. A
+validação de assets passou; o Pyannote ainda falha antes da inferência por falta
+de autorização Hugging Face, confirmando que mídia/formato não são o blocker.
+
+Implementação tests-first concluída para o contexto de speaker: STT e
+diarização executam em paralelo por utterance; um único speaker recebe número
+estável e prefixa somente o prompt Groq; múltiplos speakers ambíguos preservam
+o texto; erro/timeout gera fallback e métrica. Foram aprovados 42 testes
+diretamente relacionados, 174 testes Leonidas/E2E (2 skips, 9 subtests), 24
+Vitest, typecheck e build. Gemini 2.5/3.1 passou no smoke pago em 39,97 s. A
+cascata CUDA foi tentada duas vezes e o guard XTTS bloqueou com 2.179/3.558 MiB
+de RAM disponível; a GPU estava saudável com 5.914 MiB livres.
+
+Validação ampliada do checkpoint: a suíte completa do repositório passou com
+744 testes, 2 skips e 27 subtests em 174,64 s. O standalone temporário em
+8081/8876 respondeu REST e WebSocket; Chromium gerou capturas em 1440×1000 e
+390×844. Em viewport headless de 500 px, `scrollWidth=485`, sem overflow, e os
+três espaços Operação/Configuração/Diagnóstico estavam presentes com API/WS
+online. A suíte global emitiu warnings históricos de depreciação e um warning
+de coroutine em `genai_processors/core/realtime.py`; nenhum teste falhou.
+
+Primeira revalidação E2E desta fase: CUDA estava saudável e a GPU possuía
+5.914 MiB livres, mas o guard XTTS interrompeu corretamente o load porque o
+host tinha somente 2.179 MiB de RAM disponível, abaixo dos 5.120 MiB exigidos.
+Isso é um gate ambiental de RAM, não falta de VRAM. Não reduzir o guard; liberar
+memória ou prover swap antes de repetir os três turnos e a coexistência.
+
+## Incidente de continuidade de áudio local — 2026-08-01
+
+O usuário relatou que a pipeline local reproduz voz inicialmente, mas deixa
+de emitir áudio depois de algum tempo. A investigação reproduziu uma falha de
+infraestrutura que atualmente pode aparecer como silêncio na UI: o worker
+XTTS terminou com `-9` durante o carregamento/aquecimento. O journal do kernel
+registrou `global_oom` e matou um processo Python com 3,7 GiB de RSS enquanto
+a máquina estava com apenas cerca de 4 GiB disponíveis e sem swap. Portanto,
+o preflight anterior, que apenas importava `TTS`, não prova que o worker
+consegue carregar e permanecer vivo.
+
+Requisitos adicionais desta onda:
+
+- distinguir explicitamente worker morto por OOM/kill, timeout, erro de
+  protocolo e falha de playback;
+- nunca deixar a UI aparentar que a sessão continua falando quando o backend
+  perdeu o worker de áudio;
+- expor a falha e a recuperação nos estados, métricas e logs, preservando o
+  contrato `ProcessorPart`;
+- adicionar regressões para worker encerrado e para múltiplos pedidos de áudio;
+- validar a composição real em mais de um turno, com memória do sistema
+  suficientemente livre para não confundir falha ambiental com falha da
+  pipeline;
+- manter Gemini 2.5/3.1 como regressão obrigatória.
+
+O incidente não autoriza mascarar OOM com retries infinitos. A recuperação
+deve ser limitada e observável; se a memória disponível for insuficiente, a
+UI deve informar a causa e impedir novos turnos locais até o recurso estar
+saudável.
+
+## Requisito adicional: diarização local — 2026-08-01
+
+O usuário reforçou que a evolução do agente deve incluir diarização. Ela será
+um componente opcional da cascata local, com contrato próprio e sem bloquear o
+caminho crítico de áudio:
+
+- receber PCM endpointado ou janelas de áudio e emitir segmentos com
+  `speaker_id`, início/fim e confiança;
+- preservar a transcrição Parakeet mesmo quando a diarização estiver
+  indisponível, atrasada ou em CPU;
+- declarar device, VRAM/RAM, cache, versão de PyTorch/CUDA e fallback CPU;
+- executar fora do event loop e fora do worker XTTS, com cancelamento e
+  shutdown explícitos;
+- aparecer na capability/configuração somente quando instalada e pronta;
+- ter testes de contrato com áudio sintético multi-speaker e smoke real
+  opt-in, sem tornar CI ou Gemini dependentes de pesos de diarização.
+
+A implementação entra depois da correção de continuidade do áudio; até lá o
+contrato permanece documentado para evitar acoplamento posterior ao Parakeet,
+Groq ou XTTS.
+
+## Requisito adicional: backend realtime do Codex — 2026-08-01
+
+Ao final desta onda, analisar o documento
+`Codex_App_Server_Realtime_API_Engenharia_Reversa.md` e verificar se o
+contrato permite adicionar um adapter de backend realtime do Codex. O adapter
+deve:
+
+- ficar atrás da mesma composição/capability de modelos, sem quebrar Gemini,
+  Groq ou os adapters locais;
+- traduzir eventos para `ProcessorPart`, estados e cancelamento internos;
+- manter credenciais e conexão do backend exclusivamente no servidor;
+- documentar autenticação, limites, reconexão, streaming, áudio e lifecycle;
+- ter contrato/testes offline antes de qualquer smoke opt-in real;
+- ser implementado somente onde o documento e o código local confirmarem um
+  protocolo estável; lacunas da engenharia reversa devem permanecer explícitas.
+
+Atualização de fonte de verdade — 2026-08-01: o usuário informou que o
+binário instalado pode estar desatualizado. Antes de congelar o adapter, também
+devemos comparar o protocolo e os schemas em `~/github/codex` com o binário
+local. A versão mais recente disponível no workspace passa a ser a referência
+preferencial; diferenças entre ela, o binário e o documento devem ser
+registradas e cobertas por testes, sem presumir suporte a versões futuras.
+
+Autenticação — 2026-08-01: o adapter deve descobrir a autenticação local pelo
+arquivo `~/.codex/auth.json` (ou pelo caminho equivalente configurado pelo
+runtime), sempre no processo servidor. O conteúdo nunca pode aparecer em
+logs, respostas HTTP/WebSocket, fixtures ou commits. O smoke real deve ser
+opt-in, validar apenas handshake/lifecycle e relatar somente versão, estado e
+latência; ausência, JSON inválido ou credencial expirada devem produzir erro
+acionável sem quebrar Gemini/Groq.
+
+### Reconciliação do requisito de autenticação Codex — 2026-08-01
+
+O usuário esclareceu que o realtime deve usar as credenciais Codex presentes
+em `.codex/auth.json`, e pediu uma análise de `~/github/codex` antes de novas
+alterações. A hipótese histórica de exigir uma `OPENAI_API_KEY` separada fica
+em revisão: não converter tokens de login, não inventar um fluxo OAuth e não
+copiar segredos para o ambiente/UI. A implementação deve seguir o mecanismo
+de autenticação confirmado pelo checkout mais recente e pelo documento de
+engenharia reversa, com teste offline do encaminhamento de `CODEX_HOME`/
+`auth.json` e smoke real redigido.
+
+### Resultado da análise do checkout Codex — 2026-08-01
+
+A análise foi feita no checkout `/home/guilherme/github/codex`, branch
+`feature/turn-pinning-validation`, commit `33bf318bd7`, com o binário local
+`codex-cli 0.144.0`. O checkout mais novo confirma que `auth.json` pode
+conter `auth_mode`, `OPENAI_API_KEY` e/ou `tokens` (`id_token`,
+`access_token`, `refresh_token` e `account_id`), mas esses materiais não têm
+o mesmo significado para todos os serviços.
+
+O ponto decisivo está em `codex-rs/core/src/realtime_conversation.rs`:
+`realtime_api_key()` procura a API key do provider, o
+`experimental_bearer_token` configurado no provider, a API key carregada pelo
+Codex ou `OPENAI_API_KEY` do ambiente. Ele não transforma tokens de login
+ChatGPT armazenados em `auth.json` em API key. Quando nenhum caminho existe,
+retorna `realtime conversation requires API key auth`; o provider realtime é
+preparado com `AuthMode::ApiKey`. O schema de `AuthDotJson` foi confirmado em
+`codex-rs/login/src/auth/storage.rs`.
+
+Conclusão operacional: o Leonidas deve sempre carregar o `auth.json` no
+servidor via `CODEX_HOME`, e pode usar um `OPENAI_API_KEY` presente nele. Um
+`auth.json` somente com login ChatGPT autentica o app-server e o pipeline
+`codex_text`, mas não torna o WebSocket realtime funcional no Codex atual.
+O README/protocolo mais novo confirma uma segunda opção: `transport` pode ser
+`{type: "webrtc", sdp: "..."}`; o navegador cria a oferta SDP, o app-server
+cria a chamada autenticada e emite `thread/realtime/sdp` com a resposta. O
+código do checkout também documenta que o sideband WebSocket de uma chamada
+WebRTC reutiliza os headers da autenticação da sessão, inclusive para login
+ChatGPT.
+Não será feita conversão de `access_token`/`id_token`, replay de cookie,
+injeção de bearer privado ou alteração do provider para contornar essa
+restrição. O adapter deve distinguir “auth.json ausente/inválido” de “login
+válido, mas o transporte WebSocket exige API key”; quando o cliente fornecer
+uma oferta SDP, deve selecionar WebRTC em vez de tentar converter o login.
+
+Assim, o suporte realtime por WebSocket continua válido quando o `auth.json`
+contém API key compatível, enquanto o suporte realtime com login ChatGPT deve
+ser implementado pelo caminho WebRTC e sua sinalização SDP. Não converter
+`access_token`/`id_token`, replay de cookie, injeção de bearer privado ou
+alteração do provider para contornar a restrição do WebSocket. O suporte
+textual com login ChatGPT permanece separado e validado.
+
+### Requisito adicional: sinalização WebRTC Codex — 2026-08-01
+
+Para permitir `codex_realtime` com o login existente em `auth.json`, a UI e o
+servidor devem trocar somente a oferta/resposta SDP pelo canal de controle;
+credenciais e conexão upstream continuam no app-server. O envelope deve ser
+explicitamente tipado (`application/x-codex-webrtc-offer` e
+`application/x-codex-webrtc-answer`), limitado em tamanho e rejeitado por
+Gemini/cascata como input de mídia comum. A UI deve:
+
+- criar `RTCPeerConnection` apenas para `codex_realtime` e versão WebRTC
+  suportada (`v1`), com microfone em track e reprodução no elemento de áudio;
+- enviar a oferta SDP pelo WebSocket já autenticado localmente;
+- aplicar a resposta SDP recebida, tratar `connectionstatechange`, timeout,
+  stop/reset e permissão de microfone;
+- manter câmera/tela e mensagens de texto sob o contrato existente, sem
+  duplicar áudio PCM pelo WebSocket quando o transporte WebRTC estiver ativo;
+- testar o envelope, as transições e o fallback explícito para WebSocket/API
+  key. Não enviar `auth.json`, bearer ou cookies ao navegador.
+
+Implementação inicial concluída nesta onda: o backend aceita a oferta como
+`ProcessorPart` limitado, o `CodexRealtimeProcessor` a consome antes de abrir
+a sessão, força versão `v1` no transporte WebRTC e emite a resposta como
+`application/x-codex-webrtc-answer`; o áudio recebido pelo sideband é
+descartado nesse modo para não duplicar a track remota. A UI criou
+`RTCPeerConnection`, o data channel `oai-events`, a track de microfone, o
+reprodutor remoto e timeout/cleanup de sinalização. O caminho PCM/WebSocket e
+Gemini permanecem inalterados. O smoke real de navegador ainda é pendente e
+deve ser executado com a UI standalone e o `auth.json` local antes de marcar
+este transporte como verde.
+
+Smoke Chromium real — 2026-08-01: com `RTCPeerConnection`, dispositivo de
+áudio fake, data channel `oai-events` e SDP real, a oferta chegou ao backend e
+o pipeline alcançou a chamada upstream. O serviço respondeu `403 Voice session
+access denied` para a conta Codex local; o erro agora é sanitizado para a UI
+sem URL, request id ou headers. O app-server instalado (`codex-cli 0.144.0`)
+também aceita somente v1/v2; o pipeline usa v2 por padrão para WebSocket e
+força v1 para WebRTC, enquanto v3 permanece opt-in para instalações cujo
+schema o suporte. A autorização upstream de voz continua pendente e impede
+marcar o smoke realtime como verde.
+
+Compatibilidade do checkout mais recente — 2026-08-01: o código em
+`~/github/codex` aceita WebRTC AVAS nas versões `v1` e `v3`; `v2` continua
+exclusivo do transporte WebSocket. O adapter agora aceita `v3` quando
+`LEONIDAS_CODEX_REALTIME_VERSION=v3` for definido, mas mantém `v1` automático
+para WebRTC quando a versão não for `v3`, preservando o binário local
+`codex-cli 0.144.0`. O smoke com v3 permanece condicionado a um binário que
+publique esse schema e a uma conta com entitlement de voz.
+
+## Governança de checkpoints e versões estáveis — 2026-08-01
+
+Cada checkpoint funcional deve ser commitado com mensagem detalhada antes de
+abrir a próxima frente. Milestones que passam seus gates offline e reais devem
+receber tag anotada versionada; a tag só pode ser criada depois de validar o
+estado, revisar o diff e confirmar que nenhum artefato privado foi incluído.
+Falhas, bloqueios ambientais e requisitos ainda não implementados permanecem
+fora de tags estáveis.
+
+### Evidência desta onda
+
+- Reprodução real do defeito: worker XTTS terminou com `-9`; journal confirmou
+  `global_oom`, 3,7 GiB de RSS e ausência de swap.
+- Implementado guard de memória antes do load real, com limite padrão de
+  5120 MiB e override explícito `LEONIDAS_XTTS_MIN_AVAILABLE_MEMORY_MIB`.
+- Implementados tipos de erro para recurso insuficiente e crash transitório,
+  retry único somente para crash não classificado como OOM, e
+  `last_error_detail` seguro na sessão/UI.
+- Regressão XTTS de SIGKILL passou; cascata offline: 128 passed, 2 skipped.
+- WebUI: 22 testes, typecheck e build passaram.
+- Gemini Live 2.5/3.1 passou no smoke real com mídia gerada em 30,3 s.
+- Smoke local multi-turno permanece pendente até liberar memória do host;
+  o preflight atual falha corretamente com `memory_available_mib=1801` e
+  `system_memory=missing`, sem iniciar outro worker condenado ao OOM.
+
+O host foi posteriormente liberado e o novo smoke passou: preflight CUDA com
+10.685 MiB disponíveis, XTTS carregado com 1.831 MiB alocados/1.918 MiB
+reservados na GPU, cinco sínteses consecutivas no mesmo worker e
+`cascade_smoke --device cuda --turns 3` concluído em 37,51 s. Os três turnos
+produziram transcrição, resposta Groq e PCM válido; não houve worker órfão.
+Esta é a primeira evidência multi-turno real do caminho local.
+
+Checkpoint Codex — contrato offline: `codex_app_server.py` agora encapsula
+JSONL multiplexado, handshake `experimentalApi`, lifecycle de thread/realtime,
+texto, áudio e tradução de notificações para `ProcessorPart`. O adapter usa
+v3 por padrão quando o runtime mais novo estiver disponível e aceita v2
+explicitamente para o binário instalado; nenhum campo v3 é enviado no teste v2.
+O contrato offline passou 4 testes. A implementação foi posteriormente
+conectada à composição/capability pública como `codex_realtime` e
+`codex_text`; este trecho registra o estado anterior ao checkpoint.
+
+O loader de autenticação agora lê `auth.json` apenas no servidor e exige
+`OPENAI_API_KEY` para o realtime; tokens de login `chatgpt` são reconhecidos,
+mas não são aceitos pelo backend realtime atual. O smoke real foi executado
+com o ambiente local e falhou de forma segura porque o arquivo existente só
+contém tokens ChatGPT (`auth_mode=chatgpt`) e o app-server respondeu que realtime
+exige API key. Não houve exposição de valores secretos. O smoke poderá ser
+repetido assim que `auth.json` tiver uma API key compatível.
+
+Para não depender do `~/.codex/config.toml` inválido observado nesta máquina,
+o subprocesso agora usa `CODEX_HOME` temporário com link para o `auth.json`
+original e configuração limpa; a execução real é bloqueada antes do spawn
+quando a API key não existe.
+
+O mesmo `auth.json` foi validado em um smoke real de texto do app-server:
+handshake, thread efêmero, turn textual, deltas e conclusão retornaram com
+sucesso. A implementação deve expor isso como `pipeline_id=codex_text`, sem
+transformar falha de `codex_realtime` em fallback implícito e sem prometer
+áudio/voz nessa capacidade. O smoke textual deve ser repetível sem imprimir o
+conteúdo da resposta ou qualquer credencial; o smoke atual passou com resposta
+não vazia.
+
+Readiness adicional: o snapshot `/api/v1/resources` e a WebUI agora exibem o
+componente opcional `diarization` como `unavailable` ou `unloaded`, sem alterar
+o cálculo de prontidão obrigatório de STT/TTS. A suíte completa Leonidas/E2E
+passou com 139 testes, 2 skips e 9 subtests.
+
+Auditoria ampla posterior: a suíte completa do repositório passou com 709
+testes, 2 skips e 27 subtests; flake8 restrito passou excluindo ambientes e
+artefatos gerados; os 21 arquivos Python alterados nesta onda passaram no
+Pyink. O check global de Pyink continua apontando 37 arquivos históricos fora
+do escopo, que não foram reformatted para evitar uma mudança não relacionada.
+
 ## Reconciliação da troca de executor 2026-07-31
 
 O usuário pediu continuidade sob o executor Luna e determinou que o estado
@@ -473,8 +790,347 @@ Parakeet, `GROQ_API_KEY`, pesos XTTS, formatos PCM e tempo de cancelamento.
 
 ## Stop condition
 
-Parar somente quando os milestones Gemini e cascata estiverem implementados e
-validados empiricamente, com o milestone Gemini commitado/tagueado, ou quando
-todo trabalho restante depender da mesma credencial/capacidade externa
-indisponível. Nesse caso, manter a suíte e comandos prontos, registrar a
-evidência offline e declarar exatamente o que falta para o smoke real.
+Parar somente quando Gemini, cascata local, diarização, coexistência CUDA,
+API/WebSocket, observabilidade e WebUI estiverem implementados e validados
+empiricamente. Codex não participa da conclusão. Se um recurso externo bloquear
+Pyannote, continuar todos os requisitos independentes; somente considerar
+impasse quando não existir outra frente ativa segura e o critério de bloqueio
+do goal tiver sido satisfeito.
+
+## Próxima onda de continuidade — diarização configurável e smoke real
+
+Auditoria identificou que `CascadeConfig.diarization_enabled` já existe no
+backend, mas ainda não tem controle correspondente na WebUI. O próximo
+checkpoint deve adicionar esse controle, um teste de contrato com áudio PCM
+sintético de dois falantes e um runner opt-in para o adapter Pyannote. O runner
+deve falhar explicitamente quando dependência, pesos ou credencial Hugging
+Face estiverem ausentes; nunca deve substituir o resultado por um fake e nunca
+deve bloquear Gemini ou a cascata com diarização desativada.
+
+Verificação de dependências: o dry-run de `pyannote.audio==4.0.7` tentou
+resolver uma versão nova de Torch incompatível com o runtime validado do
+Parakeet (`torch 2.6.0+cu124`), e foi cancelado antes de modificar o ambiente.
+`pyannote.audio==3.4.0` declara compatibilidade com Python 3.13 e Torch >=2.0,
+mas suas dependências opcionais não estão instaladas e os pesos do modelo
+`pyannote/speaker-diarization-community-1` ainda exigem acesso Hugging Face.
+O suporte permanece opt-in até existir um ambiente isolado validado para esse
+adapter.
+
+O smoke real do Codex textual foi ampliado para dois turnos no mesmo thread:
+`codex_text_smoke_ok=true turns=2`, resposta não vazia e latência total de
+13,22 s. Isso confirma persistência de conversa no app-server com o login
+ChatGPT local, além do contrato offline de lifecycle.
+
+O acesso anônimo aos manifests de `pyannote/speaker-diarization-community-1`
+e `pyannote/speaker-diarization-3.1` retornou HTTP 401 neste host. Portanto o
+smoke real da diarização depende também de login/aceite de modelo no Hugging
+Face, além da instalação compatível; nenhum token foi solicitado, lido ou
+registrado pelo Leonidas.
+
+Auditoria final desta rodada: a suíte completa do repositório passou com 716
+testes, 2 skips e 27 subtests em 144,5 s; Pyink dos arquivos alterados,
+Flake8 restrito e `git diff --check` também passaram. Nenhuma tag estável nova
+foi criada porque o smoke real Pyannote e o Codex realtime nativo permanecem
+gates externos não verdes.
+
+Validação pós-diarização: o standalone em `web_port=8081` e
+`websocket_port=8876` aceitou a origem local não padrão, anunciou quatro
+pipelines e três componentes e entregou os dois envelopes iniciais pelo
+WebSocket. Gemini 2.5/3.1 passou novamente em 34,4 s. O smoke CUDA local passou
+em três turnos reais (`6,06 s`, `6,07 s` e `4,39 s` de PCM); o validador foi
+ajustado para exigir somente STT/TTS prontos e aceitar o componente opcional de
+diarização.
+
+### Decisão de isolamento do worker de diarização
+
+Para não substituir o Torch validado do Parakeet, o adapter Pyannote deve
+rodar em um processo/runtime opcional próprio, selecionado por
+`LEONIDAS_DIARIZATION_PYTHON`. O servidor principal mantém apenas o contrato
+JSONL e `ProcessorPart`; o worker é responsável por carregar Pipeline, CUDA,
+pesos e converter os segmentos. Ausência do executável ou falha do worker
+permanece um erro de recurso observável e não altera Gemini nem a cascata sem
+diarização.
+
+Implementação do isolamento: `diarization_process.py` e
+`diarization_worker.py` agora usam o mesmo protocolo JSONL dos workers locais,
+com `LEONIDAS_DIARIZATION_PYTHON` configurável, progresso de load, segmentos
+validados e shutdown. A suíte Leonidas/E2E passou com 148 testes, 2 skips e 9
+subtests. O smoke real continua bloqueado somente pela ausência do runtime
+opcional/pesos Hugging Face.
+
+Após a implementação do worker, a auditoria completa passou com 718 testes,
+2 skips e 27 subtests em 143,6 s; WebUI passou com 22 testes, typecheck e
+build; Pyink dos 11 arquivos alterados, Flake8 restrito e `git diff --check`
+passaram. O smoke real Pyannote ainda retorna `DiarizationWorkerError` antes
+do load porque o runtime isolado não existe neste host.
+
+O loader Codex agora rejeita de forma redigida arquivos cujos JWTs conhecidos
+estão todos expirados, sem validar ou expor assinaturas/claims. A regressão
+sintética passou e o `codex_text` smoke real com o `auth.json` atual passou
+novamente em um turno (`response_chars=8`, 9,16 s).
+
+### Continuação: instalação acionável da diarização — 2026-08-01
+
+O preflight confirmou que este host ainda não possui `.venv-diarization` nem
+token Hugging Face. Para tornar o bloqueio acionável sem contaminar o runtime
+Parakeet/Transformers 5, foi adicionado `install_diarization.sh`, que cria o
+runtime isolado com Torch 2.6/cu124 (ou CPU) e `pyannote.audio==3.4.0`.
+`.venv-diarization` entrou no `.gitignore`; pesos e tokens continuam fora do
+repositório. A capability agora informa somente metadados seguros de runtime,
+comando de instalação e o fato de que acesso ao modelo Hugging Face é exigido.
+O smoke real continua pendente até esse runtime e o acesso ao modelo serem
+configurados; a cascata sem diarização e os dois perfis Gemini não dependem
+dessa instalação.
+
+### Próxima frente: reescrita da WebUI inspirada em `resources/ui_002` — 2026-08-01
+
+Após fechar e validar os gates atuais de backend, workers e diarização,
+a WebUI do Leonidas deverá ser reescrita integralmente usando
+`resources/ui_002/` como referência visual e de interação. A implementação
+deve continuar sendo Vite + TypeScript direta, sem trocar o contrato atual da
+API REST, do envelope `ProcessorPart` ou do WebSocket. Antes de editar a UI,
+auditar os assets e padrões de `resources/ui_002`, mapear cada tela/estado para
+os endpoints existentes e atualizar `UI_SPECS.md` com os contratos derivados.
+
+Requisitos obrigatórios dessa frente:
+
+- preservar Gemini 2.5/3.1, cascata local, configuração, lifecycle, logs,
+  métricas, readiness e diarização opcional;
+- suporte mobile real, incluindo layout responsivo, controles touch,
+  captura/preview adaptados, teclado virtual, orientação estreita e estados
+  de permissão/erro sem overflow horizontal;
+- manter testes Vitest, typecheck, build e testes de contrato WebSocket/API;
+- validar visualmente desktop e mobile antes de substituir a UI atual;
+- não incluir assets privados, credenciais, logs ou resultados de runtime no
+  commit.
+
+Essa frente permanece pendente até a conclusão da validação atual e deve ter
+checkpoint próprio, revisão de diff e tag somente se todos os gates aplicáveis
+estiverem verdes.
+
+Início da implementação v2 — 2026-08-01: a auditoria confirmou que os
+contratos funcionais já existentes podem ser preservados por IDs DOM enquanto
+a apresentação é reorganizada em Operação, Configuração e Diagnóstico. A
+primeira onda da UI v2 não altera REST, WebSocket, ProcessorPart ou lifecycle;
+ela adiciona navegação semântica, layout cockpit desktop e navegação touch
+mobile. O mapeamento foi registrado em `UI_SPECS.md` antes da edição.
+
+O runtime foi instalado com Torch `2.6.0+cu124`, Pyannote `3.4.0` e
+`huggingface_hub==0.36.2`; `pip check` e CUDA passaram. O smoke então chegou
+ao carregamento real e confirmou o bloqueio externo: o pipeline Hugging Face
+retorna `None` sem acesso/autorização ao modelo. O worker agora converte esse
+caso em erro acionável e redigido, em vez de expor um `AttributeError` interno.
+
+O primeiro smoke após a instalação encontrou incompatibilidade entre
+`pyannote.audio==3.4.0` e `huggingface_hub==1.26.0` (`use_auth_token` removido).
+O instalador foi corrigido para fixar `huggingface_hub<1.0`; o smoke deve ser
+repetido para separar essa falha de compatibilidade do acesso Hugging Face.
+
+Validação posterior: o runtime isolado passou `pip check`, import de Pyannote
+e CUDA (`torch==2.6.0+cu124`). O smoke real chegou ao carregamento do modelo e
+falhou somente porque o pipeline gated não está autorizado neste host; o
+worker agora reporta isso de forma redigida. A suíte completa do Leonidas
+passou com 151 testes, 2 skips e 9 subtests; o smoke cascata real CUDA passou
+em três turnos (50,63 s), e o smoke Gemini Live passou novamente nos dois
+perfis (35,90 s). Nenhum desses testes habilita diarização implicitamente.
+
+Validação UI v2 — 2026-08-01: a estrutura foi reorganizada em Operação,
+Configuração e Diagnóstico preservando os IDs DOM e os contratos REST,
+WebSocket e ProcessorPart. A navegação possui suporte a foco e setas de
+teclado; em viewport de 390×844 torna-se uma barra inferior touch. Chromium
+foi usado para inspeção em 1440×1000 e 390×844; typecheck, 24 testes Vitest e
+build Vite passaram. A tela também exibiu corretamente erro de API offline,
+sem impedir o carregamento do shell.
+
+Regressão real pós-UI — 2026-08-01: `LEONIDAS_RUN_CODEX_TEXT_E2E=1 ...
+codex_text_smoke --turns 2` passou com dois turnos e resposta não vazia
+(10,77 s); o smoke Gemini 2.5/3.1 passou (`unittest`, 33,83 s). Duas
+tentativas de `cascade_smoke --device cuda --turns 3` foram interrompidas
+corretamente pelo guard do XTTS antes do load, primeiro com 5050 MiB e depois
+com 4005 MiB disponíveis para um mínimo de 5120 MiB. A cascata não deve ser
+declarada verde até repetir com memória/swap suficientes; não foi reduzido o
+limite e nenhum processo do usuário foi encerrado.
+
+Correção de método — 2026-08-01: uma tentativa de compilar
+`codex-cli` diretamente do checkout `~/github/codex` foi interrompida por
+falta de espaço e não faz parte da validação do produto. O checkout deve ser
+somente referência de leitura para schemas, eventos e autenticação; o
+Leonidas valida a API do app-server diretamente por JSONL/WebRTC. O target
+gerado foi limpo com `cargo clean`, sem alterar código, auth ou o binário
+instalado. Não usar compilação do CLI como gate futuro.
+
+### Onda de compatibilidade integral com o protocolo Codex — 2026-08-01
+
+O objetivo ativo exige documentar e tornar o adapter integralmente compatível
+com os contratos identificados no checkout mais recente, preservando o uso
+server-side das credenciais de `auth.json`. A leitura dos structs Rust e do
+README do app-server confirmou os seguintes gaps concretos no estado atual:
+
+- `thread/realtime/appendText` aceita compatibilidade legada sem `role`, mas o
+  contrato corrente requer que novos clientes enviem explicitamente `user`,
+  `developer` ou `assistant`;
+- o adapter precisa consumir `thread/realtime/error` e
+  `thread/realtime/closed` durante toda a sessão, encerrando o processor de
+  forma observável em vez de aguardar indefinidamente;
+- deltas e finais de transcrição, áudio, `itemAdded`, SDP e lifecycle devem ter
+  tradução ou tratamento explícito, sem vazar objetos provider-specific;
+- a versão realtime e as vozes devem ser obtidas/validadas contra o app-server
+  executado. O binário local 0.144.0 aceita apenas v1/v2, enquanto o checkout
+  mais recente inclui v3; a capability pública não pode anunciar uma versão
+  como funcional sem negociação ou evidência do runtime;
+- WebRTC continua restrito a v1/v3 e exige oferta SDP real. WebSocket v2 exige
+  API key; login ChatGPT de `auth.json` deve seguir pelo WebRTC sem conversão
+  de tokens;
+- o smoke real deve exercitar `initialize`, `thread/start`, realtime start,
+  lifecycle e stop com o `auth.json` atual. Erro upstream de entitlement deve
+  permanecer distinguível de incompatibilidade local e de credencial inválida.
+
+Ordem desta onda: registrar regressões de contrato; corrigir requests e
+lifecycle; negociar capabilities com `thread/realtime/listVoices` e/ou versão
+do app-server; atualizar SPECS/WORKFLOW/UI_SPECS; executar suites offline;
+repetir `codex_text` e WebRTC reais; registrar cada rota esgotada sem expor
+credenciais. Gemini e cascata local são regressões obrigatórias antes do
+checkpoint.
+
+### Requisito empírico: corpus de microfone e múltiplos turnos Codex
+
+Gerar com a API Gemini um pequeno corpus privado de falas PT-BR e armazená-lo
+somente em `leonidas/.runtime/e2e/codex_audio/`, já ignorado pelo Git. Cada
+fixture deve possuir manifesto redigido com duração, sample rate, canais,
+sample width e hash, sem persistir transcrição privada em relatórios. O runner
+deve validar WAV/PCM, converter para PCM16 mono na taxa exigida pelo protocolo
+e enviar chunks com pacing equivalente a microfone em pelo menos dois turnos.
+
+O teste deve cobrir separadamente:
+
+- WebSocket app-server com `appendAudio`, quando o `auth.json` fornecer API key
+  compatível;
+- WebRTC com track de áudio real/fake alimentada pelo corpus, quando a conta
+  ChatGPT do `auth.json` possuir entitlement de voz;
+- lifecycle por turno, transcrição, resposta/áudio, stop e ausência de tasks ou
+  processos órfãos;
+- falha explícita e redigida quando a credencial/entitlement não autorizar a
+  rota, sem substituir o teste real por mock.
+
+Assets gerados, áudio capturado e respostas permanecem fora do Git. Testes de
+contrato usam fixtures sintéticas pequenas; o corpus Gemini é exclusivamente
+um smoke real opt-in.
+
+Evidência desta onda: o Gemini TTS gerou dois WAVs privados válidos, total de
+9,36 s, em `.runtime/e2e/codex_audio`; o manifesto contém somente propriedades
+técnicas e SHA-256. O binário 0.144.0 respondeu ao `listVoices` real com nove
+vozes V1, dez V2 e defaults válidos. Os runners de áudio V1/V2 WebSocket
+falharam antes do primeiro chunk com `api_key_required`; V3 falhou com
+`protocol_version_unsupported`. Chromium real usou o primeiro WAV como
+microfone fake, criou `RTCPeerConnection`/SDP V1 e alcançou o backend, que
+respondeu `voice_entitlement_denied` antes do transporte de mídia
+(`audioIn=0`, `audioOut=0`). Portanto o corpus e os dois caminhos de envio
+estão implementados, mas múltiplos turnos pagos não podem atravessar a criação
+da sessão com esta credencial/conta.
+
+Automação do smoke WebRTC — 2026-08-01: o procedimento manual foi convertido
+em `python -m leonidas.e2e.codex_webrtc_smoke`. O runner combina os dois WAVs
+Gemini com silêncio de endpointing, inicia Leonidas e Chromium headless em
+portas/perfis temporários, aguarda os handshakes REST e WebSocket da WebUI,
+aciona a sessão e classifica somente resultados redigidos. A execução real com
+o `auth.json` atual comprovou novamente `voice_entitlement_denied`, agora por
+um caminho reproduzível e sem persistir conversa, SDP ou erro upstream. O
+checkout Codex em `91f3c3824` continua confirmando `gpt-realtime-1.5`, WebRTC
+AVAS e os headers ChatGPT encaminhados pelo app-server; o binário executado
+permanece `codex-cli 0.144.0`. Assim, modelo, voz descoberta, versão instalada,
+sinalização e autenticação foram confrontados; o gate restante continua sendo
+autorização upstream de voz, não um fallback ou bypass a implementar.
+
+### Correção de escopo: transporte direto do backend Codex — 2026-08-01
+
+A auditoria do objetivo identificou que o adapter atual usa JSONL com o
+processo `codex app-server`. Isso valida os contratos do app-server, mas não
+cumpre sozinho a instrução de integrar a API do backend diretamente no código
+Leonidas e usar `~/github/codex` somente como fonte de protocolo. Adicionar um
+transporte HTTP/WebRTC server-side próprio, atrás de uma capability explícita,
+que carregue `access_token` e `account_id` de `auth.json`, reproduza apenas os
+headers, query, multipart/JSON e lifecycle confirmados pelo código oficial e
+nunca envie credenciais à WebUI. Manter o transporte app-server como opção de
+compatibilidade até o direto possuir testes de contrato e smoke real.
+
+Esta onda deve começar pela extração integral dos contratos de autenticação,
+URL, headers, criação da chamada, resposta SDP, sideband, refresh/expiração e
+erros. Fixtures usam tokens sintéticos; o smoke real relata apenas código de
+resultado e latência. Não usar endpoints descobertos por tentativa cega, não
+persistir SDP/token e não declarar voz funcional enquanto a conta continuar
+respondendo `voice_entitlement_denied`. Evidência atual: no release oficial
+0.146.0 isolado, Codex Text passou em dois turnos, WebRTC V1 repetiu o 403 de
+entitlement e WebRTC V3 repetiu timeout de sinalização; o `auth.json` possui
+login ChatGPT/access token/account id e não possui `OPENAI_API_KEY`.
+
+Compatibilidade corrigida tests-first: `appendText` envia `role=user`, versões
+desconhecidas são rejeitadas antes de criar thread, vozes são descobertas e
+validadas por versão, `closed`/`error` encerram startup e runtime, V3 não envia
+o modelo V1/V2 incompatível e a capability separa versões confirmadas de V3
+experimental. Validação: 168 testes Python passaram, 2 foram ignorados e 9
+subtests passaram; WebUI teve 24 testes, typecheck e build verdes. O smoke
+Codex Text passou em dois turnos (12,17 s), a cascata CUDA passou em três
+turnos (46,45 s) com cleanup sem workers órfãos, e Gemini 2.5/3.1 passou no
+smoke real conjunto (43,97 s).
+
+### Gate de coexistência CUDA com diarização
+
+Antes de habilitar diarização por padrão, medir Parakeet, XTTS e Pyannote
+carregados simultaneamente na RTX 2060 de 6 GiB e medir também RSS/RAM do host.
+O último smoke observou aproximadamente 1.358 MiB para Parakeet e 2.034 MiB
+para XTTS, totalizando 3.392 MiB de VRAM. Isso deixa margem nominal de cerca de
+2,5 GiB, mas ainda não prova que Pyannote, kernels temporários e fragmentação
+caibam juntos. O aceite exige load/warm-up simultâneo, uma diarização real e
+três turnos STT/LLM/TTS sem OOM, com cleanup. Se não couber, a política deve
+usar scheduling/offload explícito; não reduzir guards nem mascarar OOM.
+
+### Onda ativa: runner empírico de coexistência — 2026-08-01
+
+O runtime isolado continua saudável (`torch 2.6.0+cu124`, Pyannote 3.4.0 e
+CUDA disponível), mas `hf auth list` confirmou que não existe token local. O
+exit code de `hf auth whoami` sem token não deve ser usado como prova de
+autenticação. O worker alcança `loading_weights` e falha de forma redigida
+porque `pyannote/speaker-diarization-community-1` é gated. O host também está
+sem swap e tinha 4,5 GiB de RAM disponível nesta retomada, abaixo do guard
+XTTS de 5 GiB, embora a RTX 2060 estivesse saudável com 5.914 MiB livres.
+
+Criar um runner opt-in único que mantenha Parakeet, XTTS e Pyannote residentes,
+registre memória do sistema e VRAM por fase, execute a diarização humana real e
+três turnos completos da cascata, e encerre todos os workers mesmo em falha ou
+cancelamento. O resultado só pode ser `PASS` depois de provar os três modelos
+simultâneos; ausência de token, aceite, RAM ou swap deve ser classificada como
+gate ambiental explícito. Não iniciar Groq nem XTTS quando o load Pyannote já
+falhar, e não reduzir o guard de memória para forçar a prova.
+
+Checkpoint de implementação: o supervisor passou a preparar STT → Pyannote →
+XTTS quando a opção está ativa, com regressão garantindo que uma falha gated
+não inicia o load TTS e fecha todos os candidatos. O runner
+`leonidas.e2e.coexistence_smoke` mede RAM/swap/VRAM, exige os três componentes
+`ready`, dois speakers e três turnos usando o mesmo pool, fechando recursos em
+`finally`. Foram aprovados 40 testes direcionados (1 live skip), Pyink, Flake8
+E9/F63/F7/F82 e diff check. Na execução real sem token, ele falhou em
+`DiarizationWorkerError`, não carregou XTTS e deixou zero workers órfãos; essa
+é evidência de cleanup/fail-fast, não de coexistência aprovada.
+
+Regressão ampliada deste checkpoint: 178 testes Leonidas/E2E passaram, 2 foram
+ignorados e 9 subtests passaram; a WebUI manteve 24 Vitest, typecheck e build
+verdes. Gemini Live 2.5/3.1 passou novamente no smoke real conjunto em 35,70 s.
+A cascata CUDA sem diarização foi tentada em três turnos, mas depois do load
+Parakeet havia 2.513 MiB de RAM disponível para o mínimo XTTS de 5.120 MiB; o
+guard abortou e o cleanup deixou zero workers. O código não deve tratar esse
+gate ambiental como regressão dos modelos locais já comprovados anteriormente.
+
+A suíte completa do repositório passou com 749 testes, 2 skips e 27 subtests
+em 163,62 s. Permanecem os warnings históricos de depreciação e o warning de
+coroutine do teste direto de `core.realtime`, já isolado em validações
+anteriores e não introduzido por esta onda.
+
+Auditoria de continuidade não encontrou outra frente não-Codex independente
+sem esses recursos externos. Condição exata de desbloqueio: aceitar os termos
+de `pyannote/speaker-diarization-community-1`, executar
+`.venv-diarization/bin/hf auth login` e comprovar uma credencial com `hf auth
+list`; depois liberar RAM ou configurar swap para que o host preserve ao menos
+5.120 MiB no início do XTTS após Parakeet/Pyannote. Só então repetir
+`leonidas.e2e.coexistence_smoke --device cuda`, o caminho `--device cpu` e a
+regressão local de três turnos. Nenhuma tag estável nova deve ser criada antes
+dessas provas.

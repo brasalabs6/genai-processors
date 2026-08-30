@@ -3,17 +3,57 @@
 import dataclasses
 from typing import Any
 
+from leonidas.cascade import diarization
+
 
 MODEL_LIVE_2_5 = 'gemini-2.5-flash-native-audio-preview-12-2025'
 MODEL_LIVE_3_1 = 'gemini-3.1-flash-live-preview'
 DEFAULT_MODEL = MODEL_LIVE_2_5
 PIPELINE_GEMINI = 'gemini_live'
 PIPELINE_CASCADE = 'cascade_local'
+PIPELINE_CODEX = 'codex_realtime'
+PIPELINE_CODEX_TEXT = 'codex_text'
+CODEX_REALTIME_MODEL = 'gpt-realtime-1.5'
+CODEX_TEXT_MODEL = 'default'
 PARAKEET_V3_MODEL = 'nvidia/parakeet-tdt-0.6b-v3'
 GROQ_GPT_OSS_20B = 'openai/gpt-oss-20b'
 GROQ_GPT_OSS_120B = 'openai/gpt-oss-120b'
 XTTS_V2_MODEL = 'tts_models/multilingual/multi-dataset/xtts_v2'
 CASCADE_VOICES = ('leonidas',)
+CODEX_VOICES = (
+    'juniper',
+    'maple',
+    'spruce',
+    'ember',
+    'vale',
+    'breeze',
+    'arbor',
+    'sol',
+    'cove',
+    'alloy',
+    'ash',
+    'ballad',
+    'cedar',
+    'coral',
+    'echo',
+    'marin',
+    'sage',
+    'shimmer',
+    'verse',
+)
+CODEX_WEBRTC_V1_VOICES = frozenset(
+    {
+        'juniper',
+        'maple',
+        'spruce',
+        'ember',
+        'vale',
+        'breeze',
+        'arbor',
+        'sol',
+        'cove',
+    }
+)
 
 VOICES = (
     'Zephyr',
@@ -130,8 +170,52 @@ def public_capabilities() -> dict[str, Any]:
               'reasoning_efforts': ['low', 'medium', 'high'],
               'devices': ['auto', 'cuda', 'cpu'],
           },
+          {
+              'id': PIPELINE_CODEX,
+              'label': 'Codex Realtime (experimental)',
+              'implemented': True,
+              'vision': False,
+              'input_modalities': ['audio', 'text'],
+              'output_modalities': ['audio', 'transcription'],
+              'native_audio': True,
+              'voices': list(CODEX_VOICES),
+              'models': [
+                  {
+                      'id': CODEX_REALTIME_MODEL,
+                      'label': 'GPT Realtime 1.5',
+                      'version': 'v2',
+                      'experimental': True,
+                  }
+              ],
+              'realtime_versions': ['v2', 'v1'],
+              'experimental_realtime_versions': ['v3'],
+              'transports': {
+                  'websocket': ['v2', 'v1'],
+                  'webrtc': ['v1'],
+              },
+              'requires_local_codex': True,
+          },
+          {
+              'id': PIPELINE_CODEX_TEXT,
+              'label': 'Codex Text (local app-server)',
+              'implemented': True,
+              'vision': False,
+              'input_modalities': ['text'],
+              'output_modalities': ['text', 'transcription'],
+              'native_audio': False,
+              'voices': [],
+              'models': [
+                  {
+                      'id': CODEX_TEXT_MODEL,
+                      'label': 'Codex default model via app-server',
+                      'experimental': False,
+                  }
+              ],
+              'requires_local_codex': True,
+          },
       ],
       'voices': list(VOICES),
+      'diarization': diarization.availability(),
       'presets': ['low_latency', 'balanced', 'quality'],
       'limits': {
           'objective_characters': [1, 12000],

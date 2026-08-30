@@ -6,11 +6,13 @@ import {PcmPlayer} from './audio';
 import {LogBuffer} from './log-buffer';
 import {MediaController} from './media';
 import {
+  CODEX_WEBRTC_ANSWER_MIMETYPE,
   connectionClosePolicy,
   parseServerMessage,
   resolveWebSocketUrl,
   textMessage,
 } from './protocol';
+import {CodexWebRtcController} from './webrtc';
 import type {ProcessorMessage} from './protocol';
 import type {
   AgentConfig,
@@ -37,7 +39,7 @@ class LeonidasApp {
   private config: ConfigSnapshot | null = null;
   private session: SessionSnapshot = {
     state: 'stopped', session_id: null, media_connected: false,
-    started_at: null, last_error: null,
+    started_at: null, last_error: null, last_error_detail: null,
   };
   private socket: WebSocket | null = null;
   private reconnectTimer: number | null = null;
@@ -45,6 +47,7 @@ class LeonidasApp {
   private intentionalClose = false;
   private readonly player = new PcmPlayer();
   private readonly media: MediaController;
+  private readonly webrtc: CodexWebRtcController;
   private readonly logBuffer = new LogBuffer(2000);
   private logsPaused = false;
   private logRenderPending = false;
@@ -65,9 +68,15 @@ class LeonidasApp {
   private readonly preset = element<HTMLSelectElement>('#preset');
   private readonly objective = element<HTMLTextAreaElement>('#objective');
   private readonly chattiness = element<HTMLInputElement>('#chattiness');
+  private readonly diarization = element<HTMLInputElement>('#cascade-diarization');
   private readonly preview = element<HTMLVideoElement>('#preview');
 
   constructor() {
+    this.webrtc = new CodexWebRtcController(
+      element<HTMLAudioElement>('#codex-audio'),
+      (message) => this.send(message),
+      (active) => this.renderCapture(active || this.media.microphoneActive, this.media.activeVisual),
+    );
     this.media = new MediaController(
       this.preview,
       (message) => this.send(message),
@@ -104,13 +113,16 @@ class LeonidasApp {
   }
 
   private bind(): void {
+    this.bindWorkspaceNavigation();
     element('#dismiss-error').addEventListener('click', () => {
       element('#error-banner').hidden = true;
     });
     element('#start-session').addEventListener('click', () => void this.start());
     element('#stop-session').addEventListener('click', () => void this.stop());
     element('#apply-config').addEventListener('click', () => void this.apply());
-    element('#microphone').addEventListener('click', () => this.guard(() => this.media.toggleMicrophone()));
+    element('#microphone').addEventListener('click', () => this.guard(() => this.isCodexRealtime()
+      ? this.webrtc.toggleMicrophone()
+      : this.media.toggleMicrophone()));
     element('#camera').addEventListener('click', () => this.guard(() => this.media.toggleCamera()));
     element('#screen').addEventListener('click', () => this.guard(() => this.media.toggleScreen()));
     element('#clear-conversation').addEventListener('click', () => {
@@ -157,6 +169,7 @@ class LeonidasApp {
     element('#preview-voice').addEventListener('click', () => void this.previewVoice());
     element('#reasoning-effort').addEventListener('change', () => void this.updateDraft({cascade: {reasoning_effort: element<HTMLSelectElement>('#reasoning-effort').value}}));
     element('#cascade-device').addEventListener('change', () => void this.updateDraft({cascade: {device: element<HTMLSelectElement>('#cascade-device').value}}));
+    this.diarization.addEventListener('change', () => void this.updateDraft({cascade: {diarization_enabled: this.diarization.checked}}));
 
     this.bindAdvanced();
     element('#pause-logs').addEventListener('click', () => {
@@ -175,6 +188,7 @@ class LeonidasApp {
       this.socket?.close();
       this.eventSource?.close();
       void this.media.close();
+      void this.webrtc.stop();
       void this.player.close();
     });
     document.addEventListener('visibilitychange', () => {
@@ -182,6 +196,41 @@ class LeonidasApp {
       this.metricsTimer = null;
       this.scheduleMetrics();
     });
+  }
+
+  private bindWorkspaceNavigation(): void {
+    const tabs = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.workspace-tab'),
+    );
+    const spaces = Array.from(
+      document.querySelectorAll<HTMLElement>('.workspace-space'),
+    );
+    const activate = (target: string): void => {
+      for (const tab of tabs) {
+        const selected = tab.dataset.spaceTarget === target;
+        tab.classList.toggle('active', selected);
+        tab.setAttribute('aria-selected', String(selected));
+      }
+      for (const space of spaces) {
+        const selected = space.dataset.space === target;
+        space.hidden = !selected;
+        space.classList.toggle('active', selected);
+      }
+    };
+    tabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => activate(tab.dataset.spaceTarget ?? 'operation'));
+      tab.addEventListener('keydown', (event) => {
+        if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+        event.preventDefault();
+        const offset = event.key === 'ArrowRight' ? 1 : -1;
+        const nextIndex = (index + offset + tabs.length) % tabs.length;
+        const next = tabs[nextIndex];
+        if (!next) return;
+        next.focus();
+        activate(next.dataset.spaceTarget ?? 'operation');
+      });
+    });
+    activate('operation');
   }
 
   private bindAdvanced(): void {
@@ -244,7 +293,12 @@ class LeonidasApp {
           pipeline_id: id, model_id: modelId, voice_name: null,
           cascade: {llm_model_id: modelId},
         }
-      : {pipeline_id: id, model_id: modelId, voice_name: null};
+      : {
+          pipeline_id: id, model_id: modelId,
+          voice_name: id === 'codex_realtime'
+            ? this.capabilities.pipelines.find((item) => item.id === id)?.voices?.[0] ?? null
+            : null,
+        };
     await this.updateDraft(updates);
   }
 
@@ -266,11 +320,20 @@ class LeonidasApp {
       this.audioPlaybackFailed = false;
       this.session = await controlApi.start();
       this.renderSession();
-    } catch (error) { this.showError('Sessão não iniciada', this.errorText(error)); }
+      if (this.isCodexRealtime()) await this.webrtc.start();
+    } catch (error) {
+      if (this.isCodexRealtime() && this.session.state !== 'stopped') {
+        await controlApi.stop().catch(() => undefined);
+        this.session = await controlApi.session().catch(() => this.session);
+        this.renderSession();
+      }
+      this.showError('Sessão não iniciada', this.errorText(error));
+    }
   }
 
   private async stop(): Promise<void> {
     try {
+      await this.webrtc.stop();
       this.session = await controlApi.stop();
       this.player.flush();
       this.renderSession();
@@ -288,6 +351,7 @@ class LeonidasApp {
     socket.addEventListener('message', (event) => this.handleMessage(String(event.data)));
     socket.addEventListener('error', () => this.setStatus('#ws-status', 'Erro WebSocket', 'error'));
     socket.addEventListener('close', (event) => {
+      this.webrtc.reject(new Error('WebSocket de sinalização encerrado.'));
       const policy = connectionClosePolicy(event.code, event.reason);
       this.setStatus('#ws-status', policy.label, 'error');
       this.player.flush();
@@ -321,6 +385,11 @@ class LeonidasApp {
     try {
       const message = parseServerMessage(raw);
       const metadata = message.metadata ?? {};
+      if (message.mimetype === CODEX_WEBRTC_ANSWER_MIMETYPE) {
+        const sdp = message.part?.text;
+        if (sdp) this.webrtc.acceptAnswer(sdp);
+        return;
+      }
       if (message.mimetype === 'application/x-state') {
         this.reconnectAttempt = 0;
         const state = metadata.state;
@@ -371,9 +440,14 @@ class LeonidasApp {
     } catch (error) { this.showError('Mensagem inválida', this.errorText(error)); }
   }
 
-  private send(message: ProcessorMessage): void {
-    if (this.socket?.readyState !== WebSocket.OPEN) return;
+  private send(message: ProcessorMessage): boolean {
+    if (this.socket?.readyState !== WebSocket.OPEN) return false;
     this.socket.send(JSON.stringify(message));
+    return true;
+  }
+
+  private isCodexRealtime(): boolean {
+    return this.config?.active.pipeline_id === 'codex_realtime';
   }
 
   private renderCapabilities(): void {
@@ -391,7 +465,8 @@ class LeonidasApp {
     this.model.innerHTML = models.map((item) => `<option value="${item.id}">${item.label}</option>`).join('');
     this.model.value = draft.model_id;
     const pipeline = this.capabilities.pipelines.find((item) => item.id === draft.pipeline_id);
-    const voices = pipeline?.id === 'cascade_local' ? pipeline.voices : this.capabilities.voices;
+    const voices = pipeline?.id === 'cascade_local' || pipeline?.id === 'codex_realtime' || pipeline?.id === 'codex_text'
+      ? pipeline.voices : this.capabilities.voices;
     this.voice.innerHTML = (pipeline?.id === 'gemini_live' ? '<option value="">Automática</option>' : '') + voices.map((voice) => `<option>${voice}</option>`).join('');
     this.voice.value = draft.pipeline_id === 'cascade_local' ? draft.cascade.voice_id : draft.voice_name ?? '';
     this.preset.value = draft.performance_preset;
@@ -423,6 +498,12 @@ class LeonidasApp {
     element<HTMLSelectElement>('#cascade-device').value = draft.cascade.device;
     element<HTMLInputElement>('#cascade-stt').value = draft.cascade.stt_model_id;
     element<HTMLInputElement>('#cascade-tts').value = draft.cascade.tts_model_id;
+    this.diarization.checked = draft.cascade.diarization_enabled;
+    const diarizationAvailable = this.capabilities.diarization?.state === 'available';
+    this.diarization.disabled = !diarizationAvailable;
+    this.diarization.title = diarizationAvailable
+      ? 'Executa Pyannote fora do event loop e não bloqueia o áudio.'
+      : `Pyannote indisponível. Instale com: ${this.capabilities.diarization?.setup_command ?? './leonidas/cascade/install_diarization.sh auto'}`;
     this.renderCaptureCapabilities();
     const dirty = this.config.dirty_fields.length;
     element('#draft-status').textContent = dirty
@@ -435,6 +516,9 @@ class LeonidasApp {
     const labels = {stopped: 'Parado', starting: 'Iniciando', running: 'Em sessão', stopping: 'Parando', error: 'Erro'};
     const tone = this.session.state === 'running' ? 'ok' : this.session.state === 'error' ? 'error' : this.session.state === 'starting' || this.session.state === 'stopping' ? 'warn' : 'neutral';
     this.setStatus('#session-status', labels[this.session.state], tone);
+    if (this.session.state === 'error' && this.session.last_error_detail) {
+      this.showError('Sessão encerrada', this.session.last_error_detail);
+    }
     // A preparation failure is retryable: the backend creates a fresh
     // processor/worker request on the next Start. Keeping Start enabled here
     // avoids forcing a full-page reload after a transient CUDA/model error.
@@ -598,20 +682,21 @@ class LeonidasApp {
       overallLabels[this.resources.overall_state],
       overallTone,
     );
-    for (const id of ['stt', 'tts'] as const) {
+    for (const id of ['stt', 'tts', 'diarization'] as const) {
       const component = this.resources.components.find((item) => item.id === id);
       this.renderResource(id, component);
     }
   }
 
   private renderResource(
-    id: 'stt' | 'tts',
+    id: 'stt' | 'tts' | 'diarization',
     component: ResourceComponent | undefined,
   ): void {
     const card = element<HTMLElement>(`[data-resource="${id}"]`);
     const state = component?.state ?? 'unloaded';
     const labels = {
       unloaded: 'Não carregado',
+      unavailable: 'Indisponível',
       validating: 'Validando',
       loading: 'Carregando',
       warming: 'Aquecendo',
@@ -626,6 +711,8 @@ class LeonidasApp {
       ready: 'Pronto',
       error: 'Falha no carregamento',
       unloaded: 'Aguardando Start',
+      optional_unavailable: 'Dependência opcional ausente',
+      optional_not_loaded: 'Disponível, não carregada',
     };
     card.dataset.state = state;
     card.querySelector<HTMLElement>('.resource-state')!.textContent = labels[state];
@@ -634,6 +721,9 @@ class LeonidasApp {
       : null;
     const elapsed = component?.load_ms
       ? `${(component.load_ms / 1000).toFixed(1)} s`
+      : null;
+    const diarizationSetup = id === 'diarization' && state === 'unavailable'
+      ? this.capabilities?.diarization?.setup_command
       : null;
     const detail = component?.error
       ? `${component.error.message} ${component.error.recovery}`
@@ -644,6 +734,7 @@ class LeonidasApp {
           component?.gpu_name,
           memory,
           elapsed,
+          diarizationSetup ? `Instalação: ${diarizationSetup}` : null,
         ].filter(Boolean).join(' · ') || 'Será carregado ao iniciar.';
     card.querySelector<HTMLElement>('.resource-detail')!.textContent = detail;
     card.title = detail;
