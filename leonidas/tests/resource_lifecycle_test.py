@@ -108,7 +108,9 @@ class ResourceLifecycleTest(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(len(created['tts-b']), 2)
     await pool.close()
 
-  async def test_failed_diarization_toggle_preserves_active_shared_workers(self):
+  async def test_failed_diarization_toggle_preserves_active_shared_workers(
+      self,
+  ):
     created = {}
 
     class Resource:
@@ -154,9 +156,7 @@ class ResourceLifecycleTest(unittest.IsolatedAsyncioTestCase):
     active_tts = created['tts-a'][0]
 
     with self.assertRaisesRegex(RuntimeError, 'diarization candidate failed'):
-      await pool.ensure_ready(
-          'stt-a', 'tts-a', 'cpu', diarization_enabled=True
-      )
+      await pool.ensure_ready('stt-a', 'tts-a', 'cpu', diarization_enabled=True)
 
     failed = pool.snapshot()
     self.assertEqual(failed['overall_state'], 'ready')
